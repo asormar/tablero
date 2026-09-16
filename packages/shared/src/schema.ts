@@ -108,13 +108,6 @@ export const uploadAssetSchema = z.object({
   dedupe: z.coerce.boolean().default(true),
 });
 
-/** URL firmada para subir directo al almacenamiento (sin pasar por la API). */
-export const presignAssetSchema = z.object({
-  name: z.string().trim().min(1).max(300),
-  mime: z.string().trim().min(1).max(200),
-  size: z.number().int().positive(),
-});
-
 export const assetIdParamSchema = z.object({ id: idSchema });
 
 export const linkPreviewQuerySchema = z.object({

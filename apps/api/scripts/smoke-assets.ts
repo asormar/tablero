@@ -493,6 +493,13 @@ async function main(): Promise<void> {
     const svgDownload = await download(await signedRedirect(alice, `/api/assets/${svg.id}/thumb`));
     assert.equal(sha256(svgDownload.body), sha256(fixtures.svg));
     assert.ok(svgDownload.contentType.includes('image/svg+xml'), `content-type ${svgDownload.contentType}`);
+    // El original de un SVG se sirve como descarga: un SVG puede traer <script>
+    // y abrirlo en una pestaña lo ejecutaría en el origen del almacenamiento.
+    const svgRaw = await signedRedirect(alice, `/api/assets/${svg.id}/raw`);
+    assert.ok(
+      svgRaw.includes('response-content-disposition=') && svgRaw.includes('attachment'),
+      `el original del SVG debería forzar descarga: ${svgRaw.slice(0, 140)}`,
+    );
 
     const gif = assetOf((await alice.upload('/api/assets', fixtures.gif, 'prueba.gif', 'image/gif')).json);
     assert.equal(gif.type, 'image');
@@ -501,7 +508,9 @@ async function main(): Promise<void> {
     const gifDownload = await download(await signedRedirect(alice, `/api/assets/${gif.id}/thumb`));
     assert.equal(sha256(gifDownload.body), sha256(fixtures.gif));
     assert.ok(gifDownload.contentType.includes('image/gif'), `content-type ${gifDownload.contentType}`);
-    return `svg medidas=${svg.width}x${svg.height} · gif medidas=${gif.width}x${gif.height}`;
+    const gifRaw = await signedRedirect(alice, `/api/assets/${gif.id}/raw`);
+    assert.ok(!gifRaw.includes('response-content-disposition'), 'el GIF sí se sirve en línea');
+    return `svg medidas=${svg.width}x${svg.height} (original como descarga) · gif medidas=${gif.width}x${gif.height}`;
   });
 
   // --- listado y boardId --------------------------------------------------

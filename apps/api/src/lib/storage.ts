@@ -147,7 +147,3 @@ export async function headObject(key: string): Promise<ObjectHead | null> {
     throw error;
   }
 }
-
-export async function objectExists(key: string): Promise<boolean> {
-  return (await headObject(key)) !== null;
-}

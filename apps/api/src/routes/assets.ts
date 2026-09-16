@@ -142,6 +142,18 @@ function isTruthyFlag(value: unknown): boolean {
   return ['1', 'true', 'on', 'yes', ''].includes(value.toLowerCase());
 }
 
+/**
+ * MIME que el navegador ejecuta si se sirven en línea. Un SVG puede traer
+ * `<script>` y un HTML es HTML: servidos desde el origen del almacenamiento,
+ * abrirlos en una pestaña sería ejecutar código de un archivo subido.
+ */
+const INLINE_DANGEROUS_MIME = new Set(['image/svg+xml', 'text/html', 'application/xhtml+xml', 'image/svg']);
+
+function isInlineDangerous(mime: string | null | undefined): boolean {
+  if (typeof mime !== 'string') return false;
+  return INLINE_DANGEROUS_MIME.has(mime.split(';')[0]?.trim().toLowerCase() ?? '');
+}
+
 /** Asset del usuario o 404 (ajeno e inexistente son indistinguibles). */
 async function requireOwnAsset(request: FastifyRequest): Promise<Asset> {
   const user = currentUser(request);
@@ -347,8 +359,11 @@ export async function assetsRoutes(app: FastifyInstance): Promise<void> {
   app.get('/assets/:id/raw', async (request, reply) => {
     const row = await requireOwnAsset(request);
     const download = isTruthyFlag(request.query ? (request.query as Record<string, unknown>)['download'] : undefined);
+    // SVG y HTML se ejecutan si el navegador los sirve en línea, y este endpoint
+    // redirige a la URL firmada del objeto: al abrirlos en una pestaña correrían
+    // su `<script>` en el origen del almacenamiento. Se fuerzan como descarga.
     const url = await getPresignedGetUrl(row.storageKey, SIGNED_URL_TTL_SECONDS, {
-      downloadName: download ? row.originalName : null,
+      downloadName: download || isInlineDangerous(row.mime) ? row.originalName : null,
     });
     reply.header('cache-control', 'private, no-store');
     reply.redirect(url, 302);

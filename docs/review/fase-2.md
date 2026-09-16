@@ -27,9 +27,9 @@ de datos en el camino feliz.
 | M1 | `apps/web/src/app/Workspace.tsx:126-128` | `ImageViewer`, `CropEditor` y `RecorderPanel` montados estáticos: chunk principal ~787 kB | **Pendiente** (`React.lazy` + `manualChunks`) |
 | M2 | `apps/web/src/elements/cards/PdfPreview.tsx:75` | `PdfPageViewer` muerto (se usa el panel local) | **Pendiente** |
 | M3 | `apps/web/src/lib/pdf.ts:88`, `lib/waveform.ts:115` | `forgetPdfDocument` y `forgetPeaks` sin llamadas: las cachés no se purgan al borrar tarjetas | **Pendiente** |
-| M4 | `packages/shared/src/schema.ts:96` | `presignAssetSchema` muerto (la subida firmada quedó fuera de alcance a propósito) | **Pendiente** |
-| M5 | `apps/api/src/lib/storage.ts:151` | `objectExists` sin uso en `src` | **Pendiente** |
-| M6 | `apps/web/src/elements/cards/AssetCards.tsx:496-504` + `apps/api/src/routes/assets.ts:347-355` | «Abrir» un SVG en pestaña nueva ejecuta su `<script>` en el origen de MinIO: riesgo bajo (monousuario, en `<img>` no ejecuta) pero existe | **Pendiente** (forzar `Content-Disposition: attachment` para SVG/HTML en `/raw`) |
+| M4 | `packages/shared/src/schema.ts:96` | `presignAssetSchema` muerto (la subida firmada quedó fuera de alcance a propósito) | **Arreglado** (eliminado) |
+| M5 | `apps/api/src/lib/storage.ts:151` | `objectExists` sin uso en `src` | **Arreglado** (eliminado) |
+| M6 | `apps/web/src/elements/cards/AssetCards.tsx:496-504` + `apps/api/src/routes/assets.ts:347-355` | «Abrir» un SVG en pestaña nueva ejecuta su `<script>` en el origen de MinIO: riesgo bajo (monousuario, en `<img>` no ejecuta) pero existe | **Arreglado** en el servidor: el original de SVG/HTML se firma con `Content-Disposition: attachment` (aserción nueva en `smoke:assets`) |
 
 ## Qué verificó el revisor con ejecución
 

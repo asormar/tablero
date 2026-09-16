@@ -12,10 +12,13 @@ import { X } from 'lucide-react';
 
 import { fitToScreen } from '@/canvas/commands';
 import { Canvas } from '@/canvas/Canvas';
+import { ConnectorBar } from '@/chrome/ConnectorBar';
 import { ContextBar } from '@/chrome/ContextBar';
 import { ContextMenu } from '@/chrome/ContextMenu';
 import { CropEditor } from '@/chrome/CropEditor';
+import { DocumentPage } from '@/chrome/DocumentPage';
 import { ImageViewer } from '@/chrome/ImageViewer';
+import { MoveToDialog } from '@/chrome/MoveToDialog';
 import { PerfOverlay } from '@/chrome/PerfOverlay';
 import { RecorderPanel } from '@/chrome/RecorderPanel';
 import { ShortcutsModal } from '@/chrome/ShortcutsModal';
@@ -117,6 +120,7 @@ function WorkspaceShell({
           <Canvas session={session} onOpenBoard={onOpenBoard} />
           <ZoomControl session={session} />
           <ContextBar session={session} />
+          <ConnectorBar session={session} />
           <PerfOverlay />
         </div>
         <UnorderedPanel />
@@ -126,6 +130,8 @@ function WorkspaceShell({
       <ImageViewer session={session} />
       <CropEditor session={session} />
       <RecorderPanel session={session} />
+      <DocumentPage session={session} />
+      <MoveToDialog session={session} />
       <BoardEffects session={session} boardId={boardId} />
       {notice ? (
         <div className="notice" role="status">

@@ -3,14 +3,19 @@
  *
  * Todas las interacciones de puntero se resuelven aquí por delegación (un solo
  * `pointerdown` en la raíz): selección, arrastre con guías, tiradores de ancho,
- * lazo, paneo y menú contextual. El arrastre escribe en el DOM y solo commitea
- * al soltar, con una única transacción.
+ * lazo, paneo, anclas de conector y menú contextual. El arrastre escribe en el
+ * DOM y solo commitea al soltar, con una única transacción.
+ *
+ * Desde la fase 3 el mismo gesto de arrastre resuelve además el destino: una
+ * columna (kanban) o una tarjeta de tablero / miga de pan (mover de tablero). Las
+ * flechas siguen a las tarjetas porque su geometría se reescribe cada frame.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
   type ElementType,
+  type FixedSide,
   type HeadingSize,
   type Point,
   type Rect,
@@ -20,17 +25,24 @@ import {
   screenToWorld,
 } from '@tablero/shared';
 
+import { addElementsToColumn } from '@/canvas/columnCommands';
+import { connectorAtPoint, refreshConnectorNodes } from '@/canvas/connectorGeometry';
+import { startConnectorDrag } from '@/canvas/connectorDrag';
+import { ConnectorLayer } from '@/canvas/ConnectorLayer';
+import { highlightColumn, kanbanTargetAt, type KanbanTarget } from '@/canvas/kanbanDrag';
 import type { BoardSession } from '@/collab/BoardSession';
-import { createNoteAt, idsInRect, resizeSelectionWidth } from '@/canvas/commands';
-import { HEADING_MIME, TOOL_MIME, createToolAt, hasFiles, isToolDrag } from '@/canvas/toolDrop';
+import { createNoteAt, editElement, idsInRect, resizeSelectionWidth } from '@/canvas/commands';
+import { HEADING_MIME, TOOL_MIME, createToolAt, createToolInColumn, hasFiles, isToolDrag } from '@/canvas/toolDrop';
 import { attachFilesToBoard } from '@/canvas/uploadController';
+import { transferElements, transferFailureMessage } from '@/lib/boardTransfer';
+import { boardDropTargetAt, clearBoardHighlight, type BoardDropTarget } from '@/lib/boardDrop';
 import { rectOf } from '@/lib/layout';
 import { useAppStore } from '@/state/appStore';
 import { useUiStore } from '@/state/uiStore';
 
 import { canvasPoint, setCanvasRoot, worldFromClient } from './canvasRef';
 import { ElementLayer } from './ElementLayer';
-import { CanvasGrid, GuidesOverlay, MarqueeOverlay } from './Overlays';
+import { CanvasGrid, ConnectorDraftOverlay, DropLineOverlay, GuidesOverlay, MarqueeOverlay } from './Overlays';
 import {
   type DragItem,
   type PointerDrag,
@@ -52,10 +64,11 @@ type TrackOptions = {
  */
 function trackPointer(
   onMove: (event: PointerEvent) => void,
-  onEnd: (commit: boolean) => void,
+  onEnd: (commit: boolean, event: PointerEvent | null) => void,
   options: TrackOptions = {},
 ): () => void {
   let finished = false;
+  let last: PointerEvent | null = null;
 
   const cleanup = (): void => {
     window.removeEventListener('pointermove', move);
@@ -67,19 +80,20 @@ function trackPointer(
   };
 
   function move(event: PointerEvent): void {
+    last = event;
     onMove(event);
   }
-  function up(): void {
+  function up(event: PointerEvent): void {
     if (finished) return;
     finished = true;
     cleanup();
-    onEnd(true);
+    onEnd(true, event);
   }
-  function cancel(): void {
+  function cancel(event: PointerEvent): void {
     if (finished) return;
     finished = true;
     cleanup();
-    onEnd(false);
+    onEnd(false, event);
   }
   function key(event: KeyboardEvent): void {
     if (event.key !== 'Escape') return;
@@ -87,7 +101,7 @@ function trackPointer(
     if (finished) return;
     finished = true;
     cleanup();
-    onEnd(false);
+    onEnd(false, last);
   }
 
   window.addEventListener('pointermove', move);
@@ -245,6 +259,23 @@ export function Canvas({ session, onOpenBoard }: CanvasProps): JSX.Element {
     [session],
   );
 
+  /** Mueve tarjetas a otro tablero (soltar sobre una tarjeta de tablero o una miga). */
+  const moveToBoard = useCallback(
+    (ids: string[], boardId: string): void => {
+      void transferElements(session, ids, boardId).then((result) => {
+        const store = useAppStore.getState();
+        if (result.failure) {
+          store.setNotice(transferFailureMessage(result.failure));
+          return;
+        }
+        store.setNotice(
+          result.moved === 1 ? 'Se movió 1 tarjeta a otro tablero.' : `Se movieron ${result.moved} tarjetas a otro tablero.`,
+        );
+      });
+    },
+    [session],
+  );
+
   const startMove = useCallback(
     (grabId: string, startPoint: Point) => {
       const ui = useUiStore.getState();
@@ -258,7 +289,8 @@ export function Canvas({ session, onOpenBoard }: CanvasProps): JSX.Element {
       }
       if (items.length === 0) return;
 
-      const excluded = new Set(items.map((item) => item.id));
+      const moving = new Set(items.map((item) => item.id));
+      const excluded = new Set(moving);
       const canvasSize = ui.canvasSize;
       const targets = session.getTargetRects(measured, excluded, {
         x: ui.viewport.x,
@@ -267,6 +299,9 @@ export function Canvas({ session, onOpenBoard }: CanvasProps): JSX.Element {
         height: canvasSize.height / ui.viewport.scale,
       });
 
+      let dropColumn: KanbanTarget | null = null;
+      let dropBoard: BoardDropTarget | null = null;
+
       ui.setInteraction('move');
       ui.setGuides([]);
       const drag: PointerDrag = startMoveDrag({
@@ -274,20 +309,46 @@ export function Canvas({ session, onOpenBoard }: CanvasProps): JSX.Element {
         targets,
         viewport: ui.viewport,
         startPointer: startPoint,
+        onFrame: (pointer) => {
+          // Las flechas siguen a las tarjetas: geometría reescrita en el DOM.
+          refreshConnectorNodes(session);
+          const column = kanbanTargetAt(pointer.x, pointer.y, moving);
+          dropColumn = column;
+          const board = column ? null : boardDropTargetAt(pointer.x, pointer.y, session, moving);
+          dropBoard = board;
+          const store = useUiStore.getState();
+          store.setDropLine(column ? column.line : null);
+          if (column) highlightColumn(column.columnId);
+          else highlightColumn(null);
+          if (!board) clearBoardHighlight();
+        },
         onCommit: (moves) => {
+          if (dropColumn) {
+            // Soltada dentro de una columna: manda el kanban, no la posición libre.
+            addElementsToColumn(session, dropColumn.columnId, [...moving], dropColumn.index);
+            return;
+          }
+          if (dropBoard) {
+            moveToBoard([...moving], dropBoard.boardId);
+            return;
+          }
           moveElements(session.doc, moves, session.origin);
         },
       });
       activeTrack.current = trackPointer(
-        (event) => drag.move(canvasPoint(event.clientX, event.clientY)),
+        (event) => drag.move({ x: event.clientX, y: event.clientY }),
         (commit) => {
           drag.end(commit);
-          useUiStore.getState().setInteraction('idle');
+          const store = useUiStore.getState();
+          store.setDropLine(null);
+          store.setInteraction('idle');
+          highlightColumn(null);
+          clearBoardHighlight();
           activeTrack.current = null;
         },
       );
     },
-    [session],
+    [moveToBoard, session],
   );
 
   const startResize = useCallback(
@@ -317,12 +378,37 @@ export function Canvas({ session, onOpenBoard }: CanvasProps): JSX.Element {
     [session],
   );
 
+  /** Arrastra desde el borde de una tarjeta para crear un conector. */
+  const startConnector = useCallback(
+    (fromId: string, side: FixedSide, startClient: Point) => {
+      const ui = useUiStore.getState();
+      ui.setSelectedConnector(null);
+      const drag = startConnectorDrag({
+        session,
+        fromId,
+        side,
+        startClient,
+        onPreview: (draft) => useUiStore.getState().setConnectorDraft(draft),
+      });
+      activeTrack.current = trackPointer(
+        (event) => drag.move(event.clientX, event.clientY),
+        (commit, event) => {
+          drag.end(commit, event?.clientX ?? startClient.x, event?.clientY ?? startClient.y);
+          useUiStore.getState().setConnectorDraft(null);
+          activeTrack.current = null;
+        },
+        { cancelOnEscape: false, cursorClass: 'is-connecting' },
+      );
+    },
+    [session],
+  );
+
   // --- Eventos de ratón ------------------------------------------------------
 
   const handlePointerDown = useCallback(
     (event: React.PointerEvent<HTMLDivElement>) => {
       const target = event.target as HTMLElement;
-      if (target.closest('[contenteditable="true"], input, textarea')) return;
+      if (target.closest('[contenteditable="true"], input, textarea, select')) return;
       if (event.button === 1) event.preventDefault();
       if (event.button !== 0 && event.button !== 1) return;
 
@@ -335,9 +421,20 @@ export function Canvas({ session, onOpenBoard }: CanvasProps): JSX.Element {
         return;
       }
 
-      const handleEl = target.closest('[data-handle]');
       const elementEl = target.closest('[data-element-id]') as HTMLElement | null;
 
+      // Anclas de conector: arrastrar desde el borde de una tarjeta.
+      const anchorEl = target.closest('[data-anchor]') as HTMLElement | null;
+      if (anchorEl && elementEl) {
+        const id = elementEl.dataset.elementId;
+        const side = anchorEl.dataset.anchor;
+        if (id && (side === 'left' || side === 'right' || side === 'top' || side === 'bottom')) {
+          startConnector(id, side as FixedSide, { x: event.clientX, y: event.clientY });
+          return;
+        }
+      }
+
+      const handleEl = target.closest('[data-handle]');
       if (handleEl && elementEl) {
         const id = elementEl.dataset.elementId;
         const direction = handleEl.getAttribute('data-handle');
@@ -348,6 +445,14 @@ export function Canvas({ session, onOpenBoard }: CanvasProps): JSX.Element {
       }
 
       if (!elementEl) {
+        // Clic sobre una flecha: se selecciona el conector, no se abre lazo.
+        const connector = connectorAtPoint(session, screenToWorld(ui.viewport, startPoint), 6);
+        if (connector) {
+          ui.setSelectedConnector(connector.id);
+          ui.clearSelection();
+          return;
+        }
+        ui.setSelectedConnector(null);
         startMarquee(startPoint, event.shiftKey);
         return;
       }
@@ -359,18 +464,24 @@ export function Canvas({ session, onOpenBoard }: CanvasProps): JSX.Element {
       if (additive) ui.select([id], 'toggle');
       else if (!ui.selection.includes(id)) ui.select([id]);
       if (ui.editingId && ui.editingId !== id) ui.setEditing(null);
+      ui.setSelectedConnector(null);
+
+      // Zonas interactivas (rejilla de la tabla, lienzo del dibujo, mapa, filas
+      // de tareas): seleccionan la tarjeta pero no la arrastran.
+      if (target.closest('[data-interactive]')) return;
 
       const element = session.getElement(id);
       if (!element || element.locked) return;
-      startMove(id, startPoint);
+      startMove(id, { x: event.clientX, y: event.clientY });
     },
-    [session, startMarquee, startMove, startPan, startResize],
+    [session, startConnector, startMarquee, startMove, startPan, startResize],
   );
 
   const handleDoubleClick = useCallback(
     (event: React.MouseEvent<HTMLDivElement>) => {
       const target = event.target as HTMLElement;
-      if (target.closest('[contenteditable="true"], input, textarea')) return;
+      if (target.closest('[contenteditable="true"], input, textarea, select')) return;
+      if (target.closest('[data-connector-label], [data-interactive]')) return;
       const elementEl = target.closest('[data-element-id]');
       const id = elementEl?.getAttribute('data-element-id') ?? null;
 
@@ -386,10 +497,12 @@ export function Canvas({ session, onOpenBoard }: CanvasProps): JSX.Element {
         onOpenBoard(element.boardId);
         return;
       }
-      if (isRichTextType(element.type)) {
-        session.ensureTextFragment(id);
-        useUiStore.getState().setEditing(id);
+      if (element.type === 'document') {
+        // El documento se abre a página completa (índice + editor amplio).
+        useUiStore.getState().openDocument(id);
+        return;
       }
+      editElement(session, id);
     },
     [onOpenBoard, session],
   );
@@ -424,12 +537,13 @@ export function Canvas({ session, onOpenBoard }: CanvasProps): JSX.Element {
     (event: React.DragEvent<HTMLDivElement>) => {
       setFileDragOver(false);
       const world = worldFromClient(event.clientX, event.clientY);
+      const column = kanbanTargetAt(event.clientX, event.clientY, new Set());
 
       // Archivos del sistema: imagen → imagen, vídeo → vídeo, resto → archivo.
       if (hasFiles(event.dataTransfer)) {
         event.preventDefault();
         const files = Array.from(event.dataTransfer.files);
-        if (files.length > 0) void attachFilesToBoard(session, files, { world });
+        if (files.length > 0) void attachFilesToBoard(session, files, { world, columnId: column?.columnId ?? null });
         return;
       }
 
@@ -438,7 +552,15 @@ export function Canvas({ session, onOpenBoard }: CanvasProps): JSX.Element {
       const type = event.dataTransfer.getData(TOOL_MIME) as ElementType | '';
       if (!type) return;
       const headingSize = (event.dataTransfer.getData(HEADING_MIME) || null) as HeadingSize | null;
-      void createToolAt(session, type, world, headingSize, useAppStore.getState().currentBoardId);
+      const parentBoardId = useAppStore.getState().currentBoardId;
+      if (column) {
+        const created = createToolInColumn(session, column.columnId, type, headingSize);
+        if (created) {
+          useUiStore.getState().setPendingTool(null);
+          return;
+        }
+      }
+      void createToolAt(session, type, world, headingSize, parentBoardId);
       useUiStore.getState().setPendingTool(null);
     },
     [session],
@@ -469,10 +591,13 @@ export function Canvas({ session, onOpenBoard }: CanvasProps): JSX.Element {
         className="canvas__world"
         style={{ transform: `scale(${viewport.scale}) translate3d(${-viewport.x}px, ${-viewport.y}px, 0)` }}
       >
+        <ConnectorLayer session={session} />
         <ElementLayer session={session} />
       </div>
       <GuidesOverlay />
       <MarqueeOverlay />
+      <DropLineOverlay />
+      <ConnectorDraftOverlay />
     </div>
   );
 }

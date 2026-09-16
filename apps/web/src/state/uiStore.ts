@@ -52,6 +52,16 @@ export type UiState = {
   recorderOpen: boolean;
   /** Elemento cuya paleta se está mostrando. */
   paletteTargetId: string | null;
+  /** Conector seleccionado (flecha o línea). */
+  selectedConnectorId: string | null;
+  /** Línea de inserción del kanban, en coordenadas de pantalla. */
+  dropLine: { x: number; y: number; width: number } | null;
+  /** Línea provisional mientras se crea un conector, en pantalla. */
+  connectorDraft: { x1: number; y1: number; x2: number; y2: number } | null;
+  /** Documento abierto a página completa. */
+  documentId: string | null;
+  /** Buscador de tableros de «Mover a…» abierto. */
+  moveToOpen: boolean;
 
   setCanvasSize(size: Size): void;
   setViewport(viewport: Viewport): void;
@@ -81,6 +91,12 @@ export type UiState = {
   closeCropEditor(): void;
   setRecorderOpen(open: boolean): void;
   setPaletteTarget(id: string | null): void;
+  setSelectedConnector(id: string | null): void;
+  setDropLine(line: { x: number; y: number; width: number } | null): void;
+  setConnectorDraft(draft: { x1: number; y1: number; x2: number; y2: number } | null): void;
+  openDocument(id: string): void;
+  closeDocument(): void;
+  setMoveToOpen(open: boolean): void;
   /** Reinicia la interfaz al cambiar de tablero. */
   resetWorkspace(): void;
 };
@@ -122,6 +138,11 @@ export const useUiStore = create<UiState>()((set, get) => ({
   cropTargetId: null,
   recorderOpen: false,
   paletteTargetId: null,
+  selectedConnectorId: null,
+  dropLine: null,
+  connectorDraft: null,
+  documentId: null,
+  moveToOpen: false,
 
   setCanvasSize(size) {
     const current = get().canvasSize;
@@ -246,6 +267,38 @@ export const useUiStore = create<UiState>()((set, get) => ({
     if (get().paletteTargetId === id) return;
     set({ paletteTargetId: id });
   },
+  setSelectedConnector(id) {
+    if (get().selectedConnectorId === id) return;
+    set({ selectedConnectorId: id });
+  },
+  setDropLine(line) {
+    const current = get().dropLine;
+    if (current === line) return;
+    if (
+      current &&
+      line &&
+      Math.abs(current.x - line.x) < 0.5 &&
+      Math.abs(current.y - line.y) < 0.5 &&
+      Math.abs(current.width - line.width) < 0.5
+    ) {
+      return;
+    }
+    set({ dropLine: line });
+  },
+  setConnectorDraft(draft) {
+    set({ connectorDraft: draft });
+  },
+  openDocument(id) {
+    set({ documentId: id, editingId: null });
+  },
+  closeDocument() {
+    if (get().documentId === null) return;
+    set({ documentId: null });
+  },
+  setMoveToOpen(open) {
+    if (get().moveToOpen === open) return;
+    set({ moveToOpen: open });
+  },
   resetWorkspace() {
     set({
       viewport: DEFAULT_VIEWPORT,
@@ -262,6 +315,11 @@ export const useUiStore = create<UiState>()((set, get) => ({
       cropTargetId: null,
       recorderOpen: false,
       paletteTargetId: null,
+      selectedConnectorId: null,
+      dropLine: null,
+      connectorDraft: null,
+      documentId: null,
+      moveToOpen: false,
     });
   },
 }));

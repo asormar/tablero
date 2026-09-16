@@ -17,9 +17,12 @@ import * as Y from 'yjs';
 
 import {
   type CanvasElement,
+  type Connector,
+  type ConnectorStore,
   type ElementMap,
   type Rect,
   type Size,
+  connectorsOf,
   createBoardDoc,
   createUndoManager,
   elementsOf,
@@ -32,7 +35,8 @@ import {
 
 import { fetchBoardDocument } from '@/api/boards';
 import { pingApi } from '@/api/client';
-import { type ElementLayout, layoutOf, targetRects } from '@/lib/layout';
+import { readConnector } from '@/lib/connectors';
+import { type ElementLayout, targetRects, topLevelLayoutOf } from '@/lib/layout';
 import { type TextBlock, textBlocksOf } from '@/lib/textBlocks';
 
 import { loadLocalDocument, startLocalPersistence } from './localPersistence';
@@ -69,7 +73,7 @@ export const DEFAULT_COLLAB_URL = 'ws://localhost:8787/collab';
 export const BROWSER_AUTH_TRIGGER = 'cookie-session';
 
 
-const POSITIONAL_KEYS = new Set(['x', 'y', 'width', 'height']);
+const POSITIONAL_KEYS = new Set(['x', 'y', 'width', 'height', 'parentId']);
 
 type CacheEntry<T> = { version: number; value: T };
 
@@ -83,11 +87,16 @@ export class BoardSession {
 
   private readonly elementStore: Y.Map<ElementMap>;
   private readonly order: Y.Array<string>;
+  private readonly connectorStore: ConnectorStore;
   private readonly elementVersions = new Map<string, number>();
   private readonly elementCache = new Map<string, CacheEntry<CanvasElement | null>>();
+  private readonly connectorCache = new Map<string, CacheEntry<Connector | null>>();
+  private connectorVersion = 0;
+  private connectorsCache: CacheEntry<Connector[]> = { version: -1, value: [] };
   private readonly textCache = new Map<string, CacheEntry<TextBlock[]>>();
   private readonly elementListeners = new Map<string, Set<() => void>>();
   private readonly layoutListeners = new Set<() => void>();
+  private readonly connectorListeners = new Set<() => void>();
   private readonly statusListeners = new Set<() => void>();
   private readonly undoListeners = new Set<() => void>();
   private readonly fragmentWatches = new Map<string, { fragment: Y.XmlFragment; handler: () => void }>();
@@ -114,6 +123,7 @@ export class BoardSession {
     this.doc = createBoardDoc();
     this.elementStore = elementsOf(this.doc);
     this.order = orderOf(this.doc);
+    this.connectorStore = connectorsOf(this.doc);
     this.undoManager = createUndoManager(this.doc, {
       trackedOrigins: new Set([localOrigin]),
       captureTimeout: 400,
@@ -130,6 +140,7 @@ export class BoardSession {
 
     this.elementStore.observeDeep(this.onStoreDeep);
     this.order.observe(this.onOrderChange);
+    this.connectorStore.observeDeep(this.onConnectorsChange);
     this.doc.on('afterTransaction', this.onAfterTransaction);
     this.undoManager.on('stack-item-added', this.onUndoStackChange);
     this.undoManager.on('stack-item-popped', this.onUndoStackChange);
@@ -261,6 +272,7 @@ export class BoardSession {
     this.provider = null;
     this.elementStore.unobserveDeep(this.onStoreDeep);
     this.order.unobserve(this.onOrderChange);
+    this.connectorStore.unobserveDeep(this.onConnectorsChange);
     this.doc.off('afterTransaction', this.onAfterTransaction);
     this.undoManager.off('stack-item-added', this.onUndoStackChange);
     this.undoManager.off('stack-item-popped', this.onUndoStackChange);
@@ -274,6 +286,7 @@ export class BoardSession {
     for (const listeners of this.elementListeners.values()) listeners.clear();
     this.elementListeners.clear();
     this.layoutListeners.clear();
+    this.connectorListeners.clear();
     this.statusListeners.clear();
     this.undoListeners.clear();
   }
@@ -316,10 +329,40 @@ export class BoardSession {
     return fragment;
   }
 
+  // --- Conectores ------------------------------------------------------------
+
+  /** Conectores del documento (cacheado hasta el próximo cambio). */
+  getConnectors(): Connector[] {
+    if (this.connectorsCache.version === this.connectorVersion) return this.connectorsCache.value;
+    const value: Connector[] = [];
+    this.connectorStore.forEach((map) => {
+      const connector = readConnector(map);
+      if (connector) value.push(connector);
+    });
+    this.connectorsCache = { version: this.connectorVersion, value };
+    return value;
+  }
+
+  getConnector(id: string): Connector | null {
+    const cached = this.connectorCache.get(id);
+    if (cached && cached.version === this.connectorVersion) return cached.value;
+    const map = this.connectorStore.get(id);
+    const value = map ? readConnector(map) : null;
+    this.connectorCache.set(id, { version: this.connectorVersion, value });
+    return value;
+  }
+
+  subscribeConnectors(listener: () => void): () => void {
+    this.connectorListeners.add(listener);
+    return () => {
+      this.connectorListeners.delete(listener);
+    };
+  }
+
   /** Layout completo en orden de apilado (cacheado hasta el próximo cambio). */
   getLayout(): ElementLayout[] {
     if (this.layoutCacheVersion === this.layoutVersion) return this.layoutCache;
-    this.layoutCache = layoutOf(getOrderedElements(this.doc));
+    this.layoutCache = topLevelLayoutOf(getOrderedElements(this.doc));
     this.layoutCacheVersion = this.layoutVersion;
     return this.layoutCache;
   }
@@ -462,6 +505,12 @@ export class BoardSession {
 
   private readonly onOrderChange = (): void => {
     this.invalidateLayout();
+  };
+
+  private readonly onConnectorsChange = (): void => {
+    this.connectorVersion += 1;
+    this.connectorCache.clear();
+    for (const listener of this.connectorListeners) listener();
   };
 
   private readonly onAfterTransaction = (transaction: Y.Transaction): void => {

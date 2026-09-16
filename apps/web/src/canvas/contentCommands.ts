@@ -24,6 +24,7 @@ import {
 
 import { type PaletteEntry } from '@/lib/palette';
 import type { BoardSession } from '@/collab/BoardSession';
+import { createChildInColumn } from '@/canvas/columnCommands';
 import { useAppStore } from '@/state/appStore';
 
 function currentUserId(): string {
@@ -83,6 +84,32 @@ export function createAssetCards(session: BoardSession, specs: readonly AssetCar
 export function createAssetCardAt(session: BoardSession, kind: AssetKind, position: Point, size: Size): string {
   const [id] = createAssetCards(session, [{ kind, position, size }]);
   return id ?? '';
+}
+
+/**
+ * Tarjetas de un lote de archivos dentro de una columna (kanban). La posición
+ * libre no importa: la columna las apila; se conservan las medidas naturales.
+ */
+export function createAssetCardsInColumn(
+  session: BoardSession,
+  columnId: string,
+  specs: readonly AssetCardSpec[],
+): string[] {
+  if (specs.length === 0) return [];
+  const ids: string[] = [];
+  session.doc.transact(() => {
+    for (const spec of specs) {
+      const init: Record<string, unknown> = { assetId: '', width: Math.round(spec.size.width) };
+      if (spec.natural) {
+        init['naturalWidth'] = Math.round(spec.natural.width);
+        init['naturalHeight'] = Math.round(spec.natural.height);
+      }
+      if (spec.kind === 'file') init['height'] = DEFAULT_SIZES.file.height ?? 72;
+      const id = createChildInColumn(session, columnId, spec.kind, init);
+      if (id) ids.push(id);
+    }
+  }, session.origin);
+  return ids;
 }
 
 /** Completa una tarjeta con el archivo ya subido (una transacción). */

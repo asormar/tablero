@@ -15,7 +15,7 @@ import {
   useSyncExternalStore,
 } from 'react';
 
-import type { CanvasElement } from '@tablero/shared';
+import type { CanvasElement, Connector } from '@tablero/shared';
 
 import type { TextBlock } from '@/lib/textBlocks';
 import type { ElementLayout } from '@/lib/layout';
@@ -64,6 +64,17 @@ export function useSessionLayout(): ElementLayout[] {
     [session],
   );
   const getSnapshot = useCallback(() => session.getLayout(), [session]);
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+}
+
+/** Conectores del documento (flechas y líneas). */
+export function useSessionConnectors(): Connector[] {
+  const session = useSession();
+  const subscribe = useCallback(
+    (onStoreChange: () => void) => session.subscribeConnectors(onStoreChange),
+    [session],
+  );
+  const getSnapshot = useCallback(() => session.getConnectors(), [session]);
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
 

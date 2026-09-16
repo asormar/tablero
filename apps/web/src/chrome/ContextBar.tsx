@@ -22,6 +22,7 @@ import {
   BetweenHorizontalStart,
   BetweenVerticalStart,
   CopyPlus,
+  FolderInput,
   Lock,
   LockOpen,
   Palette,
@@ -178,6 +179,15 @@ export function ContextBar({ session }: { session: BoardSession }): JSX.Element 
       ) : null}
 
       <span className="ctxbar__sep" />
+
+      <button
+        type="button"
+        className="icon-button"
+        title="Mover a otro tablero…"
+        onClick={() => useUiStore.getState().setMoveToOpen(true)}
+      >
+        <FolderInput size={15} />
+      </button>
 
       <button
         type="button"

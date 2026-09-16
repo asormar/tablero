@@ -7,7 +7,7 @@
  * el arrastre se pueda resolver escribiendo directamente en el DOM.
  */
 
-import { memo, useLayoutEffect, useRef } from 'react';
+import { memo, useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 
 import { Lock } from 'lucide-react';
@@ -41,11 +41,15 @@ export type CanvasElementViewProps = {
   showHandles: boolean;
 };
 
+/** Puntos de anclaje para crear conectores (aparecen al pasar el ratón). */
+const ANCHOR_SIDES = ['left', 'right', 'top', 'bottom'] as const;
+
 function CanvasElementViewBase(props: CanvasElementViewProps): JSX.Element | null {
   if (isDevBuild) countElementRender();
   const { session, id, type } = props;
   const element = useSessionElement(id);
   const ref = useRef<HTMLDivElement | null>(null);
+  const [hovered, setHovered] = useState(false);
 
   useLayoutEffect(() => {
     const node = ref.current;
@@ -94,6 +98,8 @@ function CanvasElementViewBase(props: CanvasElementViewProps): JSX.Element | nul
       style={style}
       role="group"
       aria-label={type}
+      onPointerEnter={() => setHovered(true)}
+      onPointerLeave={() => setHovered(false)}
     >
       <div className="el__content">
         <ElementContent
@@ -107,6 +113,18 @@ function CanvasElementViewBase(props: CanvasElementViewProps): JSX.Element | nul
         <span className="el__lock" title="Posición bloqueada">
           <Lock size={12} />
         </span>
+      ) : null}
+      {!props.simplified && !element.locked && (hovered || props.selected) ? (
+        <>
+          {ANCHOR_SIDES.map((side) => (
+            <span
+              key={side}
+              className={`el__anchor el__anchor--${side}`}
+              data-anchor={side}
+              title="Arrastrar para conectar con otra tarjeta"
+            />
+          ))}
+        </>
       ) : null}
       {props.showHandles && !element.locked ? (
         <>

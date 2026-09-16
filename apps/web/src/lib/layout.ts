@@ -51,6 +51,19 @@ export function layoutOf(elements: CanvasElement[]): ElementLayout[] {
   return result;
 }
 
+/**
+ * Elementos que el lienzo coloca por su cuenta: los hijos de una columna no
+ * (los ubica el flujo de la columna), así que quedan fuera del layout absoluto.
+ */
+export function topLevelElements(elements: CanvasElement[]): CanvasElement[] {
+  return elements.filter((element) => !element.parentId);
+}
+
+/** Layout de los elementos sueltos del lienzo. */
+export function topLevelLayoutOf(elements: CanvasElement[]): ElementLayout[] {
+  return layoutOf(topLevelElements(elements));
+}
+
 /** Altura efectiva: la del documento si está fijada, si no la medida en el DOM. */
 export function effectiveHeight(item: ElementLayout, measured?: ReadonlyMap<string, number>): number {
   if (!item.autoHeight) return item.height;

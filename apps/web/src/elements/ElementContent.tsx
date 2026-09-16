@@ -15,8 +15,14 @@ import { useAppStore } from '@/state/appStore';
 import { blocksToPlainText, firstLineOf, isTextEmpty } from '@/lib/textBlocks';
 
 import { AudioCard, FileCard, ImageCard, VideoCard } from './cards/AssetCards';
+import { ColumnCard } from './cards/ColumnCard';
+import { DocumentCard } from './cards/DocumentCard';
 import { LinkCard } from './cards/LinkCard';
+import { MapCard } from './cards/MapCard';
+import { SketchCard } from './cards/SketchCard';
 import { SwatchCard } from './cards/SwatchCard';
+import { TableCard } from './cards/TableCard';
+import { TodoCard } from './cards/TodoCard';
 import { TextBlocks } from './renderBlocks';
 
 // El editor (TipTap + ProseMirror) solo se necesita mientras se edita una nota:
@@ -70,6 +76,18 @@ export function ElementContent({ session, element, editing, simplified }: Elemen
           simplified={simplified}
         />
       );
+    case 'document':
+      return <DocumentCard session={session} element={element} simplified={simplified} />;
+    case 'todo':
+      return <TodoCard session={session} element={element} simplified={simplified} />;
+    case 'column':
+      return <ColumnCard session={session} element={element} simplified={simplified} editing={editing} />;
+    case 'table':
+      return <TableCard session={session} element={element} simplified={simplified} />;
+    case 'sketch':
+      return <SketchCard session={session} element={element} simplified={simplified} />;
+    case 'map':
+      return <MapCard session={session} element={element} simplified={simplified} />;
     case 'board':
       return <BoardCard element={element} simplified={simplified} />;
     case 'image':

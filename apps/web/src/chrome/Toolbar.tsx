@@ -39,7 +39,7 @@ import {
   spawnPoint,
 } from '@/canvas/commands';
 import { SWATCH_DEFAULT_HEX, createLinkCardAt, createSwatchAt } from '@/canvas/contentCommands';
-import { HEADING_MIME, TOOL_MIME } from '@/canvas/toolDrop';
+import { HEADING_MIME, TOOL_MIME, createToolAt } from '@/canvas/toolDrop';
 import { attachFilesToBoard } from '@/canvas/uploadController';
 import type { BoardSession } from '@/collab/BoardSession';
 import { DEFAULT_SIZES } from '@tablero/shared';
@@ -56,7 +56,7 @@ type Tool = {
   hint: string;
 };
 
-/** Herramientas de contenido de la fase 2 (activas). */
+/** Tipos de contenido de la fase 2 (activos). */
 const CONTENT_TOOLS: Tool[] = [
   { type: 'image', label: 'Imagen', icon: <ImageIcon size={18} />, hint: 'Imagen — clic para elegir archivos' },
   { type: 'video', label: 'Vídeo', icon: <Video size={18} />, hint: 'Vídeo — clic para elegir archivos' },
@@ -66,14 +66,14 @@ const CONTENT_TOOLS: Tool[] = [
   { type: 'swatch', label: 'Muestra', icon: <Palette size={18} />, hint: 'Muestra de color — clic para crear una' },
 ];
 
-/** Tipos de fases siguientes: siguen deshabilitados. */
-const FUTURE_TOOLS: Tool[] = [
-  { type: 'document', label: 'Documento', icon: <FileText size={18} />, hint: 'Documento' },
-  { type: 'todo', label: 'Tareas', icon: <ListChecks size={18} />, hint: 'Tareas' },
-  { type: 'column', label: 'Columna', icon: <Columns3 size={18} />, hint: 'Columna' },
-  { type: 'table', label: 'Tabla', icon: <TableIcon size={18} />, hint: 'Tabla' },
-  { type: 'sketch', label: 'Dibujo', icon: <PenTool size={18} />, hint: 'Dibujo' },
-  { type: 'map', label: 'Mapa', icon: <MapIcon size={18} />, hint: 'Mapa' },
+/** Tipos de la fase 3 (estructura y organización). */
+const STRUCTURE_TOOLS: Tool[] = [
+  { type: 'document', label: 'Documento', icon: <FileText size={18} />, hint: 'Documento — doble clic para abrirlo a página completa' },
+  { type: 'todo', label: 'Tareas', icon: <ListChecks size={18} />, hint: 'Lista de tareas — Enter, Tab y fechas de vencimiento' },
+  { type: 'column', label: 'Columna', icon: <Columns3 size={18} />, hint: 'Columna (C) — varias en fila forman un kanban' },
+  { type: 'table', label: 'Tabla', icon: <TableIcon size={18} />, hint: 'Tabla editable — pega desde Excel o Google Sheets' },
+  { type: 'sketch', label: 'Dibujo', icon: <PenTool size={18} />, hint: 'Dibujo a mano alzada — lápiz, rotulador, goma' },
+  { type: 'map', label: 'Mapa', icon: <MapIcon size={18} />, hint: 'Mapa con marcadores — busca lugares por nombre' },
 ];
 
 const ASSET_KIND_BY_TYPE: Partial<Record<ElementType, AssetKind>> = {
@@ -166,7 +166,11 @@ export function Toolbar({ session }: ToolbarProps): JSX.Element {
         addLink();
         return;
       }
-      addSwatch();
+      if (tool.type === 'swatch') {
+        addSwatch();
+        return;
+      }
+      void createToolAt(session, tool.type, spawnPoint(), headingSize, currentBoardId);
     };
 
     return (
@@ -249,20 +253,8 @@ export function Toolbar({ session }: ToolbarProps): JSX.Element {
         </button>
       </div>
 
-      <div className="toolbar__group toolbar__group--future" aria-label="Próximamente">
-        {FUTURE_TOOLS.map((tool) => (
-          <button
-            key={tool.type}
-            type="button"
-            className="toolbar__tool"
-            disabled
-            title={`${tool.hint} — próximamente`}
-            aria-label={`${tool.hint} (próximamente)`}
-          >
-            {tool.icon}
-            <span className="toolbar__label">{tool.label}</span>
-          </button>
-        ))}
+      <div className="toolbar__group toolbar__group--structure" aria-label="Estructura">
+        {STRUCTURE_TOOLS.map(renderContentTool)}
       </div>
 
       {isDevBuild ? (

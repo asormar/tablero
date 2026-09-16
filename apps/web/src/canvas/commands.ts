@@ -35,6 +35,7 @@ import {
   patchElements,
   removeElements,
   resizeElements,
+  scaleStroke,
   sendToBack,
   serializeForClipboard,
   snapPointToGrid,
@@ -411,6 +412,21 @@ export function resizeSelectionWidth(
       patchElement(session.doc, change.id, { x: change.x, width: change.width }, session.origin, {
         touch: false,
       });
+      // El dibujo se escala con la tarjeta: si no, el trazo queda deformado.
+      if (element.type === 'sketch' && element.width > 0) {
+        const scale = change.width / element.width;
+        const height = element.height ?? DEFAULT_SIZES.sketch.height ?? 220;
+        patchElement(
+          session.doc,
+          change.id,
+          {
+            strokes: (element.strokes ?? []).map((stroke) => scaleStroke(stroke, scale, scale)),
+            height: Math.max(48, Math.round(height * scale)),
+          },
+          session.origin,
+          { touch: false },
+        );
+      }
     }
     resizeElements(
       session.doc,
@@ -466,6 +482,19 @@ export function viewportCenter(): Point {
 /** Punto de mundo para un elemento nuevo creado desde el teclado. */
 export function spawnPoint(): Point {
   return snapPointToGrid(viewportCenter(), GRID_SIZE);
+}
+
+/**
+ * Abre el editor de una tarjeta (doble clic). El texto enriquecido necesita su
+ * `Y.XmlFragment` desde el primer momento; las tarjetas que no son de texto no
+ * tienen edición en línea.
+ */
+export function editElement(session: BoardSession, id: string): void {
+  const element = session.getElement(id);
+  if (!element) return;
+  if (!isRichTextType(element.type)) return;
+  session.ensureTextFragment(id);
+  useUiStore.getState().setEditing(id);
 }
 
 /** Quita de la selección los elementos que ya no existen (tras deshacer). */

@@ -1,0 +1,1350 @@
+/* ===========================================================================
+   Tablero — fase 3 (estructura y organización)
+   Columnas y kanban, listas de tareas, conectores, tablas, documento largo,
+   dibujo a mano alzada y mapas. Mismos tokens que global.css.
+   =========================================================================== */
+
+/* --- Utilidades compartidas ----------------------------------------------- */
+
+/* La barra lateral creció con la fase 3: los botones de estructura van algo más
+   compactos para que entren sin desplazarse, y el raíl no se desborda a lo
+   ancho (el lienzo empieza justo a su derecha). */
+.toolbar {
+  overflow-x: hidden;
+}
+
+.toolbar__group--structure .toolbar__tool {
+  padding: 6px 4px;
+  min-height: 40px;
+}
+
+.toolbar__group--structure .toolbar__label {
+  font-size: 9.5px;
+}
+
+.icon-button--small {
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+}
+
+.canvas.is-connecting {
+  cursor: crosshair;
+}
+
+/* Las tarjetas que se están arrastrando no deben interceptar el puntero: debajo
+   puede haber una columna o una tarjeta de tablero que define el destino. */
+.el.is-dragging {
+  pointer-events: none;
+}
+
+/* Zona de soltado resaltada (columna, tarjeta de tablero o miga de pan). */
+.is-drop-target {
+  box-shadow: 0 0 0 2px var(--accent), var(--shadow-card-hover) !important;
+}
+
+/* Línea de inserción del kanban y de las listas de tareas (pantalla). */
+.drop-line {
+  position: absolute;
+  height: 2px;
+  z-index: 41;
+  border-radius: 2px;
+  background: var(--accent);
+  box-shadow: 0 0 0 1px rgba(47, 111, 201, 0.25);
+  pointer-events: none;
+}
+
+/* --- Conectores ------------------------------------------------------------ */
+
+.conn-layer {
+  position: absolute;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.conn__halo {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 14;
+}
+
+.conn__line {
+  fill: none;
+}
+
+.conn.is-selected .conn__line {
+  stroke: var(--accent) !important;
+  stroke-width: 3;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.2));
+}
+
+.conn__arrow {
+  stroke: none;
+}
+
+.conn-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  z-index: 6;
+}
+
+.conn__label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  min-height: 18px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 1.2;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-card);
+  pointer-events: auto;
+  cursor: pointer;
+  white-space: nowrap;
+  max-width: 240px;
+  overflow: hidden;
+}
+
+.conn__label.is-empty {
+  min-width: 14px;
+  min-height: 14px;
+  padding: 0;
+  color: var(--text-faint);
+  background: var(--surface-2);
+  border-style: dashed;
+  opacity: 0.7;
+}
+
+.conn__label.is-empty::after {
+  content: '＋';
+  font-size: 10px;
+  opacity: 0.8;
+}
+
+.conn__label.is-empty .conn__label-text {
+  display: none;
+}
+
+.conn__label:hover,
+.conn__label.is-selected {
+  border-color: var(--accent);
+  opacity: 1;
+}
+
+.conn__label-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.conn__label-input {
+  width: 120px;
+  border: 0;
+  outline: none;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  text-align: center;
+}
+
+.conn__handle {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 2px solid var(--accent);
+  box-shadow: var(--shadow-card);
+  pointer-events: auto;
+  cursor: crosshair;
+}
+
+.overlay--connector {
+  z-index: 22;
+}
+
+.conn-draft {
+  stroke: var(--accent);
+  stroke-width: 1.6;
+  stroke-dasharray: 5 4;
+}
+
+.conn-draft__end {
+  fill: var(--accent);
+}
+
+/* Puntos de anclaje de las tarjetas (aparecen al pasar el ratón). */
+.el__anchor {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--surface);
+  border: 2px solid var(--accent);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+  cursor: crosshair;
+  z-index: 3;
+}
+
+.el__anchor:hover {
+  transform: scale(1.25);
+}
+
+.el__anchor--left {
+  left: -6px;
+  top: 50%;
+  margin-top: -5px;
+}
+
+.el__anchor--right {
+  right: -6px;
+  top: 50%;
+  margin-top: -5px;
+}
+
+.el__anchor--top {
+  top: -6px;
+  left: 50%;
+  margin-left: -5px;
+}
+
+.el__anchor--bottom {
+  bottom: -6px;
+  left: 50%;
+  margin-left: -5px;
+}
+
+.popover--colors {
+  width: max-content;
+}
+
+.ctxbar--connector {
+  z-index: 45;
+}
+
+.ctxbar__value {
+  min-width: 16px;
+  text-align: center;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+/* --- Columnas y kanban ---------------------------------------------------- */
+
+.el--column {
+  padding: 0;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+}
+
+.col {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  min-height: 64px;
+}
+
+.col__head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.col__toggle {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  color: var(--text-muted);
+}
+
+.col__toggle:hover {
+  background: var(--surface-3);
+}
+
+.col__count {
+  min-width: 18px;
+  padding: 1px 5px;
+  border-radius: 8px;
+  font-size: 10px;
+  text-align: center;
+  color: var(--text-muted);
+  background: var(--surface-3);
+}
+
+.col__title {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  font: inherit;
+  font-weight: 600;
+  font-size: 13px;
+  color: inherit;
+  background: transparent;
+}
+
+.col__title::placeholder {
+  font-weight: 500;
+  color: var(--text-faint);
+}
+
+.col__actions {
+  display: flex;
+  gap: 2px;
+  opacity: 0;
+  transition: opacity var(--dur-fast) var(--ease);
+}
+
+.col:hover .col__actions,
+.el--column.is-selected .col__actions {
+  opacity: 1;
+}
+
+.col__body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  min-height: 48px;
+}
+
+.col__child {
+  position: relative;
+}
+
+.col__child > .el,
+.col__card {
+  position: static;
+  width: 100%;
+  transform: none;
+}
+
+.col__card {
+  padding: 8px 9px;
+}
+
+.col__card.el--todo {
+  padding: 6px 7px;
+}
+
+.col__empty {
+  display: grid;
+  place-items: center;
+  gap: 2px;
+  padding: 14px 6px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 4px;
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
+.col__empty p {
+  margin: 0;
+}
+
+.col__empty-icon {
+  line-height: 1;
+}
+
+/* --- Listas de tareas ----------------------------------------------------- */
+
+.el--todo {
+  padding: 9px 10px;
+}
+
+.todo {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.todo__head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.todo__title {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  font: inherit;
+  font-weight: 600;
+  background: transparent;
+  color: inherit;
+}
+
+.todo__title::placeholder {
+  font-weight: 500;
+  color: var(--text-faint);
+}
+
+.todo__progress {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.todo__bar {
+  flex: 1;
+  height: 4px;
+  border-radius: 2px;
+  background: var(--surface-3);
+  overflow: hidden;
+}
+
+.todo__bar-fill {
+  display: block;
+  height: 100%;
+  background: var(--accent);
+  transition: width var(--dur) var(--ease);
+}
+
+.todo__progress-label {
+  font-size: 10px;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.todo__rows {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.todo__row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 2px;
+  border-radius: 3px;
+  min-height: 22px;
+}
+
+.todo__row:hover {
+  background: var(--surface-2);
+}
+
+.todo__row--child {
+  margin-left: 18px;
+}
+
+.todo__row.is-dragging {
+  opacity: 0.45;
+}
+
+.todo__handle {
+  display: grid;
+  place-items: center;
+  width: 14px;
+  height: 18px;
+  color: var(--text-faint);
+  opacity: 0;
+  cursor: grab;
+}
+
+.todo__row:hover .todo__handle {
+  opacity: 1;
+}
+
+.todo__check {
+  display: grid;
+  place-items: center;
+}
+
+.todo__check input {
+  width: 13px;
+  height: 13px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.todo__text {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  font: inherit;
+  font-size: 12.5px;
+  color: inherit;
+  background: transparent;
+}
+
+.todo__row.is-done .todo__text {
+  color: var(--text-faint);
+  text-decoration: line-through;
+}
+
+.todo__due {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 1px 5px;
+  border-radius: 8px;
+  font-size: 10px;
+  color: var(--text-muted);
+  background: var(--surface-3);
+  white-space: nowrap;
+}
+
+.todo__due--empty {
+  opacity: 0;
+  background: transparent;
+}
+
+.todo__row:hover .todo__due--empty {
+  opacity: 1;
+}
+
+.todo__due.is-overdue,
+.todo__row.is-overdue .todo__due {
+  color: #fff;
+  background: var(--danger);
+}
+
+.todo__due-editor {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.todo__due-input {
+  width: 84px;
+  padding: 1px 4px;
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  font: inherit;
+  font-size: 11px;
+  background: var(--surface);
+  color: var(--text);
+  outline: none;
+}
+
+.todo__chip {
+  padding: 1px 4px;
+  border-radius: 3px;
+  font-size: 10px;
+  color: var(--text-muted);
+  background: var(--surface-3);
+}
+
+.todo__chip:hover {
+  color: var(--accent);
+}
+
+.todo__due-clear,
+.todo__remove {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  color: var(--text-faint);
+  opacity: 0;
+}
+
+.todo__row:hover .todo__due-clear,
+.todo__row:hover .todo__remove {
+  opacity: 1;
+}
+
+.todo__remove:hover {
+  color: var(--danger);
+  background: var(--surface-3);
+}
+
+.todo__add {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 4px;
+  border-radius: 3px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  text-align: left;
+}
+
+.todo__add:hover {
+  color: var(--accent);
+  background: var(--surface-2);
+}
+
+.todo__empty {
+  margin: 0;
+  padding: 4px 2px;
+  font-size: 11.5px;
+  font-style: italic;
+  color: var(--text-faint);
+}
+
+/* --- Tablas --------------------------------------------------------------- */
+
+.el--table {
+  padding: 6px;
+}
+
+.tbl {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.tbl__toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 0 2px;
+}
+
+.tbl__title {
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+.tbl__tools {
+  display: flex;
+  gap: 2px;
+}
+
+.tbl__scroll {
+  overflow: auto;
+  max-height: 320px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+}
+
+.tbl__grid {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.tbl__head {
+  position: relative;
+  padding: 0;
+  background: var(--surface-2);
+  border-bottom: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  text-align: left;
+  vertical-align: middle;
+}
+
+.tbl__head--tools {
+  width: 42px;
+}
+
+.tbl__col-handle {
+  position: absolute;
+  left: 1px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: grid;
+  place-items: center;
+  width: 12px;
+  height: 18px;
+  color: var(--text-faint);
+  cursor: grab;
+  opacity: 0;
+}
+
+.tbl__head:hover .tbl__col-handle {
+  opacity: 1;
+}
+
+.tbl__col-title {
+  width: 100%;
+  padding: 4px 4px 4px 14px;
+  border: 0;
+  outline: none;
+  font: inherit;
+  font-size: 11.5px;
+  font-weight: 600;
+  color: inherit;
+  background: transparent;
+}
+
+.tbl__col-menu {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  opacity: 0;
+}
+
+.tbl__head:hover .tbl__col-menu {
+  opacity: 1;
+}
+
+.tbl__col-resize {
+  position: absolute;
+  right: -3px;
+  top: 0;
+  bottom: 0;
+  width: 7px;
+  cursor: col-resize;
+  z-index: 2;
+}
+
+.tbl__cell {
+  padding: 0;
+  border-bottom: 1px solid var(--border);
+  border-right: 1px solid var(--border);
+  vertical-align: middle;
+}
+
+.tbl__cell--tools {
+  width: 42px;
+  white-space: nowrap;
+  padding: 0 2px;
+}
+
+.tbl__input {
+  width: 100%;
+  padding: 4px 6px;
+  border: 0;
+  outline: none;
+  font: inherit;
+  font-size: 12px;
+  color: inherit;
+  background: transparent;
+}
+
+.tbl__input:focus {
+  background: var(--accent-soft);
+}
+
+.tbl__cell--number .tbl__input,
+.tbl__cell--sum {
+  text-align: right;
+}
+
+.tbl__cell--date .tbl__input {
+  white-space: nowrap;
+}
+
+.tbl__check {
+  width: 100%;
+  padding: 4px;
+  font-size: 12px;
+  color: var(--accent);
+  text-align: center;
+}
+
+.tbl__check.is-on {
+  font-weight: 700;
+}
+
+.tbl__row-handle {
+  display: inline-grid;
+  place-items: center;
+  width: 12px;
+  height: 18px;
+  color: var(--text-faint);
+  cursor: grab;
+  opacity: 0;
+}
+
+tr:hover .tbl__row-handle {
+  opacity: 1;
+}
+
+.tbl__sums .tbl__cell--sum {
+  padding: 3px 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--surface-2);
+}
+
+.tbl__footer {
+  display: flex;
+  gap: 4px;
+}
+
+.tbl__add {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.tbl__add:hover {
+  color: var(--accent);
+  background: var(--surface-2);
+}
+
+.popover--table-menu {
+  /* Se dibuja en la raíz de la tarjeta (fuera del contenedor con scroll) y se
+     coloca con `left`/`top` calculados desde el botón de la cabecera. */
+  top: auto;
+  left: auto;
+  transform: none;
+  min-width: 190px;
+  z-index: 30;
+}
+
+/* --- Documento (tarjeta y página) ---------------------------------------- */
+
+.el--document {
+  padding: 10px 12px;
+}
+
+.doc-card {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.doc-card__head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+.doc-card__badge {
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.doc-card__words {
+  margin-left: auto;
+}
+
+.doc-card__title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.25;
+}
+
+.doc-card__excerpt {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-muted);
+  display: -webkit-box;
+  -webkit-line-clamp: 5;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.doc-page {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(20, 20, 22, 0.42);
+  backdrop-filter: blur(2px);
+}
+
+.doc-page__panel {
+  display: flex;
+  flex-direction: column;
+  width: min(1180px, 100%);
+  height: min(92vh, 900px);
+  background: var(--surface);
+  border-radius: var(--radius-ui);
+  box-shadow: var(--shadow-pop);
+  overflow: hidden;
+}
+
+.doc-page__bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.doc-page__brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+.doc-page__tools {
+  display: flex;
+  gap: 2px;
+  margin-left: 8px;
+}
+
+.doc-page__words {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.doc-page__body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 240px;
+  min-height: 0;
+  flex: 1;
+}
+
+.doc-page__sheet {
+  overflow: auto;
+  padding: 32px 40px 80px;
+}
+
+.doc-page__content.rt-content {
+  max-width: 720px;
+  margin: 0 auto;
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+.doc-page__content.rt-content h1 {
+  font-size: 26px;
+  margin: 1.2em 0 0.4em;
+}
+
+.doc-page__content.rt-content h2 {
+  font-size: 20px;
+  margin: 1.1em 0 0.35em;
+}
+
+.doc-page__content.rt-content h3 {
+  font-size: 17px;
+  margin: 1em 0 0.3em;
+}
+
+.doc-page__content.rt-content img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 4px;
+  box-shadow: var(--shadow-card);
+}
+
+.doc-page__content.rt-content hr {
+  border: 0;
+  border-top: 1px solid var(--border-strong);
+  margin: 1.6em 0;
+}
+
+.doc-page__content.rt-content table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.8em 0;
+  font-size: 14px;
+}
+
+.doc-page__content.rt-content th,
+.doc-page__content.rt-content td {
+  border: 1px solid var(--border);
+  padding: 4px 8px;
+  vertical-align: top;
+}
+
+.doc-page__content.rt-content th {
+  background: var(--surface-2);
+  text-align: left;
+}
+
+.doc-page__loading {
+  padding: 24px 0;
+  font-size: 13px;
+  color: var(--text-faint);
+}
+
+.doc-page__outline {
+  overflow: auto;
+  padding: 20px 16px;
+  border-left: 1px solid var(--border);
+  background: var(--surface-2);
+}
+
+.doc-page__outline-title {
+  margin: 0 0 8px;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-faint);
+}
+
+.doc-page__outline-empty {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.4;
+  color: var(--text-faint);
+}
+
+.doc-page__outline-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.doc-page__outline-item button {
+  width: 100%;
+  padding: 3px 6px;
+  border-radius: 3px;
+  font-size: 12px;
+  text-align: left;
+  color: var(--text-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.doc-page__outline-item button:hover {
+  color: var(--accent);
+  background: var(--surface-3);
+}
+
+.doc-page__outline-item--h2 button {
+  padding-left: 14px;
+}
+
+.doc-page__outline-item--h3 button {
+  padding-left: 24px;
+  font-size: 11.5px;
+}
+
+.doc-page__empty {
+  padding: 24px;
+  font-size: 13px;
+  color: var(--text-muted);
+}
+
+/* --- Dibujo --------------------------------------------------------------- */
+
+.el--sketch {
+  padding: 0;
+  overflow: hidden;
+}
+
+.sketch {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+}
+
+.sketch__tools {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+  flex-wrap: wrap;
+}
+
+.sketch__sep {
+  width: 1px;
+  height: 16px;
+  margin: 0 3px;
+  background: var(--border);
+}
+
+.sketch__colors {
+  display: flex;
+  gap: 2px;
+}
+
+.sketch__color {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  border: 1px solid var(--border);
+}
+
+.sketch__color.is-active {
+  box-shadow: 0 0 0 2px var(--accent);
+}
+
+.sketch__size {
+  height: 22px;
+  padding: 0 2px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  font: inherit;
+  font-size: 11px;
+  color: inherit;
+  background: var(--surface);
+}
+
+.sketch__bg {
+  display: block;
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  border: 1px solid var(--border-strong);
+  background: repeating-linear-gradient(45deg, var(--surface-3) 0 3px, transparent 3px 6px);
+}
+
+.sketch__bg.is-white {
+  background: #fff;
+}
+
+.sketch__canvas {
+  flex: 1;
+  width: 100%;
+  min-height: 0;
+  cursor: crosshair;
+}
+
+.sketch__canvas.is-white {
+  background: #fff;
+}
+
+.sketch__hint {
+  position: absolute;
+  left: 50%;
+  bottom: 10px;
+  margin: 0;
+  transform: translateX(-50%);
+  font-size: 11px;
+  color: var(--text-faint);
+  pointer-events: none;
+}
+
+.sketch {
+  position: relative;
+}
+
+/* --- Mapas ---------------------------------------------------------------- */
+
+.el--map {
+  padding: 0;
+  overflow: hidden;
+}
+
+/* El contenedor de Leaflet necesita una altura real: sin esto el mapa se
+   queda con la altura del contenido y las teselas no tienen dónde dibujarse. */
+.el--map .el__content {
+  height: 100%;
+}
+
+.map {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  position: relative;
+}
+
+.map__tools {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 4px 6px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-2);
+  z-index: 2;
+}
+
+.map__search {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+  padding: 1px 5px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--surface);
+  color: var(--text-faint);
+}
+
+.map__search-input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  font: inherit;
+  font-size: 11.5px;
+  color: inherit;
+  background: transparent;
+}
+
+.map__count {
+  margin-left: 2px;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.map__results {
+  position: absolute;
+  top: 32px;
+  left: 6px;
+  right: 6px;
+  z-index: 5;
+  max-height: 168px;
+  overflow: auto;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  box-shadow: var(--shadow-pop);
+}
+
+.map__result {
+  display: flex;
+  align-items: flex-start;
+  gap: 5px;
+  width: 100%;
+  padding: 5px 7px;
+  font-size: 11.5px;
+  text-align: left;
+  color: var(--text);
+  border-bottom: 1px solid var(--border);
+}
+
+.map__result:hover {
+  background: var(--surface-2);
+}
+
+.map__canvas {
+  flex: 1;
+  min-height: 0;
+  background: var(--surface-3);
+}
+
+.map__status {
+  margin: 0;
+  padding: 4px 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.map__markers {
+  max-height: 116px;
+  overflow: auto;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+}
+
+.map__marker {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  font-size: 11.5px;
+}
+
+.map__marker-label {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  outline: none;
+  font: inherit;
+  color: inherit;
+  background: transparent;
+}
+
+.map__marker-link {
+  color: var(--text-faint);
+  text-decoration: none;
+  font-size: 12px;
+}
+
+.leaflet-container {
+  background: var(--surface-3);
+  font: inherit;
+}
+
+.map-tooltip {
+  padding: 1px 4px;
+  border: 0;
+  border-radius: 3px;
+  font-size: 10.5px;
+  box-shadow: var(--shadow-card);
+}
+
+/* --- Mover a otro tablero ------------------------------------------------- */
+
+.move-to {
+  width: min(520px, 100%);
+}
+
+.move-to__search {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-ui);
+  color: var(--text-faint);
+  background: var(--surface-2);
+}
+
+.move-to__search input {
+  flex: 1;
+  border: 0;
+  outline: none;
+  font: inherit;
+  color: var(--text);
+  background: transparent;
+}
+
+.move-to__list {
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  max-height: 320px;
+  overflow: auto;
+}
+
+.move-to__item {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  width: 100%;
+  padding: 6px 8px;
+  border-radius: 4px;
+  text-align: left;
+}
+
+.move-to__item:hover:not(:disabled) {
+  background: var(--surface-2);
+}
+
+.move-to__item:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.move-to__item-title {
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.move-to__item-path {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+.move-to__empty,
+.move-to__hint {
+  margin: 8px 0 0;
+  font-size: 11.5px;
+  color: var(--text-faint);
+}

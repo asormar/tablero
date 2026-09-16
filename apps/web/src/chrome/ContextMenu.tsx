@@ -13,10 +13,12 @@ import {
   Copy,
   CopyPlus,
   Crosshair,
+  FolderInput,
   LayoutGrid,
   Lock,
   LockOpen,
   Maximize2,
+  Repeat,
   Scissors,
   StickyNote,
   Trash2,
@@ -43,6 +45,7 @@ import {
 } from '@/canvas/commands';
 import type { BoardSession } from '@/collab/BoardSession';
 import { getInternalClipboard } from '@/lib/clipboard';
+import { convertElement, convertTargets } from '@/lib/convert';
 import { useAppStore } from '@/state/appStore';
 import { useUiStore } from '@/state/uiStore';
 
@@ -109,6 +112,42 @@ export function ContextMenu({ session }: { session: BoardSession }): JSX.Element
             <CopyPlus size={15} />
             <span>Duplicar</span>
             <kbd>Ctrl+D</kbd>
+          </button>
+
+          <span className="menu__sep" />
+
+          {convertTargets(element.type).length > 0 ? (
+            <>
+              <div className="menu__label">Convertir en</div>
+              {convertTargets(element.type).map((option) => (
+                <button
+                  key={option.type}
+                  type="button"
+                  className="menu__item"
+                  role="menuitem"
+                  onClick={() =>
+                    run(() => {
+                      const created = convertElement(session, element.id, option.type);
+                      if (created) useUiStore.getState().select([created]);
+                    })
+                  }
+                >
+                  <Repeat size={15} />
+                  <span>{option.label}</span>
+                </button>
+              ))}
+              <span className="menu__sep" />
+            </>
+          ) : null}
+
+          <button
+            type="button"
+            className="menu__item"
+            role="menuitem"
+            onClick={() => run(() => useUiStore.getState().setMoveToOpen(true))}
+          >
+            <FolderInput size={15} />
+            <span>Mover a otro tablero…</span>
           </button>
 
           <span className="menu__sep" />

@@ -24,7 +24,7 @@ import {
 } from '@tablero/shared';
 
 import { uploadAsset } from '@/api/assets';
-import { type AssetCardSpec, completeAssetCard, createAssetCards } from '@/canvas/contentCommands';
+import { type AssetCardSpec, completeAssetCard, createAssetCards, createAssetCardsInColumn } from '@/canvas/contentCommands';
 import { rectsOf } from '@/canvas/commands';
 import {
   type ClassifiedFile,
@@ -119,6 +119,8 @@ export type AttachOptions = {
   world: Point;
   /** Seleccionar las tarjetas creadas (por defecto sí). */
   select?: boolean;
+  /** Columna destino (kanban): las tarjetas nacen dentro en vez de en el lienzo. */
+  columnId?: string | null;
 };
 
 export type AttachResult = {
@@ -156,7 +158,9 @@ export async function attachFilesToBoard(
     natural: naturals[index] ?? null,
   }));
 
-  const ids = createAssetCards(session, specs);
+  const ids = options.columnId
+    ? createAssetCardsInColumn(session, options.columnId, specs)
+    : createAssetCards(session, specs);
   const ui = useUiStore.getState();
   if (options.select !== false && ids.length > 0) ui.select(ids);
   else ui.clearSelection();

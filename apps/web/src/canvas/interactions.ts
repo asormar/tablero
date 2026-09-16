@@ -49,6 +49,12 @@ export type MoveDragParams = {
   startPointer: Point;
   /** Se llama solo si el desplazamiento es distinto de cero. */
   onCommit(moves: Move[]): void;
+  /**
+   * Se llama como mucho una vez por frame con el puntero actual y el
+   * desplazamiento aplicado: lo usan el seguimiento de conectores y la
+   * detección de columnas de destino.
+   */
+  onFrame?(pointer: Point, offset: { dx: number; dy: number }): void;
 };
 
 export function startMoveDrag(params: MoveDragParams): PointerDrag {
@@ -88,14 +94,19 @@ export function startMoveDrag(params: MoveDragParams): PointerDrag {
     frame = 0;
     if (done) return;
     const result = compute();
-    if (!result) return;
-    const unchanged = result.dx === offset.dx && result.dy === offset.dy && guidesEqual(guides, result.guides);
-    if (unchanged) return;
-    offset = { dx: result.dx, dy: result.dy };
-    guides = result.guides;
-    moved = true;
-    paint(offset.dx, offset.dy);
-    useUiStore.getState().setGuides(guides);
+    if (result) {
+      const unchanged = result.dx === offset.dx && result.dy === offset.dy && guidesEqual(guides, result.guides);
+      if (!unchanged) {
+        offset = { dx: result.dx, dy: result.dy };
+        guides = result.guides;
+        moved = true;
+        paint(offset.dx, offset.dy);
+        useUiStore.getState().setGuides(guides);
+      }
+    }
+    // Aunque no haya desplazamiento nuevo, el frame se publica: el cruce de una
+    // columna o de una tarjeta de tablero cambia el destino sin mover nada.
+    if (pointer) params.onFrame?.(pointer, offset);
   };
 
   return {
@@ -133,6 +144,7 @@ export function startMoveDrag(params: MoveDragParams): PointerDrag {
         paint(0, 0);
         if (moved) useUiStore.getState().setGuides([]);
       }
+      if (pointer) params.onFrame?.(pointer, commit && moved ? offset : { dx: 0, dy: 0 });
       useUiStore.getState().setDraggingIds([]);
       useUiStore.getState().setGuides([]);
     },

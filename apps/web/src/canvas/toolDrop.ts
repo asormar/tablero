@@ -13,6 +13,8 @@ import {
   type HeadingSize,
   type Point,
   DEFAULT_SIZES,
+  createMapData,
+  createTableData,
 } from '@tablero/shared';
 
 import {
@@ -22,6 +24,7 @@ import {
   createNoteAt,
   sizeForType,
 } from '@/canvas/commands';
+import { createChildInColumn, createColumnAt } from '@/canvas/columnCommands';
 import {
   SWATCH_DEFAULT_HEX,
   createAssetCardAt,
@@ -55,6 +58,46 @@ export function isFileDrag(dataTransfer: DataTransfer | null): boolean {
 
 export function hasFiles(dataTransfer: DataTransfer | null): boolean {
   return isFileDrag(dataTransfer);
+}
+
+/** Crea el elemento correspondiente a la herramienta soltada dentro de una columna. */
+export function createToolInColumn(
+  session: BoardSession,
+  columnId: string,
+  type: ElementType,
+  headingSize: HeadingSize | null,
+): string | null {
+  const create = (init: Record<string, unknown> = {}): string | null =>
+    createChildInColumn(session, columnId, type, init) || null;
+
+  switch (type) {
+    case 'note':
+      return create();
+    case 'heading':
+      return create({ size: headingSize ?? 'M' });
+    case 'todo':
+      return create({ title: '', items: [] });
+    case 'document':
+      return create({ title: '' });
+    case 'table':
+      return create({ table: createTableData(3, 3) });
+    case 'sketch':
+      return create({ strokes: [], background: 'transparent' });
+    case 'map':
+      return create({ map: createMapData() });
+    case 'link':
+      return create({ url: '', displaySize: 'medium' });
+    case 'swatch':
+      return create({ hex: SWATCH_DEFAULT_HEX, name: '' });
+    case 'image':
+    case 'video':
+    case 'audio':
+      return create({ assetId: '' });
+    case 'file':
+      return create({ assetId: '', height: DEFAULT_SIZES.file.height ?? 72 });
+    default:
+      return null;
+  }
 }
 
 /** Crea el elemento correspondiente a la herramienta soltada. */
@@ -104,6 +147,33 @@ export async function createToolAt(
         select: true,
       });
     }
+    case 'column':
+      return createColumnAt(session, world);
+    case 'todo':
+      return createElementAt(session, 'todo', world, {
+        size: sizeForType('todo'),
+        init: { title: '', items: [] },
+      });
+    case 'table':
+      return createElementAt(session, 'table', world, {
+        size: sizeForType('table'),
+        init: { table: createTableData(3, 3), height: DEFAULT_SIZES.table.height ?? 200 },
+      });
+    case 'sketch':
+      return createElementAt(session, 'sketch', world, {
+        size: sizeForType('sketch'),
+        init: {
+          strokes: [],
+          background: 'transparent',
+          height: DEFAULT_SIZES.sketch.height ?? 220,
+          width: DEFAULT_SIZES.sketch.width,
+        },
+      });
+    case 'map':
+      return createElementAt(session, 'map', world, {
+        size: sizeForType('map'),
+        init: { map: createMapData(), height: DEFAULT_SIZES.map.height ?? 260 },
+      });
     default:
       return createElementAt(session, type, world, { size: sizeForType(type) });
   }

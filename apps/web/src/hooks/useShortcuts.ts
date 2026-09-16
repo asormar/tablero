@@ -9,6 +9,8 @@
 import { useEffect } from 'react';
 
 import { setSpacePan } from '@/canvas/panMode';
+import { createColumnAt } from '@/canvas/columnCommands';
+import { deleteSelectedConnector } from '@/canvas/ConnectorLayer';
 import {
   clearSelectionAndEditing,
   copySelection,
@@ -60,8 +62,20 @@ export function useShortcuts(session: BoardSession): void {
           ui.setHelpOpen(false);
           return;
         }
+        if (ui.moveToOpen) {
+          ui.setMoveToOpen(false);
+          return;
+        }
+        if (ui.documentId) {
+          ui.closeDocument();
+          return;
+        }
         if (ui.contextMenu) {
           ui.setContextMenu(null);
+          return;
+        }
+        if (ui.selectedConnectorId) {
+          ui.setSelectedConnector(null);
           return;
         }
         if (ui.editingId) {
@@ -146,6 +160,8 @@ export function useShortcuts(session: BoardSession): void {
       // --- Borrado y movimiento ----------------------------------------------
       if (event.key === 'Delete' || event.key === 'Backspace') {
         event.preventDefault();
+        // Con una flecha seleccionada, `Supr` borra el conector.
+        if (deleteSelectedConnector(session)) return;
         deleteSelection(session);
         return;
       }
@@ -180,6 +196,12 @@ export function useShortcuts(session: BoardSession): void {
       if (event.key === 'n' || event.key === 'N') {
         event.preventDefault();
         createNoteAt(session, spawnPoint());
+        return;
+      }
+      if (event.key === 'c' || event.key === 'C') {
+        // Columna: varias en fila forman un kanban.
+        event.preventDefault();
+        createColumnAt(session, spawnPoint());
         return;
       }
       if (event.key === 'b' || event.key === 'B') {

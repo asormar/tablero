@@ -97,3 +97,31 @@ export const CanvasGrid = memo(function CanvasGrid(): JSX.Element {
     />
   );
 });
+
+/**
+ * Línea de inserción del kanban y de las listas de tareas. Va en coordenadas de
+ * pantalla (no hereda el zoom): es una guía de 1–2 px, siempre legible.
+ */
+export const DropLineOverlay = memo(function DropLineOverlay(): JSX.Element | null {
+  const line = useUiStore((state) => state.dropLine);
+  if (!line) return null;
+  return (
+    <div
+      className="drop-line"
+      aria-hidden="true"
+      style={{ left: line.x, top: line.y, width: line.width }}
+    />
+  );
+});
+
+/** Línea provisional mientras se dibuja un conector desde el borde de una tarjeta. */
+export const ConnectorDraftOverlay = memo(function ConnectorDraftOverlay(): JSX.Element | null {
+  const draft = useUiStore((state) => state.connectorDraft);
+  if (!draft) return null;
+  return (
+    <svg className="overlay overlay--connector" aria-hidden="true">
+      <line className="conn-draft" x1={draft.x1} y1={draft.y1} x2={draft.x2} y2={draft.y2} />
+      <circle className="conn-draft__end" cx={draft.x2} cy={draft.y2} r={3.5} />
+    </svg>
+  );
+});

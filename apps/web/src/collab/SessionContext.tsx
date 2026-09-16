@@ -107,3 +107,29 @@ export function useCanRedo(): boolean {
   const getSnapshot = useCallback(() => session.canRedo(), [session]);
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
+
+/** Elementos en la papelera del documento (cambia al borrar, restaurar o purgar). */
+export function useTrashedElements(): CanvasElement[] {
+  const session = useSession();
+  const subscribe = useCallback(
+    (onStoreChange: () => void) => session.subscribeTrash(onStoreChange),
+    [session],
+  );
+  const getSnapshot = useCallback(() => session.getTrashed(), [session]);
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+}
+
+const EMPTY_LAYOUT: ElementLayout[] = [];
+
+/**
+ * Layout de una sesión que no vive en el contexto (la bandeja «Sin ordenar» de
+ * la fase 3 abre la suya propia). Con `null` devuelve una lista vacía estable.
+ */
+export function useExternalSessionLayout(session: BoardSession | null): ElementLayout[] {
+  const subscribe = useCallback(
+    (onStoreChange: () => void) => (session ? session.subscribeLayout(onStoreChange) : () => undefined),
+    [session],
+  );
+  const getSnapshot = useCallback(() => (session ? session.getLayout() : EMPTY_LAYOUT), [session]);
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+}

@@ -33,7 +33,10 @@
 }
 
 /* Las tarjetas que se están arrastrando no deben interceptar el puntero: debajo
-   puede haber una columna o una tarjeta de tablero que define el destino. */
+   puede haber una columna o una tarjeta de tablero que define el destino.
+   `is-dragging` se marca recién cuando el gesto se movió de verdad (ver
+   `startMoveDrag`): un clic sin movimiento no desactiva los eventos de la
+   tarjeta, así el `click`/`dblclick` siguen siendo suyos. */
 .el.is-dragging {
   pointer-events: none;
 }
@@ -1347,4 +1350,532 @@ tr:hover .tbl__row-handle {
   margin: 8px 0 0;
   font-size: 11.5px;
   color: var(--text-faint);
+}
+
+/* --- Panel lateral: pestañas (Sin ordenar / Papelera) ---------------------- */
+
+.panel__tabs {
+  display: flex;
+  gap: 4px;
+}
+
+.panel__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 9px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-ui);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.panel__tab:hover {
+  background: var(--surface-2);
+  color: var(--text);
+}
+
+.panel__tab.is-active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-weight: 600;
+}
+
+/* --- Bandeja «Sin ordenar» ------------------------------------------------- */
+
+.unsorted {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.unsorted__tools {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.unsorted__count {
+  display: grid;
+  place-items: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border-radius: 10px;
+  background: var(--surface-3);
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.unsorted__hint {
+  flex: 1 1 auto;
+  line-height: 1.35;
+}
+
+.unsorted__list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.unsorted__item {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 7px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-ui);
+  background: var(--surface-2);
+  cursor: grab;
+  touch-action: none;
+}
+
+.unsorted__item:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-card);
+}
+
+.unsorted__item-type {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+}
+
+.unsorted__item-title {
+  font-size: 12.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Fantasma que sigue al puntero al arrastrar de la bandeja al lienzo. */
+.unsorted__ghost {
+  position: fixed;
+  z-index: 60;
+  max-width: 220px;
+  padding: 5px 9px;
+  border-radius: var(--radius-ui);
+  background: var(--surface);
+  box-shadow: var(--shadow-pop);
+  font-size: 12px;
+  pointer-events: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --- Papelera ------------------------------------------------------------- */
+
+.trash {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.trash__section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.trash__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.trash__title {
+  margin: 0;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.trash__list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.trash__item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 7px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-ui);
+  background: var(--surface-2);
+  font-size: 12px;
+}
+
+.trash__item-type {
+  flex: 0 0 auto;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-faint);
+}
+
+.trash__item-title {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trash__item-age {
+  flex: 0 0 auto;
+  font-size: 10.5px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.trash__action {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 7px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.trash__action:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.trash__action--danger:hover {
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.trash__action:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.trash__empty,
+.trash__hint {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--text-faint);
+}
+
+/* --- Página «Tableros» (favoritos y recientes) ---------------------------- */
+
+.home__body {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.home__section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.home__section-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  font-size: 12.5px;
+  font-weight: 600;
+}
+
+.home__list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.home__item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.home__open {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 6px 9px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-ui);
+  background: var(--surface-2);
+  text-align: left;
+  cursor: pointer;
+}
+
+.home__open:hover {
+  border-color: var(--border-strong);
+  box-shadow: var(--shadow-card);
+}
+
+.home__icon {
+  font-size: 18px;
+  line-height: 1;
+}
+
+.home__labels {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.home__title {
+  font-size: 13px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home__path {
+  font-size: 11px;
+  color: var(--text-faint);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.home__star {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-ui);
+  background: transparent;
+  color: var(--text-faint);
+  cursor: pointer;
+}
+
+.home__star:hover {
+  color: var(--text);
+  background: var(--surface-2);
+}
+
+.home__star.is-active {
+  color: #d9a218;
+}
+
+.home__empty {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
+/* --- Vista global de tareas ------------------------------------------------ */
+
+.tasks {
+  width: min(720px, calc(100vw - 48px));
+}
+
+.tasks__total {
+  margin-left: auto;
+  margin-right: 8px;
+  font-size: 11.5px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.tasks__filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 12px 16px 0;
+}
+
+.tasks__filter {
+  padding: 4px 11px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.tasks__filter:hover {
+  color: var(--text);
+}
+
+.tasks__filter.is-active {
+  background: var(--accent-soft);
+  border-color: transparent;
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.tasks__body {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.tasks__group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.tasks__group-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.tasks__group-count {
+  display: grid;
+  place-items: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: 9px;
+  background: var(--surface-3);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.tasks__list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.tasks__row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-ui);
+  background: var(--surface-2);
+  font-size: 12.5px;
+}
+
+.tasks__row--child {
+  margin-left: 18px;
+}
+
+.tasks__row.is-done .tasks__text {
+  text-decoration: line-through;
+  color: var(--text-faint);
+}
+
+.tasks__check {
+  display: grid;
+  place-items: center;
+  color: var(--text-faint);
+}
+
+.tasks__row.is-done .tasks__check {
+  color: var(--accent);
+}
+
+.tasks__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tasks__due {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--surface-3);
+  font-size: 10.5px;
+  color: var(--text-muted);
+}
+
+.tasks__due.is-overdue {
+  background: rgba(201, 59, 59, 0.12);
+  color: var(--danger);
+}
+
+.tasks__jump {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.tasks__jump:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.tasks__empty {
+  margin: 0;
+  font-size: 12.5px;
+  color: var(--text-faint);
+}
+
+/* --- Estrella de la tarjeta de tablero ------------------------------------ */
+
+.board-card__star {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.75);
+  color: var(--text-faint);
+  cursor: pointer;
+}
+
+.board-card__star:hover {
+  color: var(--text);
+}
+
+.board-card__star.is-active {
+  color: #d9a218;
 }

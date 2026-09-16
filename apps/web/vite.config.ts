@@ -57,6 +57,38 @@ export default defineConfig({
   build: {
     target: 'es2022',
     sourcemap: true,
+    rollupOptions: {
+      output: {
+        /**
+         * Un chunk de arranque por debajo del umbral de 500 kB: React, Yjs,
+         * Zod y los iconos se llevan casi todo el peso, así que cada familia va
+         * en su propio archivo (además, se cachean entre despliegues). Leaflet,
+         * perfect-freehand y pdfjs quedan en chunks propios: los tres se cargan
+         * solo cuando hay una tarjeta que los usa.
+         */
+        manualChunks(id: string): string | undefined {
+          if (!id.includes('node_modules')) return undefined;
+          // `y-prosemirror` va con el editor: si no, el chunk de colaboración
+          // dependería del de ProseMirror y el editor del de colaboración (chunk
+          // circular).
+          if (id.includes('@tiptap') || id.includes('/prosemirror') || id.includes('y-prosemirror')) {
+            return 'vendor-editor';
+          }
+          if (id.includes('react-dom') || id.includes('/react/') || id.includes('scheduler') || id.includes('use-sync-external-store')) {
+            return 'vendor-react';
+          }
+          if (id.includes('/yjs') || id.includes('lib0') || id.includes('@hocuspocus') || id.includes('y-protocols')) {
+            return 'vendor-collab';
+          }
+          if (id.includes('zod')) return 'vendor-zod';
+          if (id.includes('lucide-react')) return 'vendor-icons';
+          if (id.includes('perfect-freehand')) return 'vendor-sketch';
+          if (id.includes('leaflet')) return 'vendor-leaflet';
+          if (id.includes('pdfjs-dist')) return 'vendor-pdf';
+          return 'vendor';
+        },
+      },
+    },
   },
   test: {
     environment: 'node',

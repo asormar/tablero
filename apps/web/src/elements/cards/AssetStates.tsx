@@ -8,7 +8,7 @@
 
 import { type CSSProperties } from 'react';
 
-import { AlertTriangle, FileUp, ImagePlus, Loader2, Music, Upload, Video } from 'lucide-react';
+import { AlertTriangle, FileUp, ImagePlus, Loader2, Music, RotateCcw, Upload, Video } from 'lucide-react';
 
 import type { AssetKind, CanvasElement } from '@tablero/shared';
 import { formatBytes } from '@tablero/shared';
@@ -33,9 +33,32 @@ const KIND_LABEL: Record<AssetKind, string> = {
 };
 
 /** Tarjeta con la barra de progreso mientras el archivo se sube. */
-export function UploadProgressCard({ entry, width }: { entry: UploadEntry; width: number }): JSX.Element {
+export function UploadProgressCard({
+  session,
+  element,
+  entry,
+  width,
+}: {
+  session: BoardSession;
+  element: CanvasElement;
+  entry: UploadEntry;
+  width: number;
+}): JSX.Element {
   const percent = Math.round(entry.progress * 100);
   const style: CSSProperties = { ['--upload-progress' as string]: `${percent}%` };
+
+  // El archivo sigue en memoria mientras la pestaña viva: reintentar no obliga a
+  // volver a elegirlo. Si ya no está (recarga de por medio), queda el botón para
+  // elegir otro, que es el camino que siempre funciona.
+  const retry = (): void => retryUpload(session, element.id);
+  const chooseAnother = async (): Promise<void> => {
+    const kind = element.type === 'image' || element.type === 'video' || element.type === 'audio' ? element.type : 'file';
+    const files = await pickFiles(kind === 'file' ? 'any' : kind, false);
+    const file = files[0];
+    if (!file) return;
+    await uploadIntoCard(session, element.id, file);
+  };
+
   return (
     <div className="upload-card" style={style} data-status={entry.status} data-kind={entry.kind}>
       <div className="upload-card__row">
@@ -56,6 +79,28 @@ export function UploadProgressCard({ entry, width }: { entry: UploadEntry; width
           </>
         )}
       </div>
+      {entry.status === 'error' ? (
+        <div className="upload-card__actions">
+          <button
+            type="button"
+            className="upload-card__action"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={retry}
+          >
+            <RotateCcw size={12} />
+            Reintentar
+          </button>
+          <button
+            type="button"
+            className="upload-card__action"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={() => void chooseAnother()}
+          >
+            <Upload size={12} />
+            Elegir otro archivo
+          </button>
+        </div>
+      ) : null}
       <div
         className="upload-card__bar"
         role="progressbar"

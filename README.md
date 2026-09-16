@@ -15,7 +15,7 @@ comportarse y **en qué orden** construirla es el plan de producto y técnico
 | --- | --- | --- |
 | 1 | Base y lienzo: monorepo, Docker, autenticación, CRUD de tableros anidados, lienzo infinito con selección/arrastre/guías/virtualización, nota + encabezado + tarjeta de tablero, persistencia Yjs con Hocuspocus, deshacer/rehacer | **Completa y verificada** (ver *Verificación*) |
 | 2 | Contenido multimedia: subida de archivos, imagen, archivo, vídeo, audio, enlace, muestra de color, pegado inteligente | **Completa y verificada** (ver *Verificación*) |
-| 3 | Estructura y organización: columnas, tareas con fechas, conectores con etiquetas, tablas, documento largo, dibujo, mapa, «Sin ordenar», papelera, favoritos | **Parcial**: elementos, columnas, conectores y mover entre tableros hechos y verificados; los paneles que dependen del API nuevo (Sin ordenar, papelera, favoritos, vista de tareas) van en la ronda siguiente |
+| 3 | Estructura y organización: columnas, tareas con fechas, conectores con etiquetas, tablas, documento largo, dibujo, mapa, «Sin ordenar», papelera, favoritos | **Completa**: elementos, columnas, conectores y mover entre tableros, más la segunda ronda de la web (bandeja «Sin ordenar», papelera de elementos y tableros, favoritos y recientes, vista global de tareas) y los hallazgos de la revisión de la fase 2 que tocaban la web. Ver *Verificación* |
 | 4 | Productividad: búsqueda global, paleta de comandos, plantillas, exportación/importación, historial, ajustes y tema oscuro, PWA y móvil | Pendiente |
 | 5 | Colaboración: compartir con roles, publicar, cursores en tiempo real, comentarios, notificaciones, actividad | Pendiente |
 | 6 | Extras: extensión de navegador, captura con token, pulido de rendimiento y accesibilidad, pruebas end-to-end | Pendiente |
@@ -173,9 +173,64 @@ Lo que está hecho y comprobado por el agente principal con ejecución real:
   `smoke:assets` 24/24 y `smoke:upgrade` 9/9 (rechazo por `Origin` **y** que el
   API siga vivo, incluida una ráfaga de rechazos).
 
-Pendiente de esta fase: los paneles de «Sin ordenar», papelera, favoritos y la
-vista global de tareas (segunda ronda), el bug conocido del doble clic en
-tarjetas cuyo DOM se recrea al seleccionarlas, y los hallazgos de la revisión de
-la fase 2 que tocan la web (mensaje de error de subida, botón de reintentar,
-archivos huérfanos al borrar tarjetas, `React.lazy` de los paneles y purga de
-cachés).
+### Verificación de la segunda ronda (web)
+
+Lo comprobado con ejecución real en el navegador y contra la API:
+
+- **Doble clic (bug abierto)**: la causa no era el DOM que se re-creaba. La clase
+  `is-dragging` se aplicaba en el `pointerdown` y desactivaba los eventos de
+  puntero de la tarjeta (`pointer-events: none`), así que el `pointerup`, el
+  `click` y el `dblclick` caían en el lienzo. Medido con ratón real por CDP:
+  `pointerdown → SPAN.board-card__icon [en board]` y `pointerup → DIV.canvas`.
+  Ahora la marca llega con el primer movimiento real: la tarjeta de tablero
+  **abre** con doble clic (la URL pasa al tablero hijo), la nota monta el editor
+  (`.rt-editor`), el documento abre su página completa, y en la columna ya no
+  aparece una nota suelta encima (antes el doble clic creaba una).
+- **Bandeja «Sin ordenar»**: una nota creada en el tablero de entrada aparece en
+  el panel («Nota · Nota de la bandeja», contador 1); arrastrarla al lienzo la
+  trae al tablero actual («Se movió 1 tarjeta al tablero actual.»), el panel queda
+  en 0 y el servidor la registra (`/api/search` la encuentra en «Inicio»).
+- **Papelera**: `Supr` marca (la tarjeta desaparece y entra al panel con sus días
+  restantes); `Ctrl+Z` la devuelve **sin** dejar copia en la papelera; restaurar
+  desde el panel la trae de vuelta. Tableros: `GET /api/trash` los lista,
+  restaurar limpia `trashedAt`, y el borrado definitivo (con confirmación en dos
+  pasos) los saca de la papelera. El purgado de 30 días corre al abrir el tablero
+  y al abrir el panel.
+- **Archivos huérfanos (I3)**: `DELETE /api/assets/:id` se llama **al vaciar la
+  papelera**, no al borrar la tarjeta. Medido: al borrar una tarjeta el asset
+  sigue en 200; al vaciar con otra tarjeta apuntando al mismo `assetId` sigue en
+  200; al borrar la última referencia el asset queda en 404 y los objetos de
+  MinIO desaparecen del bucket (comprobado en `/data/tablero/assets/<owner>/` y
+  `thumbs/<owner>/`). Decisión y motivos en `ARCHITECTURE.md`.
+- **Error de subida (I1) y reintentar (I2)**: con un 413 real de la API
+  (`{ error, code }`), la tarjeta muestra el motivo («El archivo supera el máximo
+  de 500 MB») y ofrece «Reintentar» y «Elegir otro archivo»; reintentar sube de
+  verdad (la tarjeta pasa a imagen con su `src` de `/api/assets/:id/raw`), y
+  «Elegir otro archivo» también.
+- **Favoritos y recientes**: la estrella de la tarjeta de tablero marca con
+  `PATCH /api/boards/:id { favorite }` (`?filter=favorites` lo devuelve), la
+  página «Tableros» lista favoritos y recientes, permite marcar/desmarcar y
+  abrir un tablero desde la lista.
+- **Vista de tareas**: los filtros responden al API (vencidas 0, hoy 1, próximas
+  2, hechas 0, todas 3) y están agrupados por tablero; «Ir» salta al elemento
+  (cambia de tablero, selecciona la lista y la deja dentro de la vista).
+- **Mapa**: la búsqueda llama a `/api/maps/search?q=…&limit=5` y lista lugares
+  reales de Nominatim; elegir un resultado recentra y agrega el marcador.
+- **Arrastre de filas de tareas entre listas**: medido con ratón real por CDP —
+  soltar sobre una fila mueve la tarea (como hermana o subtarea según la zona) y
+  soltar en el **hueco inferior de la lista** también (ese caso no hacía nada y
+  se arregló: la lista entera es zona de soltado).
+- **Sin regresiones de gestos**: arrastrar una tarjeta en el lienzo commitea su
+  posición (`translate3d(-136px, 504px)` → `translate3d(-184px, 632px)`), y en un
+  kanban de dos columnas una tarjeta pasó de la columna 1 a la 2 (contadores
+  `1,1` → `0,2`, con resaltado del destino y línea de inserción).
+- **Chunk de arranque (M1)**: 933.85 kB → **399.74 kB** (`manualChunks` de
+  React, Yjs, Zod, iconos y editor; `ImageViewer`, `CropEditor` y
+  `RecorderPanel` en `React.lazy` y montados solo al abrirse). `pdfjs` (436 kB),
+  `leaflet` (149 kB) y `perfect-freehand` quedan en chunks propios.
+- `pnpm --filter @tablero/web typecheck` limpio, **257 tests** en la web (243 +
+  14 nuevos: mensaje de error de subida con 413, liberación de assets y acciones
+  de la papelera) y build OK.
+
+Lo que sigue sin verificarse a mano (necesita gesto humano): cuentagotas,
+selector de color nativo y grabación con micrófono real.

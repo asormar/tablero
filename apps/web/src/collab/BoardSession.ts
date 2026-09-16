@@ -28,6 +28,7 @@ import {
   elementsOf,
   ensureTextFragment,
   getOrderedElements,
+  getTrashedElements,
   localOrigin,
   orderOf,
   readElement,
@@ -99,6 +100,9 @@ export class BoardSession {
   private readonly connectorListeners = new Set<() => void>();
   private readonly statusListeners = new Set<() => void>();
   private readonly undoListeners = new Set<() => void>();
+  private readonly trashListeners = new Set<() => void>();
+  private trashVersion = 0;
+  private trashCache: { version: number; value: CanvasElement[] } | null = null;
   private readonly fragmentWatches = new Map<string, { fragment: Y.XmlFragment; handler: () => void }>();
 
   private layoutVersion = 0;
@@ -450,6 +454,26 @@ export class BoardSession {
     };
   }
 
+  /**
+   * Cambios de la papelera: un elemento que entra o sale de ella (o que se
+   * elimina definitivamente). El panel de papelera se suscribe acá.
+   */
+  subscribeTrash(listener: () => void): () => void {
+    this.trashListeners.add(listener);
+    return () => {
+      this.trashListeners.delete(listener);
+    };
+  }
+
+  /** Elementos en la papelera del documento (del más reciente al más viejo). */
+  getTrashed(): CanvasElement[] {
+    // Cacheado: `useSyncExternalStore` compara la instantánea por identidad.
+    if (this.trashCache && this.trashCache.version === this.trashVersion) return this.trashCache.value;
+    const value = getTrashedElements(this.doc);
+    this.trashCache = { version: this.trashVersion, value };
+    return value;
+  }
+
   // --- Deshacer / rehacer ----------------------------------------------------
 
   undo(): void {
@@ -472,6 +496,7 @@ export class BoardSession {
 
   private readonly onStoreDeep = (events: Y.YEvent<Y.AbstractType<unknown>>[]): void => {
     let layoutChanged = false;
+    let trashChanged = false;
     const touched = new Set<string>();
 
     for (const event of events) {
@@ -481,12 +506,19 @@ export class BoardSession {
           if (event.path.length === 0) {
             touched.add(name);
             layoutChanged = true;
+            trashChanged = true;
             if (this.elementStore.get(name)) this.watchFragments(name);
             else this.unwatchFragments(name);
           } else if (event.path.length === 1) {
             const id = String(event.path[0]);
             touched.add(id);
             if (POSITIONAL_KEYS.has(name)) layoutChanged = true;
+            // La papelera también decide qué se ve: `getOrderedElements` oculta
+            // lo marcado, así que el layout tiene que invalidarse.
+            if (name === 'deletedAt' || name === 'deletedBy') {
+              trashChanged = true;
+              layoutChanged = true;
+            }
             if (name === 'text') this.watchFragments(id);
           } else {
             touched.add(String(event.path[0]));
@@ -501,6 +533,11 @@ export class BoardSession {
 
     for (const id of touched) this.touchElement(id);
     if (layoutChanged) this.invalidateLayout();
+    if (trashChanged) {
+      this.trashVersion += 1;
+      this.trashCache = null;
+      for (const listener of this.trashListeners) listener();
+    }
   };
 
   private readonly onOrderChange = (): void => {

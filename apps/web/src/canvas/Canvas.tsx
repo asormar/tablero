@@ -482,7 +482,19 @@ export function Canvas({ session, onOpenBoard }: CanvasProps): JSX.Element {
       const target = event.target as HTMLElement;
       if (target.closest('[contenteditable="true"], input, textarea, select')) return;
       if (target.closest('[data-connector-label], [data-interactive]')) return;
-      const elementEl = target.closest('[data-element-id]');
+      // El nodo de la tarjeta puede haberse recreado entre el `mousedown` y el
+      // `dblclick` (un gesto que cambia su DOM), y entonces el `target` del
+      // evento ya es el lienzo y su `closest` no la encuentra. Se resuelve por
+      // geometría: la tarjeta que está bajo el puntero ahora mismo. Sin esto, el
+      // doble clic sobre una tarjeta de tablero caía en el lienzo y, en vez de
+      // abrir el tablero, creaba una nota nueva.
+      const direct = target.closest('[data-element-id]') as HTMLElement | null;
+      const geometric = direct
+        ? null
+        : ((document
+            .elementsFromPoint(event.clientX, event.clientY)
+            .find((node) => (node as HTMLElement).closest?.('[data-element-id]')) as HTMLElement | undefined) ?? null);
+      const elementEl = direct ?? (geometric?.closest('[data-element-id]') as HTMLElement | null) ?? null;
       const id = elementEl?.getAttribute('data-element-id') ?? null;
 
       if (!id) {

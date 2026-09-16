@@ -13,13 +13,20 @@
  *   GET    /boards/:id/breadcrumbs → BoardSummary[]
  *   GET    /boards/:id/children    → BoardSummary[]
  *   GET    /boards/:id/document    → { state, updatedAt }
+ *
+ * Fase 3:
+ *   GET    /boards/unsorted        → { board, created }
+ *   GET    /trash                  → { boards }
+ *   POST   /trash/:id/restore      → { board }
+ *   DELETE /trash/:id              → { deleted }
+ *   PATCH  /boards/:id { favorite }→ { board } con `favorited`
  */
 
 import type { BoardSummary } from '@tablero/shared';
 
 import { apiRequest } from './client';
 
-export type BoardFilter = 'recent' | 'favorites' | 'shared' | 'trash';
+export type BoardFilter = 'all' | 'recent' | 'favorites' | 'shared' | 'trash';
 
 export type SessionUser = {
   id: string;
@@ -190,4 +197,46 @@ export async function fetchBoardDocument(id: string): Promise<BoardDocumentRespo
   if (typeof state !== 'string' || state.length === 0) return null;
   const updatedAt = typeof record['updatedAt'] === 'number' ? record['updatedAt'] : null;
   return { state, updatedAt };
+}
+
+// --- Fase 3 ------------------------------------------------------------------
+
+/**
+ * Tablero «Sin ordenar» del usuario (la bandeja de entrada). El API lo crea la
+ * primera vez; `created` dice si esta llamada lo acaba de crear.
+ */
+export async function fetchUnsortedBoard(): Promise<{ board: BoardSummary; created: boolean }> {
+  const payload = await apiRequest<unknown>('/boards/unsorted');
+  const record = (payload ?? {}) as Record<string, unknown>;
+  return {
+    board: extractBoard(record['board'] ?? payload),
+    created: record['created'] === true,
+  };
+}
+
+/** Tableros en la papelera (con lo necesario para restaurarlos). */
+export async function fetchTrashBoards(): Promise<BoardSummary[]> {
+  const payload = await apiRequest<unknown>('/trash');
+  const record = (payload ?? {}) as Record<string, unknown>;
+  return extractBoards(record['boards'] ?? payload);
+}
+
+/** Restaura un tablero (y el lote que cayó con él). */
+export async function restoreTrashedBoard(id: string): Promise<BoardSummary> {
+  const payload = await apiRequest<unknown>(`/trash/${encodeURIComponent(id)}/restore`, { method: 'POST' });
+  return extractBoard(payload);
+}
+
+/** Borrado definitivo de un tablero en papelera. */
+export async function purgeTrashedBoard(id: string): Promise<void> {
+  await apiRequest<void>(`/trash/${encodeURIComponent(id)}`, { method: 'DELETE' });
+}
+
+/** Marca o desmarca un tablero como favorito (`PATCH /boards/:id`). */
+export async function setBoardFavorite(id: string, favorite: boolean): Promise<BoardSummary> {
+  const payload = await apiRequest<unknown>(`/boards/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    body: { favorite },
+  });
+  return extractBoard(payload);
 }

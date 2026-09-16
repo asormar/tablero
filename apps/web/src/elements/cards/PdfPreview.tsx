@@ -1,13 +1,17 @@
 /**
  * Miniatura de la primera página de un PDF y visor paginado dentro de la
  * tarjeta de archivo (canvas del cliente, sin pasar por el servidor).
+ *
+ * El documento de pdfjs se retiene solo mientras el canvas está montado. El
+ * visor paginado vive en la tarjeta (`PdfPageViewerPanel`): acá está el canvas
+ * que los dos comparten, sin duplicar lógica.
  */
 
 import { useEffect, useRef, useState } from 'react';
 
-import { ChevronLeft, ChevronRight, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 
-import { loadPdfDocument, renderPdfPage } from '@/lib/pdf';
+import { loadPdfDocument, releasePdfDocument, retainPdfDocument, renderPdfPage } from '@/lib/pdf';
 
 export type PdfCanvasProps = {
   url: string;
@@ -22,6 +26,14 @@ export type PdfCanvasProps = {
 export function PdfCanvas({ url, width, page = 1, className, onPageCount }: PdfCanvasProps): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [state, setState] = useState<'loading' | 'ready' | 'error'>('loading');
+
+  // Retención por URL: al desmontar el último visor de esa URL, el documento se
+  // olvida (`forgetPdfDocument`) y no queda memoria de PDFs que ya no se ven.
+  useEffect(() => {
+    if (url.length === 0) return undefined;
+    retainPdfDocument(url);
+    return () => releasePdfDocument(url);
+  }, [url]);
 
   useEffect(() => {
     let cancelled = false;
@@ -64,49 +76,3 @@ export function PdfCanvas({ url, width, page = 1, className, onPageCount }: PdfC
   );
 }
 
-export type PdfPageViewerProps = {
-  url: string;
-  width: number;
-  /** Alto máximo del área visible (mundo, sin escalar). */
-  maxHeight?: number;
-};
-
-/** Visor paginado: página anterior/siguiente sobre el mismo canvas. */
-export function PdfPageViewer({ url, width, maxHeight = 380 }: PdfPageViewerProps): JSX.Element {
-  const [page, setPage] = useState(1);
-  const [count, setCount] = useState<number | null>(null);
-  const safeWidth = Math.max(80, Math.round(width));
-
-  return (
-    <div className="pdf-viewer">
-      <PdfCanvas url={url} width={safeWidth} page={page} onPageCount={setCount} />
-      <div className="pdf-viewer__bar">
-        <button
-          type="button"
-          className="icon-button"
-          title="Página anterior"
-          disabled={page <= 1}
-          onPointerDown={(event) => event.stopPropagation()}
-          onClick={() => setPage((current) => Math.max(1, current - 1))}
-        >
-          <ChevronLeft size={14} />
-        </button>
-        <span className="pdf-viewer__counter">
-          {page}
-          {count ? ` / ${count}` : ''}
-        </span>
-        <button
-          type="button"
-          className="icon-button"
-          title="Página siguiente"
-          disabled={count !== null && page >= count}
-          onPointerDown={(event) => event.stopPropagation()}
-          onClick={() => setPage((current) => current + 1)}
-        >
-          <ChevronRight size={14} />
-        </button>
-        <span className="pdf-viewer__hint">máx. {Math.round(maxHeight)} px</span>
-      </div>
-    </div>
-  );
-}

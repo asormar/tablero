@@ -41,6 +41,31 @@ export type UploadAssetOptions = {
   signal?: AbortSignal;
 };
 
+/**
+ * Mensaje de una subida rechazada.
+ *
+ * La API responde `{ error: string, code }` (plano): leer `payload.error.message`
+ * mostraba siempre «Error 413/500» y se perdía el motivo real. Se aceptan las
+ * dos formas para no depender de cómo evolucione el contrato: `error` como
+ * cadena (la actual), `error.message` (anidado, por compatibilidad) y `message`
+ * (Fastify).
+ */
+export function uploadErrorMessage(payload: unknown, status: number): string {
+  if (typeof payload === 'string' && payload.trim().length > 0) return payload.trim();
+  if (payload && typeof payload === 'object') {
+    const record = payload as Record<string, unknown>;
+    const error = record['error'];
+    if (typeof error === 'string' && error.trim().length > 0) return error.trim();
+    if (error && typeof error === 'object') {
+      const nested = (error as Record<string, unknown>)['message'];
+      if (typeof nested === 'string' && nested.trim().length > 0) return nested.trim();
+    }
+    const message = record['message'];
+    if (typeof message === 'string' && message.trim().length > 0) return message.trim();
+  }
+  return `Error ${status}`;
+}
+
 type AssetResponse = { asset?: unknown };
 
 function toAssetSummary(raw: unknown): AssetSummary | null {
@@ -119,8 +144,7 @@ export function uploadAsset(file: File, options: UploadAssetOptions = {}): Promi
         reject(new ApiError('La API no devolvió el archivo subido', status, 'bad_response', payload));
         return;
       }
-      const message =
-        (payload as { error?: { message?: string } } | null)?.error?.message ?? `Error ${status}`;
+      const message = uploadErrorMessage(payload, status);
       reject(new ApiError(message, status, 'upload_failed', payload));
     };
 

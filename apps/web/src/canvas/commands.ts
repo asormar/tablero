@@ -39,6 +39,7 @@ import {
   sendToBack,
   serializeForClipboard,
   snapPointToGrid,
+  trashElements,
 } from '@tablero/shared';
 
 import { useAppStore } from '@/state/appStore';
@@ -251,11 +252,18 @@ export function createFromPaste(session: BoardSession, world: Point, text: strin
 
 // --- Mutaciones sobre la selección -------------------------------------------
 
+/**
+ * Borra la selección: la manda a la **papelera** (marca `deletedAt`), no la saca
+ * del documento. Es lo que hace posible el panel de papelera y el restaurar; el
+ * texto enriquecido no se mueve y `Ctrl/Cmd+Z` sigue devolviendo la tarjeta sin
+ * dejar copia (el deshacer quita la marca). Los assets se liberan recién cuando
+ * el elemento sale del documento para siempre (ver `emptyTrashForever`).
+ */
 export function deleteSelection(session: BoardSession): void {
   const ui = useUiStore.getState();
   const ids = ui.selection;
   if (ids.length === 0) return;
-  removeElements(session.doc, ids, session.origin);
+  trashElements(session.doc, ids, session.origin, { deletedBy: currentUserId() });
   ui.setEditing(null);
   ui.clearSelection();
 }
@@ -449,6 +457,40 @@ export function clearSelectionAndEditing(): void {
   ui.setEditing(null);
   ui.clearSelection();
   ui.setContextMenu(null);
+}
+
+/**
+ * Salto a un elemento (vista global de tareas): lo selecciona y centra la vista
+ * en su tarjeta. Si vive dentro de una columna, el encuadre usa la columna
+ * (los hijos no tienen posición libre). Devuelve `false` si el elemento no está.
+ */
+export function focusElementInView(session: BoardSession, id: string): boolean {
+  const element = session.getElement(id);
+  if (!element) return false;
+
+  // Padre superior (una tarea dentro de una columna se enmarca con su columna).
+  let top = element;
+  const seen = new Set<string>([top.id]);
+  while (top.parentId && !seen.has(top.parentId)) {
+    seen.add(top.parentId);
+    const parent = session.getElement(top.parentId);
+    if (!parent) break;
+    top = parent;
+  }
+
+  const ui = useUiStore.getState();
+  ui.select([id]);
+  const item = session.getLayout().find((entry) => entry.id === top.id);
+  if (!item) return true;
+
+  const rect = rectOf(item, ui.measuredHeights);
+  const scale = Math.min(1, Math.max(ui.viewport.scale, 0.6));
+  ui.setViewport({
+    x: rect.x + rect.width / 2 - ui.canvasSize.width / (2 * scale),
+    y: rect.y + rect.height / 2 - ui.canvasSize.height / (2 * scale),
+    scale,
+  });
+  return true;
 }
 
 export function fitToScreen(session: BoardSession): void {

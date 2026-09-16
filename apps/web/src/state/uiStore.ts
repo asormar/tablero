@@ -24,6 +24,10 @@ import {
 export type SelectionMode = 'replace' | 'add' | 'toggle';
 export type InteractionKind = 'idle' | 'move' | 'resize' | 'pan' | 'marquee' | 'place';
 export type ContextMenuState = { x: number; y: number; targetId: string | null } | null;
+/** Pestaña del panel lateral derecho. */
+export type PanelTab = 'unsorted' | 'trash';
+/** Salto pendiente a un elemento de otro tablero (lo pide la vista de tareas). */
+export type FocusRequest = { boardId: string; elementId: string };
 
 export type UiState = {
   /** Tamaño en pantalla del área del lienzo (para virtualizar y encajar). */
@@ -40,6 +44,17 @@ export type UiState = {
   contextMenu: ContextMenuState;
   helpOpen: boolean;
   panelOpen: boolean;
+  /** Pestaña visible del panel lateral. */
+  panelTab: PanelTab;
+  /** Página «Tableros» (favoritos y recientes) abierta. */
+  homeOpen: boolean;
+  /** Página «Tareas» (vista global con filtros) abierta. */
+  tasksOpen: boolean;
+  /**
+   * Elemento al que hay que saltar cuando el tablero termine de abrir (lo usa
+   * la vista de tareas). Se consume una vez y se limpia.
+   */
+  focusRequest: FocusRequest | null;
   /** Tipo de elemento que se está arrastrando desde la barra de herramientas. */
   pendingTool: ElementType | null;
   /** Tarjetas en movimiento (clase de arrastre, sombra elevada). */
@@ -82,6 +97,13 @@ export type UiState = {
   setContextMenu(menu: ContextMenuState): void;
   setHelpOpen(open: boolean): void;
   togglePanel(): void;
+  /** Abre el panel lateral en una pestaña concreta (o lo cierra si ya estaba en ella). */
+  openPanel(tab: PanelTab): void;
+  setPanelTab(tab: PanelTab): void;
+  setHomeOpen(open: boolean): void;
+  setTasksOpen(open: boolean): void;
+  requestFocus(boardId: string, elementId: string): void;
+  clearFocusRequest(): void;
   setPendingTool(type: ElementType | null): void;
   /** Ids que se están arrastrando ahora mismo (se resalta su tarjeta). */
   setDraggingIds(ids: string[]): void;
@@ -132,6 +154,10 @@ export const useUiStore = create<UiState>()((set, get) => ({
   contextMenu: null,
   helpOpen: false,
   panelOpen: true,
+  panelTab: 'unsorted',
+  homeOpen: false,
+  tasksOpen: false,
+  focusRequest: null,
   pendingTool: null,
   draggingIds: [],
   viewerId: null,
@@ -237,6 +263,33 @@ export const useUiStore = create<UiState>()((set, get) => ({
   togglePanel() {
     set({ panelOpen: !get().panelOpen });
   },
+  openPanel(tab) {
+    const state = get();
+    if (state.panelOpen && state.panelTab === tab) {
+      set({ panelOpen: false });
+      return;
+    }
+    set({ panelOpen: true, panelTab: tab });
+  },
+  setPanelTab(tab) {
+    if (get().panelTab === tab) return;
+    set({ panelTab: tab });
+  },
+  setHomeOpen(open) {
+    if (get().homeOpen === open) return;
+    set({ homeOpen: open });
+  },
+  setTasksOpen(open) {
+    if (get().tasksOpen === open) return;
+    set({ tasksOpen: open });
+  },
+  requestFocus(boardId, elementId) {
+    set({ focusRequest: { boardId, elementId } });
+  },
+  clearFocusRequest() {
+    if (get().focusRequest === null) return;
+    set({ focusRequest: null });
+  },
   setPendingTool(type) {
     set({ pendingTool: type });
   },
@@ -320,6 +373,11 @@ export const useUiStore = create<UiState>()((set, get) => ({
       connectorDraft: null,
       documentId: null,
       moveToOpen: false,
+      panelTab: 'unsorted',
+      homeOpen: false,
+      tasksOpen: false,
+      // `focusRequest` no se toca: lo pide la vista de tareas justo antes de
+      // abrir el tablero y el salto se consume en la sesión nueva.
     });
   },
 }));

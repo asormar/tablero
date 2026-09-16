@@ -213,8 +213,11 @@ export function MapCard({ session, element, simplified }: MapCardProps): JSX.Ele
               className="map__result"
               onClick={() => {
                 const label = result.label.split(',')[0] ?? result.label;
-                addMarkerAt({ lat: result.lat, lng: result.lng }, label);
-                save(setMapView(dataRef.current, { lat: result.lat, lng: result.lng, zoom: 13 }));
+                // Un solo guardado: dos `save()` en el mismo tick partirían de la
+                // misma copia y el segundo pisaría el marcador que agregó el primero.
+                const current = dataRef.current;
+                const withMarker = addMarker(current, createMarker(result.lat, result.lng, label));
+                save(setMapView(withMarker, { lat: result.lat, lng: result.lng, zoom: 13 }));
                 setResults([]);
                 setQuery(label);
               }}

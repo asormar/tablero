@@ -6,35 +6,50 @@
  * documento igual al id del tablero.
  */
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 
 import { X } from 'lucide-react';
 
-import { fitToScreen } from '@/canvas/commands';
+import { fitToScreen, focusElementInView } from '@/canvas/commands';
 import { Canvas } from '@/canvas/Canvas';
+import { BoardsHome } from '@/chrome/BoardsHome';
 import { ConnectorBar } from '@/chrome/ConnectorBar';
 import { ContextBar } from '@/chrome/ContextBar';
 import { ContextMenu } from '@/chrome/ContextMenu';
-import { CropEditor } from '@/chrome/CropEditor';
 import { DocumentPage } from '@/chrome/DocumentPage';
-import { ImageViewer } from '@/chrome/ImageViewer';
 import { MoveToDialog } from '@/chrome/MoveToDialog';
 import { PerfOverlay } from '@/chrome/PerfOverlay';
-import { RecorderPanel } from '@/chrome/RecorderPanel';
 import { ShortcutsModal } from '@/chrome/ShortcutsModal';
+import { SidePanel } from '@/chrome/SidePanel';
+import { TasksPage } from '@/chrome/TasksPage';
 import { Toolbar } from '@/chrome/Toolbar';
 import { TopBar } from '@/chrome/TopBar';
-import { UnorderedPanel } from '@/chrome/UnorderedPanel';
 import { ZoomControl } from '@/chrome/ZoomControl';
 import { BoardSession } from '@/collab/BoardSession';
 import { SessionProvider, useSessionLayout, useSessionStatus } from '@/collab/SessionContext';
 import { usePaste } from '@/hooks/usePaste';
 import { useShortcuts } from '@/hooks/useShortcuts';
+import { purgeExpiredTrash } from '@/lib/trashActions';
 import { boardById, useAppStore } from '@/state/appStore';
 import { useUiStore } from '@/state/uiStore';
 
 import { rememberBoardCount } from './boardCounts';
 import { bootstrap, ensureBoardInRegistry, writeBoardIdToUrl } from './boardService';
+
+// Los visores pesados (visor de imagen, recorte y grabadora) solo se descargan
+// cuando se abren: el chunk de arranque del lienzo no los necesita.
+const LazyImageViewer = lazy(async () => {
+  const module = await import('@/chrome/ImageViewer');
+  return { default: module.ImageViewer };
+});
+const LazyCropEditor = lazy(async () => {
+  const module = await import('@/chrome/CropEditor');
+  return { default: module.CropEditor };
+});
+const LazyRecorderPanel = lazy(async () => {
+  const module = await import('@/chrome/RecorderPanel');
+  return { default: module.RecorderPanel };
+});
 
 export function Workspace(): JSX.Element {
   const boardId = useAppStore((state) => state.currentBoardId);
@@ -106,6 +121,9 @@ function WorkspaceShell({
   const setSyncState = useAppStore((state) => state.setSyncState);
   const notice = useAppStore((state) => state.notice);
   const setNotice = useAppStore((state) => state.setNotice);
+  const viewerId = useUiStore((state) => state.viewerId);
+  const cropTargetId = useUiStore((state) => state.cropTargetId);
+  const recorderOpen = useUiStore((state) => state.recorderOpen);
 
   useEffect(() => {
     setSyncState(status.state);
@@ -123,15 +141,29 @@ function WorkspaceShell({
           <ConnectorBar session={session} />
           <PerfOverlay />
         </div>
-        <UnorderedPanel />
+        <SidePanel />
       </div>
       <ContextMenu session={session} />
       <ShortcutsModal />
-      <ImageViewer session={session} />
-      <CropEditor session={session} />
-      <RecorderPanel session={session} />
       <DocumentPage session={session} />
       <MoveToDialog session={session} />
+      <BoardsHome onOpenBoard={onOpenBoard} />
+      <TasksPage onOpenBoard={onOpenBoard} />
+      {viewerId ? (
+        <Suspense fallback={null}>
+          <LazyImageViewer session={session} />
+        </Suspense>
+      ) : null}
+      {cropTargetId ? (
+        <Suspense fallback={null}>
+          <LazyCropEditor session={session} />
+        </Suspense>
+      ) : null}
+      {recorderOpen ? (
+        <Suspense fallback={null}>
+          <LazyRecorderPanel session={session} />
+        </Suspense>
+      ) : null}
       <BoardEffects session={session} boardId={boardId} />
       {notice ? (
         <div className="notice" role="status">
@@ -151,8 +183,9 @@ function WorkspaceShell({
 }
 
 /**
- * Efectos ligados al contenido del tablero: encaje inicial de la vista y
- * publicación del contador de elementos del tablero actual.
+ * Efectos ligados al contenido del tablero: encaje inicial de la vista,
+ * publicación del contador de elementos del tablero actual, purgado de la
+ * papelera vencida y el salto pendiente a una tarjeta (vista de tareas).
  *
  * El encaje se hace una vez por sesión (no por id de tablero): cuando se navega,
  * el componente sobrevive y todavía ve la sesión anterior durante un render.
@@ -161,6 +194,8 @@ function BoardEffects({ session, boardId }: { session: BoardSession; boardId: st
   const layout = useSessionLayout();
   const count = layout.length;
   const fittedFor = useRef<BoardSession | null>(null);
+  const purgedFor = useRef<BoardSession | null>(null);
+  const focusRequest = useUiStore((state) => state.focusRequest);
 
   useEffect(() => {
     if (fittedFor.current === session) return;
@@ -179,6 +214,49 @@ function BoardEffects({ session, boardId }: { session: BoardSession; boardId: st
     }, 900);
     return () => clearTimeout(timer);
   }, [boardId, count]);
+
+  // Papelera: lo que superó los 30 días se borra para siempre al abrir el
+  // tablero. Se deja un margen para que el documento remoto termine de llegar.
+  useEffect(() => {
+    if (purgedFor.current === session) return undefined;
+    purgedFor.current = session;
+    const timer = setTimeout(() => {
+      if (session.destroyed_) return;
+      void purgeExpiredTrash(session).then((ids) => {
+        if (ids.length === 0) return;
+        useAppStore
+          .getState()
+          .setNotice(
+            ids.length === 1
+              ? 'Se borró 1 elemento que llevaba más de 30 días en la papelera.'
+              : `Se borraron ${ids.length} elementos que llevaban más de 30 días en la papelera.`,
+          );
+      });
+    }, 2500);
+    return () => clearTimeout(timer);
+  }, [session]);
+
+  // Salto a una tarjeta pedido por la vista de tareas (u otra superficie): se
+  // consume cuando el tablero ya tiene contenido.
+  useEffect(() => {
+    if (!focusRequest) return;
+    if (focusRequest.boardId !== boardId) {
+      // Petición de otro tablero: la navegación la descartó.
+      useUiStore.getState().clearFocusRequest();
+      return;
+    }
+    if (count === 0) return; // el documento todavía no llegó
+    focusElementInView(session, focusRequest.elementId);
+    useUiStore.getState().clearFocusRequest();
+  }, [focusRequest, boardId, count, session]);
+
+  useEffect(() => {
+    if (!focusRequest) return undefined;
+    // Red de seguridad: un salto a un elemento que ya no existe no puede quedar
+    // pendiente para siempre.
+    const timer = setTimeout(() => useUiStore.getState().clearFocusRequest(), 5000);
+    return () => clearTimeout(timer);
+  }, [focusRequest]);
 
   return null;
 }

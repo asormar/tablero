@@ -16,6 +16,7 @@ import * as Y from 'yjs';
 
 import {
   type CanvasElement,
+  type Point,
   type Rect,
   type Size,
   addElement,
@@ -29,6 +30,7 @@ import {
 
 import { BoardSession } from '@/collab/BoardSession';
 import { rawChildIds } from '@/lib/columns';
+import { placementForNewElement } from '@/lib/placement';
 import { restoreFragment, snapshotFragment } from '@/lib/xmlFragment';
 import { useAppStore } from '@/state/appStore';
 
@@ -118,6 +120,75 @@ export type TransferOptions = {
 };
 
 /**
+ * Copia los elementos ya resueltos (top-level, con sus columnas completas) al
+ * documento destino, remapeando ids y reconstruyendo el texto enriquecido. No
+ * borra nada del origen: eso lo decide cada llamante cuando el destino quedó
+ * confirmado en el servidor.
+ */
+function copyElements(
+  source: BoardSession,
+  target: BoardSession,
+  sources: readonly CanvasElement[],
+  offset: { dx: number; dy: number },
+): void {
+  const now = Date.now();
+  const idMap = new Map<string, string>();
+
+  target.doc.transact(() => {
+    for (const from of sources) {
+      const init: Record<string, unknown> = {
+        ...from,
+        x: Math.round(from.x + offset.dx),
+        y: Math.round(from.y + offset.dy),
+        createdBy: from.createdBy,
+        createdAt: now,
+        updatedAt: now,
+      };
+      delete init['id'];
+      delete init['parentId'];
+      delete init['childrenIds'];
+      delete init['text'];
+      const created = addElement(target.doc, from.type, init as never, target.origin);
+      idMap.set(from.id, created);
+    }
+    // Segunda pasada: relaciones internas (hijos de columna) con los ids nuevos.
+    for (const from of sources) {
+      const created = idMap.get(from.id);
+      if (!created) continue;
+      if (from.parentId) {
+        const mapped = idMap.get(from.parentId);
+        const map = getElementMap(target.doc, created);
+        if (mapped) map?.set('parentId', mapped);
+      }
+      if (from.type === 'column') {
+        const map = getElementMap(target.doc, created);
+        const children = new Y.Array<string>();
+        for (const childId of rawChildIds(source.doc, from.id)) {
+          const mappedChild = idMap.get(childId);
+          if (mappedChild) children.push([mappedChild]);
+        }
+        map?.set('childrenIds', children);
+      }
+      // Texto enriquecido: instantánea y reconstrucción (no se puede clonar el
+      // `Y.XmlFragment` con una actualización binaria).
+      const fragment = getTextFragment(source.doc, from.id);
+      if (fragment) {
+        const destination = ensureTextFragment(target.doc, created, target.origin);
+        if (destination) restoreFragment(destination, snapshotFragment(fragment));
+      }
+    }
+  }, target.origin);
+}
+
+/** Elementos que viajan: top-level de la selección expandida, en orden de creación. */
+function transferableSources(session: BoardSession, ids: readonly string[]): CanvasElement[] {
+  return expandWithColumnChildren(session, ids)
+    .map((id) => session.getElement(id))
+    .filter((element): element is CanvasElement => element !== null && !element.parentId)
+    .sort((a, b) => a.createdAt - b.createdAt);
+}
+
+/**
  * Mueve elementos (y sus columnas completas) al tablero destino.
  * Nunca lanza: devuelve el motivo del fallo, si lo hubo.
  */
@@ -131,11 +202,7 @@ export async function transferElements(
   if (!useAppStore.getState().apiOnline) return { moved: 0, failure: 'offline' };
   if (targetBoardId.startsWith('bd_')) return { moved: 0, failure: 'local-target' };
 
-  const expanded = expandWithColumnChildren(session, ids);
-  const sources = expanded
-    .map((id) => session.getElement(id))
-    .filter((element): element is CanvasElement => element !== null && !element.parentId)
-    .sort((a, b) => a.createdAt - b.createdAt);
+  const sources = transferableSources(session, ids);
   if (sources.length === 0) return { moved: 0, failure: 'nothing' };
 
   options.onProgress?.('Moviendo al tablero destino…');
@@ -158,53 +225,7 @@ export async function transferElements(
       height: element.height ?? 48,
     }));
     const offset = transferOffset(existing, boundsOf(groupRects));
-    const now = Date.now();
-    const idMap = new Map<string, string>();
-
-    target.doc.transact(() => {
-      for (const source of sources) {
-        const init: Record<string, unknown> = {
-          ...source,
-          x: Math.round(source.x + offset.dx),
-          y: Math.round(source.y + offset.dy),
-          createdBy: source.createdBy,
-          createdAt: now,
-          updatedAt: now,
-        };
-        delete init['id'];
-        delete init['parentId'];
-        delete init['childrenIds'];
-        delete init['text'];
-        const created = addElement(target.doc, source.type, init as never, target.origin);
-        idMap.set(source.id, created);
-      }
-      // Segunda pasada: relaciones internas (hijos de columna) con los ids nuevos.
-      for (const source of sources) {
-        const created = idMap.get(source.id);
-        if (!created) continue;
-        if (source.parentId) {
-          const mapped = idMap.get(source.parentId);
-          const map = getElementMap(target.doc, created);
-          if (mapped) map?.set('parentId', mapped);
-        }
-        if (source.type === 'column') {
-          const map = getElementMap(target.doc, created);
-          const children = new Y.Array<string>();
-          for (const childId of rawChildIds(session.doc, source.id)) {
-            const mappedChild = idMap.get(childId);
-            if (mappedChild) children.push([mappedChild]);
-          }
-          map?.set('childrenIds', children);
-        }
-        // Texto enriquecido: instantánea y reconstrucción (no se puede clonar el
-        // `Y.XmlFragment` con una actualización binaria).
-        const fragment = getTextFragment(session.doc, source.id);
-        if (fragment) {
-          const destination = ensureTextFragment(target.doc, created, target.origin);
-          if (destination) restoreFragment(destination, snapshotFragment(fragment));
-        }
-      }
-    }, target.origin);
+    copyElements(session, target, sources, offset);
 
     const flushed = await flushProvider(target);
     if (!flushed) return { moved: 0, failure: 'sync' };
@@ -214,6 +235,67 @@ export async function transferElements(
   } finally {
     target.destroy();
   }
+}
+
+/**
+ * Trae elementos de otro tablero al que ya está abierto («Sin ordenar» → tablero
+ * actual). Mismo contrato que `transferElements` pero al revés: el destino es la
+ * sesión viva y el origen una sesión temporal, y con `world` los elementos caen
+ * donde se soltaron en vez de a la derecha del contenido.
+ */
+export async function pullElements(
+  source: BoardSession,
+  ids: readonly string[],
+  target: BoardSession,
+  options: TransferOptions & { world?: Point } = {},
+): Promise<TransferResult> {
+  if (source.boardId === target.boardId) return { moved: 0, failure: 'same-board' };
+  if (!useAppStore.getState().apiOnline) return { moved: 0, failure: 'offline' };
+  if (source.boardId.startsWith('bd_') || target.boardId.startsWith('bd_')) {
+    return { moved: 0, failure: 'local-target' };
+  }
+
+  const sources = transferableSources(source, ids);
+  if (sources.length === 0) return { moved: 0, failure: 'nothing' };
+
+  const groupRects: Rect[] = sources.map((element) => ({
+    x: element.x,
+    y: element.y,
+    width: element.width,
+    height: element.height ?? 48,
+  }));
+  const group = boundsOf(groupRects);
+  const existing = target.getLayout().map((item) => ({
+    x: item.x,
+    y: item.y,
+    width: item.width,
+    height: item.height,
+  }));
+
+  // Con un punto de suelta, el grupo aterriza centrado en él (corrido si el
+  // hueco está ocupado); sin punto, a la derecha del contenido del destino.
+  const targetTopLeft = options.world
+    ? placementForNewElement({
+        existing,
+        size: { width: group?.width ?? 0, height: group?.height ?? 0 },
+        world: options.world,
+      })
+    : (() => {
+        const plan = transferOffset(existing, group);
+        return group ? { x: group.x + plan.dx, y: group.y + plan.dy } : { x: 0, y: 0 };
+      })();
+
+  options.onProgress?.('Moviendo al tablero actual…');
+  copyElements(source, target, sources, {
+    dx: group ? targetTopLeft.x - group.x : 0,
+    dy: group ? targetTopLeft.y - group.y : 0,
+  });
+
+  const flushed = await flushProvider(target);
+  if (!flushed) return { moved: 0, failure: 'sync' };
+
+  removeElements(source.doc, sources.map((element) => element.id), source.origin);
+  return { moved: sources.length };
 }
 
 /** Mensaje de aviso para cada motivo de fallo. */

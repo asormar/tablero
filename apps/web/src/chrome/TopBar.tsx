@@ -5,7 +5,7 @@
 
 import { useEffect, useState } from 'react';
 
-import { Maximize2, PanelRight, Redo2, Undo2 } from 'lucide-react';
+import { Archive, Home, ListChecks, Maximize2, PanelRight, Redo2, Undo2 } from 'lucide-react';
 
 import { renameBoard } from '@/app/boardService';
 import { fitToScreen, redoWithPrune, undoWithPrune } from '@/canvas/commands';
@@ -28,6 +28,7 @@ export function TopBar({ session, boardId, onOpenBoard }: TopBarProps): JSX.Elem
   const board = useAppStore((state) => state.boards.find((item) => item.id === boardId) ?? null);
   const [title, setTitle] = useState(board?.title ?? '');
   const panelOpen = useUiStore((state) => state.panelOpen);
+  const panelTab = useUiStore((state) => state.panelTab);
   const canUndo = useCanUndo();
   const canRedo = useCanRedo();
 
@@ -112,12 +113,40 @@ export function TopBar({ session, boardId, onOpenBoard }: TopBarProps): JSX.Elem
 
         <button
           type="button"
-          className={`icon-button${panelOpen ? ' is-active' : ''}`}
-          title="Panel Sin ordenar"
-          aria-pressed={panelOpen}
-          onClick={() => useUiStore.getState().togglePanel()}
+          className={`icon-button${panelOpen && panelTab === 'unsorted' ? ' is-active' : ''}`}
+          title="Sin ordenar"
+          aria-pressed={panelOpen && panelTab === 'unsorted'}
+          onClick={() => useUiStore.getState().openPanel('unsorted')}
         >
           <PanelRight size={15} />
+        </button>
+
+        <button
+          type="button"
+          className={`icon-button${panelOpen && panelTab === 'trash' ? ' is-active' : ''}`}
+          title="Papelera"
+          aria-pressed={panelOpen && panelTab === 'trash'}
+          onClick={() => useUiStore.getState().openPanel('trash')}
+        >
+          <Archive size={15} />
+        </button>
+
+        <button
+          type="button"
+          className="icon-button"
+          title="Tableros (favoritos y recientes)"
+          onClick={() => useUiStore.getState().setHomeOpen(true)}
+        >
+          <Home size={15} />
+        </button>
+
+        <button
+          type="button"
+          className="icon-button"
+          title="Tareas (vista global)"
+          onClick={() => useUiStore.getState().setTasksOpen(true)}
+        >
+          <ListChecks size={15} />
         </button>
 
         <button

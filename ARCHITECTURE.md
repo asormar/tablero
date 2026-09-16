@@ -118,6 +118,37 @@ sus hijos y los devuelven con ellas. `purgeTrash` elimina definitivamente lo que
 superó los 30 días y se ejecuta al abrir el tablero: sin cron, que es lo que
 corresponde a un producto autoalojado.
 
+Todas las superficies de borrado del lienzo (`Supr`, las barras y el menú
+contextual) pasan por `deleteSelection`, que **marca**: si alguna vuelve a
+llamar a `removeElements`, la tarjeta desaparece sin pasar por la papelera y sin
+posibilidad de restaurarla.
+
+El panel de papelera muestra las dos papeleras juntas: los elementos del
+documento (restaurar, vaciar) y los tableros (`GET /api/trash`, que viven en
+Postgres).
+
+### Liberación de archivos (assets)
+
+Un archivo (`Asset` + objetos en MinIO) se libera recién cuando **sale del
+documento para siempre**: al vaciar la papelera o al purgar lo que superó los 30
+días, y solo si ningún otro elemento del documento sigue apuntando a ese
+`assetId`. Motivos:
+
+- Borrar una tarjeta solo la marca, así que liberar el archivo en ese momento
+  rompería el deshacer (`Ctrl/Cmd+Z` devuelve la tarjeta) y el restaurar desde
+  la papelera: la imagen volvería sin su archivo.
+- Duplicar o pegar una tarjeta de archivo copia su `assetId` (el binario es el
+  mismo), de modo que dos elementos pueden compartir un asset. Sin la
+  comprobación de referencias, vaciar la papelera dejaría a la copia sin imagen.
+- Los derivados en memoria (documento de pdfjs, picos de la forma de onda) se
+  sueltan a la vez, con `forgetPdfDocument`/`forgetPeaks`; si no, quedarían
+  cacheados en el cliente archivos que ya no existen.
+
+La decisión vive en `apps/web/src/lib/assetCleanup.ts` (`releaseUnreferencedAssets`)
+y la usan `emptyTrashForever`/`purgeExpiredTrash` de `lib/trashActions.ts`. El
+listado de traspapelados (`getTrashedElements`) también cuenta como referencia:
+un elemento en la papelera todavía puede volver.
+
 La papelera de **tableros** es otra cosa: vive en Postgres (`Board.trashedAt`) y
 la expone el API (`GET /api/trash`, `POST /api/trash/:id/restore`,
 `DELETE /api/trash/:id`). El panel de la interfaz muestra las dos juntas.
@@ -159,6 +190,13 @@ solo cambia `parentBoardId` en Postgres.
 
 ## Trampas conocidas
 
+- **`is-dragging` no puede marcar el `pointerdown` pelado**: esa clase apaga los
+  eventos de puntero de la tarjeta (a propósito: debajo tiene que verse la
+  columna o la tarjeta de tablero que define el destino del soltado). Si se
+  aplica al presionar, el `pointerup`, el `click` y el `dblclick` caen en el
+  lienzo: una tarjeta de tablero no se abría y el doble clic creaba una nota
+  encima. Se marca en el primer movimiento real (`startMoveDrag`,
+  `startWidthResize`, `startKanbanDrag`); un clic sin movimiento nunca la activa.
 - **`@hocuspocus/provider` no envía el mensaje de autenticación si `token` está
   vacío** (`isAuthenticationRequired` es `!!token && !isAuthenticated`). Sin él
   la conexión queda abierta pero sin sincronizar, y el servidor no llega a

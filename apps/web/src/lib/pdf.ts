@@ -30,6 +30,31 @@ async function loadPdfjs(): Promise<PdfjsModule> {
 const documents = new Map<string, Promise<PDFDocumentProxy | null>>();
 const tasks = new Map<string, { destroy(): Promise<void> }>();
 
+/** Cuántos visores montados usan cada documento (dos canvas pueden compartirlo). */
+const mounts = new Map<string, number>();
+
+/**
+ * Declara un visor montado para el documento de esa URL. Va en pareja con
+ * `releasePdfDocument`: mientras quede uno montado, el documento no se tira.
+ */
+export function retainPdfDocument(url: string): void {
+  mounts.set(url, (mounts.get(url) ?? 0) + 1);
+}
+
+/**
+ * Suelta un visor. Cuando no queda ninguno, el documento se olvida (y con él la
+ * memoria del PDF): la tarjeta se borró o se virtualizó fuera de la vista.
+ */
+export function releasePdfDocument(url: string): void {
+  const remaining = (mounts.get(url) ?? 1) - 1;
+  if (remaining > 0) {
+    mounts.set(url, remaining);
+    return;
+  }
+  mounts.delete(url);
+  forgetPdfDocument(url);
+}
+
 /** Documento ya abierto, o `null` si el archivo no es un PDF legible. */
 export function loadPdfDocument(url: string): Promise<PDFDocumentProxy | null> {
   const existing = documents.get(url);

@@ -38,6 +38,9 @@ function ColumnChild({ session, id, simplified }: { session: BoardSession; id: s
   const editingId = useUiStore((state) => state.editingId);
   const selected = useUiStore((state) => state.selection.includes(id));
   const [drag, setDrag] = useState<KanbanDrag | null>(null);
+  // La clase de arrastre se pone recién cuando el gesto se movió: un clic (o el
+  // doble clic que abre un documento) no puede quedar con `pointer-events: none`.
+  const [moving, setMoving] = useState(false);
 
   useEffect(() => {
     const current = node.current;
@@ -53,14 +56,22 @@ function ColumnChild({ session, id, simplified }: { session: BoardSession; id: s
 
   useEffect(() => {
     if (!drag) return;
-    const onMove = (event: PointerEvent): void => drag.move(event.clientX, event.clientY);
+    const onMove = (event: PointerEvent): void => {
+      drag.move(event.clientX, event.clientY);
+      // La marca visual de arrastre (y el `pointer-events: none`) llega recién
+      // cuando hubo movimiento real: así el clic y el doble clic siguen siendo
+      // de la tarjeta.
+      if (drag.moved) setMoving((current) => (current ? current : true));
+    };
     const onUp = (): void => {
       drag.end(true);
       setDrag(null);
+      setMoving(false);
     };
     const onCancel = (): void => {
       drag.end(false);
       setDrag(null);
+      setMoving(false);
     };
     const onKey = (event: KeyboardEvent): void => {
       if (event.key !== 'Escape') return;
@@ -111,7 +122,7 @@ function ColumnChild({ session, id, simplified }: { session: BoardSession; id: s
   const classes = ['el', `el--${element.type}`, 'col__card'];
   if (selected) classes.push('is-selected');
   if (editingId === id) classes.push('is-editing');
-  if (drag) classes.push('is-dragging');
+  if (moving) classes.push('is-dragging');
   if (simplified) classes.push('is-zoomed-out');
 
   const surface = element.hex || (element.color !== undefined && element.color !== 'none')

@@ -66,9 +66,17 @@ export function startMoveDrag(params: MoveDragParams): PointerDrag {
   let done = false;
   let moved = false;
 
-  // La marca de arrastre vive en el store: así la pinta React y sobrevive a
-  // cualquier re-render que ocurra a mitad de gesto.
-  useUiStore.getState().setDraggingIds(items.map((item) => item.id));
+  /**
+   * La marca de arrastre se publica recién cuando el gesto se movió de verdad
+   * (dentro de `flush`, con el primer desplazamiento pintado). Motivo: la clase
+   * `is-dragging` desactiva los eventos de puntero de la tarjeta, y un clic sin
+   * movimiento (que también arranca este gesto) necesita que el `pointerup`, el
+   * `click` y el `dblclick` sigan cayendo en la tarjeta. Con el clic la marca no
+   * aparece; con el arrastre aparece en el mismo fotograma que el primer pintado.
+   */
+  const markDragging = (): void => {
+    useUiStore.getState().setDraggingIds(items.map((item) => item.id));
+  };
 
   const paint = (dx: number, dy: number): void => {
     for (const item of items) {
@@ -99,6 +107,7 @@ export function startMoveDrag(params: MoveDragParams): PointerDrag {
       if (!unchanged) {
         offset = { dx: result.dx, dy: result.dy };
         guides = result.guides;
+        if (!moved) markDragging();
         moved = true;
         paint(offset.dx, offset.dy);
         useUiStore.getState().setGuides(guides);
@@ -168,7 +177,11 @@ export function startWidthResize(params: ResizeDragParams): PointerDrag {
   let done = false;
   let moved = false;
 
-  useUiStore.getState().setDraggingIds([item.id]);
+  // Igual que en el arrastre: la marca de gesto se publica al primer cambio
+  // real, no al simple contacto con el tirador (un clic no es un gesto).
+  const markDragging = (): void => {
+    useUiStore.getState().setDraggingIds([item.id]);
+  };
 
   const paint = (): void => {
     setNodeWidth(item.id, current.width);
@@ -194,6 +207,7 @@ export function startWidthResize(params: ResizeDragParams): PointerDrag {
     const next = resolve(pointer);
     if (next.width === current.width && next.x === current.x) return;
     current = next;
+    if (!moved) markDragging();
     moved = true;
     paint();
   };

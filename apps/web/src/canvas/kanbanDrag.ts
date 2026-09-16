@@ -123,7 +123,12 @@ export type KanbanDrag = {
   move(clientX: number, clientY: number): void;
   end(commit: boolean): void;
   readonly target: KanbanTarget | null;
+  /** Ya se movió lo suficiente para considerarlo un arrastre (no un clic). */
+  readonly moved: boolean;
 };
+
+/** Umbral (px) a partir del cual el gesto es un arrastre y no un clic. */
+export const KANBAN_DRAG_THRESHOLD = 3;
 
 /**
  * Arrastre de una tarjeta que ya vive en una columna: reordena dentro, la pasa
@@ -139,6 +144,9 @@ export function startKanbanDrag(options: KanbanDragOptions): KanbanDrag {
   return {
     get target() {
       return target;
+    },
+    get moved() {
+      return Math.abs(start.dx) >= KANBAN_DRAG_THRESHOLD || Math.abs(start.dy) >= KANBAN_DRAG_THRESHOLD;
     },
     move(clientX, clientY) {
       if (done) return;
@@ -171,7 +179,7 @@ export function startKanbanDrag(options: KanbanDragOptions): KanbanDrag {
       highlightColumn(null);
       if (!commit) return;
       // Sin movimiento real: se deja como estaba.
-      if (Math.abs(start.dx) < 3 && Math.abs(start.dy) < 3) return;
+      if (Math.abs(start.dx) < KANBAN_DRAG_THRESHOLD && Math.abs(start.dy) < KANBAN_DRAG_THRESHOLD) return;
       const column = session.getElement(id)?.parentId ?? null;
       if (target && target.columnId === column) {
         reorderInColumn(session, target.columnId, id, target.index);

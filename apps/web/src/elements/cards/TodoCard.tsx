@@ -60,8 +60,22 @@ function commitItems(session: BoardSession, elementId: string, items: TodoItem[]
 
 type RowDropTarget = { listId: string; parentId: string | null; index: number };
 
-/** Fila que hay bajo el puntero y dónde caería la tarea arrastrada. */
-function dropTargetAt(clientX: number, clientY: number): { row: HTMLElement; target: RowDropTarget } | null {
+type DropFound = {
+  target: RowDropTarget;
+  /** Línea de inserción, en coordenadas de pantalla. */
+  line: { x: number; y: number; width: number };
+};
+
+/**
+ * Destino de una tarea soltada.
+ *
+ * Primero busca la **fila** bajo el puntero (antes/después de ella o como
+ * subtarea, según `taskDropTarget`). Si no hay fila —se soltó en el hueco de
+ * abajo, sobre el pie de la lista o sobre el encabezado— vale la **lista**
+ * entera: la tarea entra al final del primer nivel. Sin esto, soltar en el
+ * borde inferior de una lista (lo más natural del mundo) no hacía nada.
+ */
+function dropTargetAt(clientX: number, clientY: number): DropFound | null {
   const stack = document.elementsFromPoint(clientX, clientY);
   for (const node of stack) {
     const row = (node as HTMLElement).closest?.('[data-task-row]') as HTMLElement | null;
@@ -79,7 +93,23 @@ function dropTargetAt(clientX: number, clientY: number): { row: HTMLElement; tar
       clientY,
       rect.top + rect.height / 2,
     );
-    return { row, target: { listId, ...target } };
+    return {
+      target: { listId, ...target },
+      line: { x: rect.left + 4, y: rect.top, width: Math.max(24, rect.width - 8) },
+    };
+  }
+
+  for (const node of stack) {
+    const list = (node as HTMLElement).closest?.('[data-todo-id]') as HTMLElement | null;
+    if (!list) continue;
+    const listId = list.dataset.todoId;
+    if (!listId) continue;
+    const rows = list.querySelector('.todo__rows') ?? list;
+    const rect = rows.getBoundingClientRect();
+    return {
+      target: { listId, parentId: null, index: Number.MAX_SAFE_INTEGER },
+      line: { x: rect.left + 4, y: rect.bottom - 1, width: Math.max(24, rect.width - 8) },
+    };
   }
   return null;
 }
@@ -145,8 +175,7 @@ function TaskRow({
         ui.setDropLine(null);
         return;
       }
-      const rect = found.row.getBoundingClientRect();
-      ui.setDropLine({ x: rect.left + 4, y: rect.top, width: Math.max(24, rect.width - 8) });
+      ui.setDropLine(found.line);
     };
     const onUp = (event: PointerEvent): void => {
       setDragging(false);

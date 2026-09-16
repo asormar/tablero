@@ -49,7 +49,7 @@ import {
 import type { BoardSession } from '@/collab/BoardSession';
 import { InlineEdit } from '@/elements/InlineEdit';
 import { extractPalette, type PaletteEntry } from '@/lib/palette';
-import { peaksForUrl } from '@/lib/waveform';
+import { peaksForUrl, forgetPeaks } from '@/lib/waveform';
 import { useAsset } from '@/state/assetStore';
 import { useUiStore } from '@/state/uiStore';
 
@@ -145,7 +145,9 @@ export function ImageCard({ session, element, simplified }: CardProps): JSX.Elem
     });
   };
 
-  if (upload && upload.status !== 'ready') return <UploadProgressCard entry={upload} width={element.width} />;
+  if (upload && upload.status !== 'ready') {
+    return <UploadProgressCard session={session} element={element} entry={upload} width={element.width} />;
+  }
   if (assetId.length === 0) return <EmptyAssetCard session={session} element={element} kind="image" />;
   if (assetEntry.status === 'missing') return <MissingAssetCard message="La imagen ya no está en el servidor" />;
 
@@ -316,7 +318,9 @@ export function VideoCard({ session, element, simplified }: CardProps): JSX.Elem
   const natural = naturalSize(element, asset);
   const aspect = natural ? natural.width / natural.height : 16 / 10;
 
-  if (upload && upload.status !== 'ready') return <UploadProgressCard entry={upload} width={element.width} />;
+  if (upload && upload.status !== 'ready') {
+    return <UploadProgressCard session={session} element={element} entry={upload} width={element.width} />;
+  }
   if (assetId.length === 0) return <EmptyAssetCard session={session} element={element} kind="video" />;
   if (assetEntry.status === 'missing') return <MissingAssetCard message="El vídeo ya no está en el servidor" />;
 
@@ -387,9 +391,18 @@ export function AudioCard({ session, element, simplified }: CardProps): JSX.Elem
     };
   }, [rawUrl]);
 
+  // Los picos son un derivado del binario y viven en una caché en memoria: al
+  // desmontar la tarjeta (borrada o virtualizada fuera de vista) se sueltan.
+  useEffect(() => {
+    if (rawUrl.length === 0) return undefined;
+    return () => forgetPeaks(rawUrl);
+  }, [rawUrl]);
+
   const seconds = duration ?? asset?.duration ?? null;
 
-  if (upload && upload.status !== 'ready') return <UploadProgressCard entry={upload} width={element.width} />;
+  if (upload && upload.status !== 'ready') {
+    return <UploadProgressCard session={session} element={element} entry={upload} width={element.width} />;
+  }
   if (assetId.length === 0) return <EmptyAssetCard session={session} element={element} kind="audio" />;
   if (assetEntry.status === 'missing') return <MissingAssetCard message="El audio ya no está en el servidor" />;
 
@@ -487,7 +500,9 @@ export function FileCard({ session, element, simplified }: CardProps): JSX.Eleme
   const name = asset?.originalName ?? 'Archivo';
   const size = asset ? formatBytes(asset.size) : '';
 
-  if (upload && upload.status !== 'ready') return <UploadProgressCard entry={upload} width={element.width} />;
+  if (upload && upload.status !== 'ready') {
+    return <UploadProgressCard session={session} element={element} entry={upload} width={element.width} />;
+  }
   if (assetId.length === 0) return <EmptyAssetCard session={session} element={element} kind="file" />;
   if (assetEntry.status === 'missing') return <MissingAssetCard message="El archivo ya no está en el servidor" />;
 

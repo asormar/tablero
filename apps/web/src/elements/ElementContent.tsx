@@ -8,6 +8,9 @@
 import { type CanvasElement, type ElementType, type HeadingSize, elementLabel } from '@tablero/shared';
 import { Suspense, lazy } from 'react';
 
+import { Star } from 'lucide-react';
+
+import { setBoardFavorite } from '@/api/boards';
 import { knownBoardCount } from '@/app/boardCounts';
 import type { BoardSession } from '@/collab/BoardSession';
 import { useSessionText } from '@/collab/SessionContext';
@@ -166,6 +169,22 @@ function BoardCard({ element, simplified }: { element: CanvasElement; simplified
   const icon = board?.icon ?? (element.type === 'board' ? element.icon : null) ?? '📋';
   const title = board?.title ?? 'Tablero';
   const count = board?.elementCount ?? knownBoardCount(boardId);
+  const favorited = board?.favorited === true;
+  // La estrella solo tiene sentido con un tablero del servidor (los locales no
+  // existen en la API).
+  const canFavorite = board !== null && !boardId.startsWith('bd_');
+
+  const toggleFavorite = (): void => {
+    if (!board || !canFavorite) return;
+    const next = !favorited;
+    useAppStore.getState().upsertBoard({ ...board, favorited: next });
+    void setBoardFavorite(board.id, next)
+      .then((updated) => useAppStore.getState().upsertBoard(updated))
+      .catch(() => {
+        useAppStore.getState().upsertBoard({ ...board, favorited });
+        useAppStore.getState().setNotice('No se pudo cambiar el favorito.');
+      });
+  };
 
   return (
     <div className="board-card">
@@ -174,6 +193,18 @@ function BoardCard({ element, simplified }: { element: CanvasElement; simplified
         <span className="board-card__icon" aria-hidden="true">
           {icon}
         </span>
+        {canFavorite && !simplified ? (
+          <button
+            type="button"
+            className={`board-card__star${favorited ? ' is-active' : ''}`}
+            title={favorited ? 'Quitar de favoritos' : 'Marcar como favorito'}
+            aria-pressed={favorited}
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={toggleFavorite}
+          >
+            <Star size={13} fill={favorited ? 'currentColor' : 'none'} />
+          </button>
+        ) : null}
       </div>
       <div className="board-card__meta">
         <span className="board-card__title" title={title}>

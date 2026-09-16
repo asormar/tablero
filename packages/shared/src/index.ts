@@ -5,4 +5,6 @@ export * from './geometry.js';
 export * from './viewport.js';
 export * from './doc.js';
 export * from './boards.js';
+export * from './assets.js';
+export * from './links.js';
 export * from './schema.js';

@@ -85,6 +85,22 @@ export const listAssetsSchema = z.object({
   type: z.enum(['image', 'video', 'audio', 'file']).optional(),
 });
 
+/** Subida de un archivo (`multipart/form-data`, campo `file`). */
+export const uploadAssetSchema = z.object({
+  boardId: idSchema.optional(),
+  /** Reutiliza el archivo si el mismo usuario ya subió uno idéntico. */
+  dedupe: z.coerce.boolean().default(true),
+});
+
+/** URL firmada para subir directo al almacenamiento (sin pasar por la API). */
+export const presignAssetSchema = z.object({
+  name: z.string().trim().min(1).max(300),
+  mime: z.string().trim().min(1).max(200),
+  size: z.number().int().positive(),
+});
+
+export const assetIdParamSchema = z.object({ id: idSchema });
+
 export const linkPreviewQuerySchema = z.object({
   url: z.string().trim().min(4).max(2048),
 });

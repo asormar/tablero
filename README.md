@@ -14,7 +14,7 @@ comportarse y **en qué orden** construirla es el plan de producto y técnico
 | Fase | Alcance | Estado |
 | --- | --- | --- |
 | 1 | Base y lienzo: monorepo, Docker, autenticación, CRUD de tableros anidados, lienzo infinito con selección/arrastre/guías/virtualización, nota + encabezado + tarjeta de tablero, persistencia Yjs con Hocuspocus, deshacer/rehacer | **Completa y verificada** (ver *Verificación*) |
-| 2 | Contenido multimedia: subida de archivos, imagen, archivo, vídeo, audio, enlace, muestra de color, pegado inteligente | Pendiente |
+| 2 | Contenido multimedia: subida de archivos, imagen, archivo, vídeo, audio, enlace, muestra de color, pegado inteligente | **Completa y verificada** (ver *Verificación*) |
 | 3 | Estructura y organización: columnas, tareas con fechas, conectores con etiquetas, tablas, documento largo, dibujo, mapa, «Sin ordenar», papelera, favoritos | Pendiente |
 | 4 | Productividad: búsqueda global, paleta de comandos, plantillas, exportación/importación, historial, ajustes y tema oscuro, PWA y móvil | Pendiente |
 | 5 | Colaboración: compartir con roles, publicar, cursores en tiempo real, comentarios, notificaciones, actividad | Pendiente |
@@ -81,6 +81,7 @@ pnpm --filter @tablero/web build     # build de producción
 
 bash apps/api/scripts/smoke-rest.sh              # ciclo CRUD completo por HTTP
 pnpm --filter @tablero/api smoke:collab          # tiempo real: escribe, desconecta, verifica persistencia
+pnpm --filter @tablero/api smoke:assets          # archivos: subida, miniaturas, dedupe, límites, permisos
 pnpm --filter @tablero/api seed                  # cuenta demo@tablero.test
 ```
 
@@ -118,6 +119,31 @@ Comprobado con ejecución real, no con inspección de código:
 - Deshacer: un arrastre es un paso (vuelve exacto a su posición), `Supr` borra y
   `Ctrl+Z` recupera la tarjeta con su texto.
 
-Lo que **no** está verificado todavía: los elementos de las fases 2–6, la
+Lo que **no** está verificado todavía: los elementos de las fases 3–6, la
 extensión de navegador, el modo presentación y las pruebas end-to-end con
 Playwright.
+
+## Verificación de la fase 2
+
+- `pnpm -r typecheck` limpio en los tres paquetes; **135 tests** en `shared` y
+  **143** en `web` (los 74 nuevos cubren clasificación y colocación en cascada de
+  archivos, cola de subida, recorte, navegación del visor, paleta, forma de onda,
+  pegado y visor de PDF); build de producción OK (el visor de PDF y su worker
+  cargan en chunks aparte, solo si hay un PDF en el tablero).
+- `smoke:assets`: **24/24** con archivos reales — subida multipart a MinIO,
+  miniatura WEBP de 480 px, orientación EXIF, duración y miniatura de vídeo con
+  ffmpeg, audio con y sin portada, SVG/GIF tal cual, dedupe (201 nuevo / 200
+  reutilizado), rechazo 413 de 750 MB (con y sin `Content-Length`), 404 al leer o
+  borrar archivos de otro usuario y borrado que limpia fila y objetos.
+- Interfaz, en navegador real: **20 imágenes soltadas de una vez** → 20 tarjetas
+  al instante con 12 barras de progreso simultáneas (cola de 4 en paralelo), las
+  20 subidas, 20 imágenes renderizadas, **0 tarjetas solapadas**; tras borrar el
+  `localStorage` y recargar, las 20 vuelven del servidor con sus miniaturas
+  (comprobado con una petición real: `200 image/png` por URL firmada de MinIO).
+- **Pegar un enlace de YouTube con `Ctrl+V` real** crea la tarjeta de enlace con
+  el reproductor incrustado (`iframe https://www.youtube.com/embed/…`).
+- La API dejó de exponer claves de almacenamiento: el cliente usa siempre rutas
+  propias (`/api/assets/:id/raw` y `/thumb`) que redirigen a URLs firmadas.
+
+Pendiente de verificación manual (necesita gesto humano): el cuentagotas y el
+selector de color nativo, y la grabación con un micrófono real.

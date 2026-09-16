@@ -1,44 +1,49 @@
 /**
  * Barra lateral de herramientas.
  *
- * Los tres tipos de la fase 1 se pueden arrastrar al lienzo (drag & drop nativo)
- * o crear con un clic en el centro de la vista. El resto de tipos del producto
- * aparecen deshabilitados con el aviso "próximamente".
+ * Los tipos de la fase 1 y de la fase 2 se pueden arrastrar al lienzo (drag &
+ * drop nativo) o crear con un clic cerca del centro de la vista. Los de
+ * contenido abren el selector de archivos; el enlace y la muestra se crean
+ * vacíos para completarlos en la tarjeta. Mapa, tabla, dibujo, columna,
+ * documento y tareas siguen deshabilitados (fases siguientes).
  */
 
 import { useState } from 'react';
 
-import type { ElementType, HeadingSize } from '@tablero/shared';
+import type { AssetKind, ElementType, HeadingSize } from '@tablero/shared';
 
 import {
+  Columns3,
+  FileText,
   Grid2x2,
   Image as ImageIcon,
   LayoutGrid,
   Link2,
   ListChecks,
   Map as MapIcon,
+  Mic,
   Palette,
+  Paperclip,
   PenTool,
   StickyNote,
   Table as TableIcon,
   Type,
   Video,
-  FileText,
-  Columns3,
-  Sparkles,
 } from 'lucide-react';
 
 import {
   createBoardCardAt,
-  createElementAt,
   createHeadingAt,
   createNoteAt,
   seedPerfNotes,
-  sizeForType,
   spawnPoint,
 } from '@/canvas/commands';
+import { SWATCH_DEFAULT_HEX, createLinkCardAt, createSwatchAt } from '@/canvas/contentCommands';
 import { HEADING_MIME, TOOL_MIME } from '@/canvas/toolDrop';
+import { attachFilesToBoard } from '@/canvas/uploadController';
 import type { BoardSession } from '@/collab/BoardSession';
+import { DEFAULT_SIZES } from '@tablero/shared';
+import { pickFiles } from '@/lib/filePicker';
 import { isDevBuild } from '@/lib/renderStats';
 import { useAppStore } from '@/state/appStore';
 import { useUiStore } from '@/state/uiStore';
@@ -48,22 +53,35 @@ type Tool = {
   type: ElementType;
   label: string;
   icon: JSX.Element;
-  enabled: boolean;
-  hint?: string;
+  hint: string;
 };
 
-const FUTURE_TOOLS: Tool[] = [
-  { type: 'document', label: 'Documento', icon: <FileText size={18} />, enabled: false },
-  { type: 'todo', label: 'Tareas', icon: <ListChecks size={18} />, enabled: false },
-  { type: 'image', label: 'Imagen', icon: <ImageIcon size={18} />, enabled: false },
-  { type: 'link', label: 'Enlace', icon: <Link2 size={18} />, enabled: false },
-  { type: 'video', label: 'Vídeo', icon: <Video size={18} />, enabled: false },
-  { type: 'column', label: 'Columna', icon: <Columns3 size={18} />, enabled: false },
-  { type: 'table', label: 'Tabla', icon: <TableIcon size={18} />, enabled: false },
-  { type: 'swatch', label: 'Muestra de color', icon: <Palette size={18} />, enabled: false },
-  { type: 'sketch', label: 'Dibujo', icon: <PenTool size={18} />, enabled: false },
-  { type: 'map', label: 'Mapa', icon: <MapIcon size={18} />, enabled: false },
+/** Herramientas de contenido de la fase 2 (activas). */
+const CONTENT_TOOLS: Tool[] = [
+  { type: 'image', label: 'Imagen', icon: <ImageIcon size={18} />, hint: 'Imagen — clic para elegir archivos' },
+  { type: 'video', label: 'Vídeo', icon: <Video size={18} />, hint: 'Vídeo — clic para elegir archivos' },
+  { type: 'audio', label: 'Audio', icon: <Mic size={18} />, hint: 'Audio — clic para elegir archivos' },
+  { type: 'file', label: 'Archivo', icon: <Paperclip size={18} />, hint: 'Archivo — clic para elegir archivos' },
+  { type: 'link', label: 'Enlace', icon: <Link2 size={18} />, hint: 'Enlace — clic para crear una tarjeta y pegar la URL' },
+  { type: 'swatch', label: 'Muestra', icon: <Palette size={18} />, hint: 'Muestra de color — clic para crear una' },
 ];
+
+/** Tipos de fases siguientes: siguen deshabilitados. */
+const FUTURE_TOOLS: Tool[] = [
+  { type: 'document', label: 'Documento', icon: <FileText size={18} />, hint: 'Documento' },
+  { type: 'todo', label: 'Tareas', icon: <ListChecks size={18} />, hint: 'Tareas' },
+  { type: 'column', label: 'Columna', icon: <Columns3 size={18} />, hint: 'Columna' },
+  { type: 'table', label: 'Tabla', icon: <TableIcon size={18} />, hint: 'Tabla' },
+  { type: 'sketch', label: 'Dibujo', icon: <PenTool size={18} />, hint: 'Dibujo' },
+  { type: 'map', label: 'Mapa', icon: <MapIcon size={18} />, hint: 'Mapa' },
+];
+
+const ASSET_KIND_BY_TYPE: Partial<Record<ElementType, AssetKind>> = {
+  image: 'image',
+  video: 'video',
+  audio: 'audio',
+  file: 'file',
+};
 
 const HEADING_SIZES: HeadingSize[] = ['S', 'M', 'L', 'XL'];
 
@@ -75,6 +93,7 @@ type ToolbarProps = {
 export function Toolbar({ session }: ToolbarProps): JSX.Element {
   const [headingSize, setHeadingSize] = useState<HeadingSize>('M');
   const setPendingTool = useUiStore((state) => state.setPendingTool);
+  const setRecorderOpen = useUiStore((state) => state.setRecorderOpen);
   const currentBoardId = useAppStore((state) => state.currentBoardId);
 
   const dragProps = (type: ElementType, extra?: Record<string, string>) => ({
@@ -103,12 +122,66 @@ export function Toolbar({ session }: ToolbarProps): JSX.Element {
     createBoardCardAt(session, spawnPoint(), board);
   };
 
-  const addFuture = (type: ElementType): void => {
-    createElementAt(session, type, spawnPoint());
+  /** Clic en una herramienta de contenido: elegir archivos y crear tarjetas. */
+  const addAssets = async (kind: AssetKind): Promise<void> => {
+    const files = await pickFiles(kind === 'file' ? 'any' : kind, true);
+    if (files.length === 0) return;
+    await attachFilesToBoard(session, files, { world: spawnPoint() });
+  };
+
+  const addLink = (): void => {
+    const size = DEFAULT_SIZES.link;
+    const world = spawnPoint();
+    createLinkCardAt(
+      session,
+      { x: world.x - size.width / 2, y: world.y - (size.height ?? 96) / 2 },
+      '',
+      null,
+    );
+  };
+
+  const addSwatch = (): void => {
+    const size = DEFAULT_SIZES.swatch;
+    const world = spawnPoint();
+    createSwatchAt(
+      session,
+      { x: world.x - size.width / 2, y: world.y - (size.height ?? 112) / 2 },
+      SWATCH_DEFAULT_HEX,
+      '',
+    );
   };
 
   const addTestNotes = (): void => {
     seedPerfNotes(session, 300);
+  };
+
+  const renderContentTool = (tool: Tool): JSX.Element => {
+    const kind = ASSET_KIND_BY_TYPE[tool.type];
+    const onClick = (): void => {
+      if (kind) {
+        void addAssets(kind);
+        return;
+      }
+      if (tool.type === 'link') {
+        addLink();
+        return;
+      }
+      addSwatch();
+    };
+
+    return (
+      <button
+        key={tool.type}
+        type="button"
+        className="toolbar__tool"
+        title={`${tool.hint} · arrastrar al lienzo`}
+        onClick={onClick}
+        {...dragProps(tool.type)}
+      >
+        {tool.icon}
+        <span className="toolbar__label">{tool.label}</span>
+      </button>
+    );
   };
 
   return (
@@ -163,17 +236,28 @@ export function Toolbar({ session }: ToolbarProps): JSX.Element {
         </button>
       </div>
 
+      <div className="toolbar__group" aria-label="Contenido">
+        {CONTENT_TOOLS.map(renderContentTool)}
+        <button
+          type="button"
+          className="toolbar__tool"
+          title="Grabar audio con el micrófono"
+          onClick={() => setRecorderOpen(true)}
+        >
+          <Mic size={18} />
+          <span className="toolbar__label">Grabar</span>
+        </button>
+      </div>
+
       <div className="toolbar__group toolbar__group--future" aria-label="Próximamente">
         {FUTURE_TOOLS.map((tool) => (
           <button
             key={tool.type}
             type="button"
             className="toolbar__tool"
-            disabled={!tool.enabled}
-            title={tool.enabled ? tool.label : `${tool.label} — próximamente`}
-            aria-label={tool.enabled ? tool.label : `${tool.label} (próximamente)`}
-            onClick={() => (tool.enabled ? addFuture(tool.type) : undefined)}
-            {...(tool.enabled ? dragProps(tool.type) : {})}
+            disabled
+            title={`${tool.hint} — próximamente`}
+            aria-label={`${tool.hint} (próximamente)`}
           >
             {tool.icon}
             <span className="toolbar__label">{tool.label}</span>
@@ -189,7 +273,7 @@ export function Toolbar({ session }: ToolbarProps): JSX.Element {
             title="Generar 300 notas de prueba (Ctrl+Shift+Alt+N)"
             onClick={addTestNotes}
           >
-            <Sparkles size={18} />
+            <Grid2x2 size={18} />
             <span className="toolbar__label">300 notas</span>
           </button>
         </div>

@@ -14,6 +14,9 @@ import { useSessionText } from '@/collab/SessionContext';
 import { useAppStore } from '@/state/appStore';
 import { blocksToPlainText, firstLineOf, isTextEmpty } from '@/lib/textBlocks';
 
+import { AudioCard, FileCard, ImageCard, VideoCard } from './cards/AssetCards';
+import { LinkCard } from './cards/LinkCard';
+import { SwatchCard } from './cards/SwatchCard';
 import { TextBlocks } from './renderBlocks';
 
 // El editor (TipTap + ProseMirror) solo se necesita mientras se edita una nota:
@@ -69,6 +72,18 @@ export function ElementContent({ session, element, editing, simplified }: Elemen
       );
     case 'board':
       return <BoardCard element={element} simplified={simplified} />;
+    case 'image':
+      return <ImageCard session={session} element={element} simplified={simplified} />;
+    case 'video':
+      return <VideoCard session={session} element={element} simplified={simplified} />;
+    case 'audio':
+      return <AudioCard session={session} element={element} simplified={simplified} />;
+    case 'file':
+      return <FileCard session={session} element={element} simplified={simplified} />;
+    case 'link':
+      return <LinkCard session={session} element={element} simplified={simplified} />;
+    case 'swatch':
+      return <SwatchCard session={session} element={element} simplified={simplified} />;
     default:
       return <GenericCard type={element.type} />;
   }

@@ -18,7 +18,6 @@ import {
   duplicateSelection,
   fitToScreen,
   nudgeSelection,
-  pasteAt,
   redoWithPrune,
   seedPerfNotes,
   selectAll,
@@ -107,8 +106,9 @@ export function useShortcuts(session: BoardSession): void {
         return;
       }
       if (mod && (event.key === 'v' || event.key === 'V')) {
-        event.preventDefault();
-        void pasteAt(session, spawnPoint());
+        // El pegado lo resuelve el evento `paste` del navegador (usePaste): así
+        // llegan también los archivos del portapapeles y no se pierde el pegado
+        // dentro de un editor.
         return;
       }
       if (mod && (event.key === 'd' || event.key === 'D')) {

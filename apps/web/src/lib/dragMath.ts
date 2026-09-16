@@ -92,6 +92,29 @@ export function nudgeDelta(shift: boolean): number {
   return shift ? 10 : 1;
 }
 
+/**
+ * Cambio de tamaño desde la esquina con el aspecto intacto.
+ *
+ * Las tarjetas de imagen y vídeo calculan su alto a partir del ancho (y del
+ * aspecto de su recorte), así que la esquina solo mueve el ancho: el alto sigue
+ * solo. El desplazamiento vertical se proyecta sobre el horizontal para que el
+ * gesto se sienta diagonal (arrastrar hacia abajo-derecha agranda).
+ */
+export function appliedAspectResize(
+  start: { x: number; y: number; width: number; height: number },
+  dx: number,
+  dy: number,
+  direction: 'se' | 'sw' = 'se',
+  grid: number = GRID_SIZE,
+): ResizeResult {
+  const aspect = start.height > 0 ? start.width / start.height : 1;
+  const horizontal = direction === 'se' ? dx : -dx;
+  const projected = horizontal + dy * aspect;
+  const width = Math.max(MIN_ELEMENT_WIDTH, snapToGrid(start.width + projected, grid));
+  const x = direction === 'se' ? start.x : start.x + (start.width - width);
+  return { x, width };
+}
+
 export type NudgeMove = { id: string; x: number; y: number };
 
 export function nudgeMoves(

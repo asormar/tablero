@@ -10,7 +10,7 @@
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
 
-import type { LinkEmbedType } from '@tablero/shared';
+import { detectEmbed, type LinkEmbedType } from '@tablero/shared';
 
 import { badRequest, HttpError } from './errors.js';
 
@@ -27,6 +27,8 @@ export type LinkPreviewData = {
   faviconUrl: string | null;
   siteName: string | null;
   embedType: LinkEmbedType;
+  /** URL lista para `<iframe>` (misma detección que usa la web al pegar el enlace). */
+  embedUrl: string | null;
   fetchedAt: number;
 };
 
@@ -142,25 +144,9 @@ function absolute(value: string | null, base: URL): string | null {
   }
 }
 
-const EMBED_HOSTS: { match: (host: string) => boolean; type: LinkEmbedType }[] = [
-  { match: (h) => h === 'youtube.com' || h === 'youtu.be' || h === 'm.youtube.com', type: 'youtube' },
-  { match: (h) => h === 'vimeo.com' || h.endsWith('.vimeo.com'), type: 'vimeo' },
-  { match: (h) => h === 'open.spotify.com', type: 'spotify' },
-  { match: (h) => h === 'soundcloud.com', type: 'soundcloud' },
-  { match: (h) => h === 'twitter.com' || h === 'x.com', type: 'twitter' },
-  { match: (h) => h === 'maps.google.com' || h === 'maps.app.goo.gl', type: 'maps' },
-  { match: (h) => h === 'figma.com' || h.endsWith('.figma.com'), type: 'figma' },
-  { match: (h) => h === 'loom.com' || h.endsWith('.loom.com'), type: 'loom' },
-  { match: (h) => h === 'codepen.io', type: 'codepen' },
-];
-
-export function detectEmbedType(url: URL): LinkEmbedType {
-  const host = url.hostname.replace(/^www\./, '').toLowerCase();
-  for (const candidate of EMBED_HOSTS) {
-    if (candidate.match(host)) return candidate.type;
-  }
-  return 'generic';
-}
+// La detección de incrustados vive en `@tablero/shared` (`detectEmbed`): la API y
+// la web comparten la misma tabla de proveedores, así el `embedType` que guarda
+// la previsualización coincide con el reproductor que muestra la web.
 
 async function readLimitedBody(response: Response): Promise<string> {
   const reader = response.body?.getReader();
@@ -233,6 +219,7 @@ export async function fetchLinkPreview(rawUrl: string): Promise<LinkPreviewData>
   }
   const { html, finalUrl } = page;
   const title = metaContent(html, 'og:title') ?? metaContent(html, 'twitter:title') ?? pageTitle(html);
+  const embed = detectEmbed(finalUrl.toString());
   return {
     url: finalUrl.toString(),
     title,
@@ -241,7 +228,8 @@ export async function fetchLinkPreview(rawUrl: string): Promise<LinkPreviewData>
     imageUrl: absolute(metaContent(html, 'og:image') ?? metaContent(html, 'twitter:image'), finalUrl),
     faviconUrl: faviconFor(html, finalUrl),
     siteName: metaContent(html, 'og:site_name') ?? finalUrl.hostname.replace(/^www\./, ''),
-    embedType: detectEmbedType(finalUrl),
+    embedType: embed.embedType,
+    embedUrl: embed.embedUrl,
     fetchedAt: Date.now(),
   };
 }

@@ -14,7 +14,10 @@ import { fitToScreen } from '@/canvas/commands';
 import { Canvas } from '@/canvas/Canvas';
 import { ContextBar } from '@/chrome/ContextBar';
 import { ContextMenu } from '@/chrome/ContextMenu';
+import { CropEditor } from '@/chrome/CropEditor';
+import { ImageViewer } from '@/chrome/ImageViewer';
 import { PerfOverlay } from '@/chrome/PerfOverlay';
+import { RecorderPanel } from '@/chrome/RecorderPanel';
 import { ShortcutsModal } from '@/chrome/ShortcutsModal';
 import { Toolbar } from '@/chrome/Toolbar';
 import { TopBar } from '@/chrome/TopBar';
@@ -22,6 +25,7 @@ import { UnorderedPanel } from '@/chrome/UnorderedPanel';
 import { ZoomControl } from '@/chrome/ZoomControl';
 import { BoardSession } from '@/collab/BoardSession';
 import { SessionProvider, useSessionLayout, useSessionStatus } from '@/collab/SessionContext';
+import { usePaste } from '@/hooks/usePaste';
 import { useShortcuts } from '@/hooks/useShortcuts';
 import { boardById, useAppStore } from '@/state/appStore';
 import { useUiStore } from '@/state/uiStore';
@@ -93,6 +97,7 @@ function WorkspaceShell({
   onOpenBoard(boardId: string): void;
 }): JSX.Element {
   useShortcuts(session);
+  usePaste(session);
 
   const status = useSessionStatus();
   const setSyncState = useAppStore((state) => state.setSyncState);
@@ -118,6 +123,9 @@ function WorkspaceShell({
       </div>
       <ContextMenu session={session} />
       <ShortcutsModal />
+      <ImageViewer session={session} />
+      <CropEditor session={session} />
+      <RecorderPanel session={session} />
       <BoardEffects session={session} boardId={boardId} />
       {notice ? (
         <div className="notice" role="status">

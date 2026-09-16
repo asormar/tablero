@@ -52,9 +52,14 @@ import { type ElementLayout, rectOf } from '@/lib/layout';
 import { blocksToPlainText } from '@/lib/textBlocks';
 import { alignmentMoves } from '@/lib/align';
 import { nudgeMoves } from '@/lib/dragMath';
+import {
+  createLinkCardAt,
+  createSwatchAt,
+  instantLinkPreview,
+} from '@/canvas/contentCommands';
 import { placementForNewElement } from '@/lib/placement';
 import { PERF_NOTE_COUNT, seedTestNotes } from '@/lib/seedTestNotes';
-import { type PastePlan, planPaste } from '@/lib/smartPaste';
+import { planPasteTarget } from '@/lib/pasteTargets';
 import {
   type XmlSnapshotNode,
   cloneFragment,
@@ -207,17 +212,40 @@ export function createBoardCardAt(session: BoardSession, world: Point, board: Bo
   });
 }
 
-/** Crea un elemento cuyo texto viene del portapapeles (pegado inteligente). */
-export function createFromPaste(session: BoardSession, world: Point, text: string | null): string | null {
-  const plan: PastePlan = planPaste(text);
-  if (plan.kind === 'empty') return null;
-  if (plan.kind === 'color') {
-    return createNoteAt(session, world, { color: plan.token, hex: plan.hex, text: '' });
+/**
+ * Crea lo que corresponde al texto pegado (pegado inteligente de la fase 2):
+ * un enlace crea tarjeta de enlace (con el incrustado listo al instante), un
+ * color crea una muestra y el resto, una nota con ese texto.
+ */
+export function createFromPaste(session: BoardSession, world: Point, text: string | null): string[] {
+  const plan = planPasteTarget({ text });
+  if (plan.kind === 'empty' || plan.kind === 'files' || plan.kind === 'elements') return [];
+  if (plan.kind === 'link') {
+    const size = DEFAULT_SIZES.link;
+    const preview = instantLinkPreview({
+      url: plan.url,
+      embedType: plan.embed.embedType,
+      embedUrl: plan.embed.embedUrl,
+    });
+    const id = createLinkCardAt(
+      session,
+      { x: world.x - size.width / 2, y: world.y - (size.height ?? 96) / 2 },
+      plan.url,
+      preview,
+    );
+    return [id];
   }
-  if (plan.kind === 'url') {
-    return createNoteAt(session, world, { text: plan.url });
+  if (plan.kind === 'swatch') {
+    const size = DEFAULT_SIZES.swatch;
+    const id = createSwatchAt(
+      session,
+      { x: world.x - size.width / 2, y: world.y - (size.height ?? 112) / 2 },
+      plan.hex,
+      plan.name,
+    );
+    return [id];
   }
-  return createNoteAt(session, world, { text: plan.text });
+  return [createNoteAt(session, world, { text: plan.text })];
 }
 
 // --- Mutaciones sobre la selección -------------------------------------------
@@ -313,7 +341,7 @@ export async function pasteAt(session: BoardSession, world: Point): Promise<stri
   if (ids.length > 0) return ids;
   const text = await readSystemText();
   const created = createFromPaste(session, world, text);
-  return created ? [created] : [];
+  return created;
 }
 
 export function nudgeSelection(session: BoardSession, dx: number, dy: number): void {

@@ -9,7 +9,7 @@
 
 import type { Guide, Point, Rect, Viewport } from '@tablero/shared';
 
-import { appliedDrag, appliedWidthResize, type ResizeDirection } from '@/lib/dragMath';
+import { appliedAspectResize, appliedDrag, appliedWidthResize, type ResizeDirection, type ResizeResult } from '@/lib/dragMath';
 import { useUiStore } from '@/state/uiStore';
 
 import { setNodeTransform, setNodeWidth } from './nodeRegistry';
@@ -141,7 +141,8 @@ export function startMoveDrag(params: MoveDragParams): PointerDrag {
 
 export type ResizeDragParams = {
   item: DragItem;
-  direction: ResizeDirection;
+  /** `se` es la esquina (aspecto intacto: solo cambia el ancho). */
+  direction: ResizeDirection | 'se';
   viewport: Viewport;
   startPointer: Point;
   onCommit(change: { id: string; x: number; width: number }): void;
@@ -162,11 +163,23 @@ export function startWidthResize(params: ResizeDragParams): PointerDrag {
     setNodeTransform(item.id, Math.round(current.x), Math.round(item.rect.y));
   };
 
+  const resolve = (at: Point): ResizeResult => {
+    const dx = (at.x - startPointer.x) / viewport.scale;
+    if (direction === 'se') {
+      const dy = (at.y - startPointer.y) / viewport.scale;
+      return appliedAspectResize(
+        { x: item.rect.x, y: item.rect.y, width: item.rect.width, height: item.rect.height },
+        dx,
+        dy,
+      );
+    }
+    return appliedWidthResize({ x: item.rect.x, width: item.rect.width }, dx, direction);
+  };
+
   const flush = (): void => {
     frame = 0;
     if (done || !pointer) return;
-    const dx = (pointer.x - startPointer.x) / viewport.scale;
-    const next = appliedWidthResize({ x: item.rect.x, width: item.rect.width }, dx, direction);
+    const next = resolve(pointer);
     if (next.width === current.width && next.x === current.x) return;
     current = next;
     moved = true;
@@ -192,8 +205,7 @@ export function startWidthResize(params: ResizeDragParams): PointerDrag {
       if (!done) return;
       const last = pointer;
       if (last) {
-        const dx = (last.x - startPointer.x) / viewport.scale;
-        const next = appliedWidthResize({ x: item.rect.x, width: item.rect.width }, dx, direction);
+        const next = resolve(last);
         if (next.width !== current.width || next.x !== current.x) {
           current = next;
           moved = true;

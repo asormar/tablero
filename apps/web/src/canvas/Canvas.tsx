@@ -7,7 +7,7 @@
  * al soltar, con una única transacción.
  */
 
-import { useCallback, useEffect, useRef } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import {
   type ElementType,
@@ -22,7 +22,8 @@ import {
 
 import type { BoardSession } from '@/collab/BoardSession';
 import { createNoteAt, idsInRect, resizeSelectionWidth } from '@/canvas/commands';
-import { HEADING_MIME, TOOL_MIME, createToolAt, isToolDrag } from '@/canvas/toolDrop';
+import { HEADING_MIME, TOOL_MIME, createToolAt, hasFiles, isToolDrag } from '@/canvas/toolDrop';
+import { attachFilesToBoard } from '@/canvas/uploadController';
 import { rectOf } from '@/lib/layout';
 import { useAppStore } from '@/state/appStore';
 import { useUiStore } from '@/state/uiStore';
@@ -290,7 +291,7 @@ export function Canvas({ session, onOpenBoard }: CanvasProps): JSX.Element {
   );
 
   const startResize = useCallback(
-    (id: string, direction: ResizeDirection, startPoint: Point) => {
+    (id: string, direction: ResizeDirection | 'se', startPoint: Point) => {
       const ui = useUiStore.getState();
       const item = session.getLayout().find((entry) => entry.id === id);
       if (!item) return;
@@ -340,7 +341,7 @@ export function Canvas({ session, onOpenBoard }: CanvasProps): JSX.Element {
       if (handleEl && elementEl) {
         const id = elementEl.dataset.elementId;
         const direction = handleEl.getAttribute('data-handle');
-        if (id && (direction === 'w' || direction === 'e')) {
+        if (id && (direction === 'w' || direction === 'e' || direction === 'se')) {
           startResize(id, direction, startPoint);
           return;
         }
@@ -402,22 +403,41 @@ export function Canvas({ session, onOpenBoard }: CanvasProps): JSX.Element {
     ui.setContextMenu({ x: event.clientX, y: event.clientY, targetId: id });
   }, []);
 
-  // --- Soltado de herramientas desde la barra lateral -----------------------
+  // --- Soltado de herramientas y de archivos desde el sistema ---------------
+
+  const [fileDragOver, setFileDragOver] = useState(false);
 
   const handleDragOver = useCallback((event: React.DragEvent<HTMLDivElement>) => {
-    if (!isToolDrag(event.dataTransfer)) return;
+    const files = hasFiles(event.dataTransfer);
+    if (!files && !isToolDrag(event.dataTransfer)) return;
     event.preventDefault();
     event.dataTransfer.dropEffect = 'copy';
+    if (files) setFileDragOver(true);
+  }, []);
+
+  const handleDragLeave = useCallback((event: React.DragEvent<HTMLDivElement>) => {
+    if (event.currentTarget.contains(event.relatedTarget as Node | null)) return;
+    setFileDragOver(false);
   }, []);
 
   const handleDrop = useCallback(
     (event: React.DragEvent<HTMLDivElement>) => {
+      setFileDragOver(false);
+      const world = worldFromClient(event.clientX, event.clientY);
+
+      // Archivos del sistema: imagen → imagen, vídeo → vídeo, resto → archivo.
+      if (hasFiles(event.dataTransfer)) {
+        event.preventDefault();
+        const files = Array.from(event.dataTransfer.files);
+        if (files.length > 0) void attachFilesToBoard(session, files, { world });
+        return;
+      }
+
       if (!isToolDrag(event.dataTransfer)) return;
       event.preventDefault();
       const type = event.dataTransfer.getData(TOOL_MIME) as ElementType | '';
       if (!type) return;
       const headingSize = (event.dataTransfer.getData(HEADING_MIME) || null) as HeadingSize | null;
-      const world = worldFromClient(event.clientX, event.clientY);
       void createToolAt(session, type, world, headingSize, useAppStore.getState().currentBoardId);
       useUiStore.getState().setPendingTool(null);
     },
@@ -433,6 +453,7 @@ export function Canvas({ session, onOpenBoard }: CanvasProps): JSX.Element {
         'canvas',
         interaction === 'idle' ? '' : `is-${interaction}`,
         pendingTool ? 'is-dropping' : '',
+        fileDragOver ? 'is-file-over' : '',
       ]
         .filter(Boolean)
         .join(' ')}
@@ -440,6 +461,7 @@ export function Canvas({ session, onOpenBoard }: CanvasProps): JSX.Element {
       onDoubleClick={handleDoubleClick}
       onContextMenu={handleContextMenu}
       onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
       onDrop={handleDrop}
     >
       <CanvasGrid />

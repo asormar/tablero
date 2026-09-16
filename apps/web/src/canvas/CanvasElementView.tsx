@@ -13,6 +13,7 @@ import type { CSSProperties } from 'react';
 import { Lock } from 'lucide-react';
 
 import type { ElementType } from '@tablero/shared';
+import { ASPECT_RESIZABLE } from '@tablero/shared';
 
 import type { BoardSession } from '@/collab/BoardSession';
 import { useSessionElement } from '@/collab/SessionContext';
@@ -71,6 +72,8 @@ function CanvasElementViewBase(props: CanvasElementViewProps): JSX.Element | nul
   if (props.dragging) classes.push('is-dragging');
   if (element.locked) classes.push('is-locked');
   if (props.simplified) classes.push('is-zoomed-out');
+  // «Sin marco»: la imagen se muestra sola, sin tarjeta alrededor.
+  if (element.type === 'image' && element.frameless) classes.push('is-frameless');
   // Animación de entrada solo en tarjetas recién creadas (no al virtualizar).
   const isNew = element.createdAt > 0 && Date.now() - element.createdAt < 320;
   if (isNew) classes.push('is-new');
@@ -109,6 +112,9 @@ function CanvasElementViewBase(props: CanvasElementViewProps): JSX.Element | nul
         <>
           <span className="el__handle el__handle--w" data-handle="w" />
           <span className="el__handle el__handle--e" data-handle="e" />
+          {ASPECT_RESIZABLE.includes(type) ? (
+            <span className="el__handle el__handle--se" data-handle="se" title="Redimensionar proporcional" />
+          ) : null}
         </>
       ) : null}
     </div>

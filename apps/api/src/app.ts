@@ -6,6 +6,7 @@
 
 import cookie from '@fastify/cookie';
 import cors from '@fastify/cors';
+import multipart from '@fastify/multipart';
 import rateLimit from '@fastify/rate-limit';
 import { Prisma } from '@prisma/client';
 import { formatZodError, type ApiError } from '@tablero/shared';
@@ -119,6 +120,17 @@ export async function buildApp(): Promise<FastifyInstance> {
     global: true,
     max: 600,
     timeWindow: '1 minute',
+  });
+
+  // Subidas de archivos (multipart/form-data). El tamaño máximo sale de
+  // MAX_UPLOAD_MB; al excederlo el plugin corta el flujo y la ruta responde 413.
+  await app.register(multipart, {
+    limits: {
+      fileSize: env.maxUploadMb * 1024 * 1024,
+      files: 1,
+      fields: 10,
+      fieldSize: 4096,
+    },
   });
 
   // Un cuerpo vacío con `Content-Type: application/json` (típico en un POST sin

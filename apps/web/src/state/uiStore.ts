@@ -44,6 +44,14 @@ export type UiState = {
   pendingTool: ElementType | null;
   /** Tarjetas en movimiento (clase de arrastre, sombra elevada). */
   draggingIds: string[];
+  /** Elemento mostrado en el visor a pantalla completa. */
+  viewerId: string | null;
+  /** Elemento cuyo recorte se está editando. */
+  cropTargetId: string | null;
+  /** Panel de grabación de audio abierto. */
+  recorderOpen: boolean;
+  /** Elemento cuya paleta se está mostrando. */
+  paletteTargetId: string | null;
 
   setCanvasSize(size: Size): void;
   setViewport(viewport: Viewport): void;
@@ -67,6 +75,12 @@ export type UiState = {
   setPendingTool(type: ElementType | null): void;
   /** Ids que se están arrastrando ahora mismo (se resalta su tarjeta). */
   setDraggingIds(ids: string[]): void;
+  openViewer(id: string): void;
+  closeViewer(): void;
+  openCropEditor(id: string): void;
+  closeCropEditor(): void;
+  setRecorderOpen(open: boolean): void;
+  setPaletteTarget(id: string | null): void;
   /** Reinicia la interfaz al cambiar de tablero. */
   resetWorkspace(): void;
 };
@@ -104,6 +118,10 @@ export const useUiStore = create<UiState>()((set, get) => ({
   panelOpen: true,
   pendingTool: null,
   draggingIds: [],
+  viewerId: null,
+  cropTargetId: null,
+  recorderOpen: false,
+  paletteTargetId: null,
 
   setCanvasSize(size) {
     const current = get().canvasSize;
@@ -206,6 +224,28 @@ export const useUiStore = create<UiState>()((set, get) => ({
     if (current.length === ids.length && current.every((id, index) => ids[index] === id)) return;
     set({ draggingIds: ids });
   },
+  openViewer(id) {
+    set({ viewerId: id, cropTargetId: null });
+  },
+  closeViewer() {
+    if (get().viewerId === null) return;
+    set({ viewerId: null });
+  },
+  openCropEditor(id) {
+    set({ cropTargetId: id, viewerId: null });
+  },
+  closeCropEditor() {
+    if (get().cropTargetId === null) return;
+    set({ cropTargetId: null });
+  },
+  setRecorderOpen(open) {
+    if (get().recorderOpen === open) return;
+    set({ recorderOpen: open });
+  },
+  setPaletteTarget(id) {
+    if (get().paletteTargetId === id) return;
+    set({ paletteTargetId: id });
+  },
   resetWorkspace() {
     set({
       viewport: DEFAULT_VIEWPORT,
@@ -218,6 +258,10 @@ export const useUiStore = create<UiState>()((set, get) => ({
       measuredHeights: new Map<string, number>(),
       pendingTool: null,
       draggingIds: [],
+      viewerId: null,
+      cropTargetId: null,
+      recorderOpen: false,
+      paletteTargetId: null,
     });
   },
 }));

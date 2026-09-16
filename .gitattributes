@@ -1,0 +1,21 @@
+# Normaliza los finales de línea en el repositorio (LF), sea cual sea el sistema.
+* text=auto eol=lf
+
+# Scripts de shell: siempre LF, o no se ejecutan en Linux/macOS.
+*.sh text eol=lf
+Dockerfile text eol=lf
+
+# Binarios (no tocar).
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.avif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
+*.pdf binary
+
+# Archivos generados: no cuentan para las estadísticas del lenguaje.
+pnpm-lock.yaml linguist-generated=true

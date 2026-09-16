@@ -1,0 +1,84 @@
+# Infraestructura de desarrollo del tablero: PostgreSQL + MinIO (S3 local).
+#
+#   docker compose -f docker/docker-compose.yml up -d
+#   docker compose -f docker/docker-compose.yml ps
+#   docker compose -f docker/docker-compose.yml down
+#
+# Puertos: 5432 (Postgres), 9000/9001 (MinIO API/consola).
+# La API (8787) y la web (5173) corren en el host, no acá: no hay colisión.
+
+name: tablero
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: tablero-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: tablero
+      POSTGRES_PASSWORD: tablero
+      POSTGRES_DB: tablero
+      # Acelera la inicialización en desarrollo (no usar en producción).
+      POSTGRES_INITDB_ARGS: '--data-checksums'
+    ports:
+      # OJO: este equipo tiene un PostgreSQL 17 nativo escuchando en 5432
+      # (servicio postgresql-x64-17), así que el contenedor se publica en 5433
+      # para no hablarle al servidor equivocado. En una máquina sin Postgres
+      # nativo, '5432:5432' es lo natural.
+      - '5433:5432'
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U tablero -d tablero']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  minio:
+    # MinIO ya no publica en Docker Hub (minio/* da "pull access denied");
+    # el registro oficial es quay.io.
+    image: quay.io/minio/minio:latest
+    container_name: tablero-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: tablero
+      MINIO_ROOT_PASSWORD: tablero123
+    ports:
+      - '9000:9000'
+      - '9001:9001'
+    volumes:
+      - minio-data:/data
+    healthcheck:
+      test: ['CMD-SHELL', 'curl -sf http://localhost:9000/minio/health/live || exit 1']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+  # Contenedor de un solo uso: crea el bucket y termina.
+  minio-init:
+    image: quay.io/minio/mc:latest
+    container_name: tablero-minio-init
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        mc alias set tablero http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"
+        mc mb --ignore-existing tablero/tablero
+        echo "bucket 'tablero' listo"
+    environment:
+      MINIO_ROOT_USER: tablero
+      MINIO_ROOT_PASSWORD: tablero123
+    restart: 'no'
+
+volumes:
+  postgres-data:
+    name: tablero-postgres-data
+  minio-data:
+    name: tablero-minio-data

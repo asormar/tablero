@@ -1,0 +1,223 @@
+// Modelo de datos de Tablero (PostgreSQL).
+//
+// El contenido del lienzo vive en Yjs (`BoardDocument.yjsState`); acá está todo
+// lo relacional: usuarios, árbol de tableros, permisos, assets y búsqueda.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum BoardRole {
+  viewer
+  commenter
+  editor
+}
+
+enum AssetType {
+  image
+  video
+  audio
+  file
+}
+
+model User {
+  id           String   @id @default(cuid())
+  email        String   @unique
+  name         String
+  avatarUrl    String?
+  passwordHash String
+  settings     Json     @default("{}")
+  captureToken String   @unique @default(cuid())
+  createdAt    DateTime @default(now())
+
+  boards        Board[]        @relation("BoardOwner")
+  sessions      Session[]
+  shares        Share[]
+  comments      Comment[]
+  assets        Asset[]
+  notifications Notification[]
+  templates     Template[]
+
+  @@index([createdAt])
+}
+
+model Session {
+  id        String   @id @default(cuid())
+  userId    String
+  /// sha256 hex del token de sesión (el token en claro nunca se guarda).
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([expiresAt])
+}
+
+model Board {
+  id                    String    @id @default(cuid())
+  ownerId               String
+  parentBoardId         String?
+  title                 String    @default("Tablero sin título")
+  icon                  String?
+  color                 String?
+  /// Asset usado como portada. Sin FK: la integridad se valida en la API.
+  coverImageId          String?
+  isTemplate            Boolean   @default(false)
+  publishedSlug         String?   @unique
+  publishedPasswordHash String?
+  trashedAt             DateTime?
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  owner       User           @relation("BoardOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  parent      Board?         @relation("BoardTree", fields: [parentBoardId], references: [id], onDelete: SetNull)
+  children    Board[]        @relation("BoardTree")
+  document    BoardDocument?
+  shares      Share[]
+  comments    Comment[]
+  templates   Template[]
+  searchIndex SearchIndex[]
+
+  @@index([ownerId])
+  @@index([parentBoardId])
+  @@index([trashedAt])
+  @@index([isTemplate])
+}
+
+/// Estado Yjs serializado (1:1 con el tablero).
+model BoardDocument {
+  boardId   String   @id
+  yjsState  Bytes
+  updatedAt DateTime @updatedAt
+
+  board Board @relation(fields: [boardId], references: [id], onDelete: Cascade)
+}
+
+model Asset {
+  id           String    @id @default(cuid())
+  ownerId      String
+  type         AssetType
+  mime         String
+  size         Int
+  storageKey   String    @unique
+  width        Int?
+  height       Int?
+  duration     Float?
+  thumbnailKey String?
+  originalName String
+  createdAt    DateTime  @default(now())
+
+  owner User @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@index([ownerId])
+  @@index([type])
+}
+
+/// Caché de metadatos Open Graph de enlaces externos (clave: URL).
+model LinkPreview {
+  url         String   @id
+  title       String?
+  description String?
+  imageUrl    String?
+  faviconUrl  String?
+  siteName    String?
+  embedType   String   @default("generic")
+  fetchedAt   DateTime @default(now())
+
+  @@index([fetchedAt])
+}
+
+model Share {
+  id        String    @id @default(cuid())
+  boardId   String
+  userId    String?
+  email     String?
+  role      BoardRole @default(editor)
+  createdAt DateTime  @default(now())
+
+  board Board @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  user  User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  // Postgres trata NULL como distinto: se permiten varias filas sin userId
+  // (invitaciones por email) y varias filas sin email (usuarios directos).
+  @@unique([boardId, userId])
+  @@unique([boardId, email])
+  @@index([boardId])
+  @@index([userId])
+  @@index([email])
+}
+
+model Comment {
+  id        String   @id @default(cuid())
+  boardId   String
+  elementId String?
+  authorId  String
+  body      String
+  parentId  String?
+  resolved  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  board   Board     @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  author  User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  parent  Comment?  @relation("CommentThread", fields: [parentId], references: [id], onDelete: Cascade)
+  replies Comment[] @relation("CommentThread")
+
+  @@index([boardId])
+  @@index([elementId])
+  @@index([authorId])
+}
+
+model Notification {
+  id        String    @id @default(cuid())
+  userId    String
+  type      String
+  payload   Json      @default("{}")
+  readAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, readAt])
+  @@index([createdAt])
+}
+
+model Template {
+  id          String   @id @default(cuid())
+  ownerId     String?
+  boardId     String
+  category    String   @default("general")
+  name        String
+  description String?
+  createdAt   DateTime @default(now())
+
+  owner User? @relation(fields: [ownerId], references: [id], onDelete: SetNull)
+  board Board @relation(fields: [boardId], references: [id], onDelete: Cascade)
+
+  @@index([ownerId])
+  @@index([boardId])
+  @@index([category])
+}
+
+/// Índice de búsqueda por elemento (texto plano). Preparado para migrar a
+/// `tsvector` + GIN cuando el volumen lo justifique; hoy se consulta con ILIKE.
+model SearchIndex {
+  boardId       String
+  elementId     String
+  elementType   String
+  text          String
+  actualizadoEn DateTime @default(now()) @updatedAt
+
+  board Board @relation(fields: [boardId], references: [id], onDelete: Cascade)
+
+  @@id([boardId, elementId])
+  @@index([elementType])
+  @@index([text])
+}

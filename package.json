@@ -1,0 +1,23 @@
+{
+  "name": "tablero",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Tablero — espacio visual infinito de tableros anidados (clon funcional de Milanote para uso personal)",
+  "packageManager": "pnpm@9.15.9",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "pnpm -r --parallel dev",
+    "build": "pnpm -r build",
+    "test": "pnpm -r test",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "pnpm -r lint",
+    "db:up": "docker compose -f docker/docker-compose.yml up -d",
+    "db:down": "docker compose -f docker/docker-compose.yml down",
+    "db:logs": "docker compose -f docker/docker-compose.yml logs -f",
+    "db:migrate": "pnpm --filter @tablero/api prisma:migrate",
+    "db:generate": "pnpm --filter @tablero/api prisma:generate",
+    "db:seed": "pnpm --filter @tablero/api seed"
+  }
+}

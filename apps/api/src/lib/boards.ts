@@ -23,6 +23,10 @@ export type BoardRecord = {
   isTemplate: boolean;
   publishedSlug: string | null;
   trashedAt: Date | null;
+  /** Momento en que se marcó como favorito (null = no lo es). */
+  favoriteAt: Date | null;
+  /** Tablero «Sin ordenar» de la cuenta. */
+  isUnsorted: boolean;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -38,6 +42,8 @@ const BOARD_SELECT = {
   isTemplate: true,
   publishedSlug: true,
   trashedAt: true,
+  favoriteAt: true,
+  isUnsorted: true,
   createdAt: true,
   updatedAt: true,
 } as const;
@@ -111,6 +117,29 @@ export class BoardAccess {
     );
   }
 
+  /** Tablero «Sin ordenar» del usuario (uno por cuenta, hijo de la raíz). */
+  unsortedBoard(): BoardRecord | undefined {
+    return this.boards.find((board) => board.ownerId === this.userId && board.isUnsorted);
+  }
+
+  /**
+   * Ancestro en papelera, si lo hay. Un tablero cuyo padre está en la papelera
+   * no se puede restaurar solo: primero hay que restaurar al padre.
+   */
+  trashedAncestorOf(id: string): BoardRecord | null {
+    const seen = new Set<string>([id]);
+    let cursor = this.byIdMap.get(id)?.parentBoardId ?? null;
+    while (cursor) {
+      if (seen.has(cursor)) return null; // protección ante ciclos
+      seen.add(cursor);
+      const ancestor = this.byIdMap.get(cursor);
+      if (!ancestor) return null;
+      if (ancestor.trashedAt) return ancestor;
+      cursor = ancestor.parentBoardId;
+    }
+    return null;
+  }
+
   /** Tableros accesibles con el rol indicado (por defecto: lectura). */
   accessible(options: { includeTrashed?: boolean; includeTemplates?: boolean; atLeastEditor?: boolean } = {}): BoardRecord[] {
     const { includeTrashed = false, includeTemplates = false, atLeastEditor = false } = options;
@@ -156,10 +185,11 @@ export class BoardAccess {
       createdAt: board.createdAt.getTime(),
       updatedAt: board.updatedAt.getTime(),
       childrenCount: extras.childrenCount ?? this.childCounts.get(board.id) ?? 0,
+      // El estado de favorito se deriva de `favoriteAt`: la web lo pinta sin otra consulta.
+      favorited: extras.favorited ?? board.favoriteAt !== null,
     };
     if (role) summary.role = role;
     if (extras.elementCount !== undefined) summary.elementCount = extras.elementCount;
-    if (extras.favorited !== undefined) summary.favorited = extras.favorited;
     return summary;
   }
 

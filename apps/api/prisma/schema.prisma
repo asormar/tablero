@@ -73,6 +73,10 @@ model Board {
   publishedSlug         String?   @unique
   publishedPasswordHash String?
   trashedAt             DateTime?
+  /// Momento en que el usuario marcó el tablero como favorito (null = no lo es).
+  favoriteAt            DateTime?
+  /// Tablero «Sin ordenar»: bandeja de entrada de la cuenta, oculta del listado normal.
+  isUnsorted            Boolean   @default(false)
   createdAt             DateTime  @default(now())
   updatedAt             DateTime  @updatedAt
 
@@ -88,6 +92,7 @@ model Board {
   @@index([ownerId])
   @@index([parentBoardId])
   @@index([trashedAt])
+  @@index([favoriteAt])
   @@index([isTemplate])
 }
 

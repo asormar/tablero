@@ -25,6 +25,8 @@ type BoardRow = {
   isTemplate: boolean;
   publishedSlug: string | null;
   trashedAt: Date | null;
+  favoriteAt: Date | null;
+  isUnsorted: boolean;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -49,6 +51,8 @@ const db = vi.hoisted(() => {
       isTemplate: false,
       publishedSlug: null,
       trashedAt: null,
+      favoriteAt: null,
+      isUnsorted: false,
       createdAt: now,
       updatedAt: now,
       ...overrides,
@@ -66,6 +70,14 @@ const db = vi.hoisted(() => {
   const prisma = {
     board: {
       findMany: async () => [...boards.values()].map((row) => ({ ...row })),
+      findFirst: async ({ where }: { where: { ownerId?: string; isUnsorted?: boolean } }) => {
+        const row = [...boards.values()].find(
+          (candidate) =>
+            (where.ownerId === undefined || candidate.ownerId === where.ownerId) &&
+            (where.isUnsorted === undefined || candidate.isUnsorted === where.isUnsorted),
+        );
+        return row ? { ...row } : null;
+      },
       findUnique: async ({ where }: { where: { id: string } }) => {
         const row = boards.get(where.id);
         return row ? { ...row } : null;
@@ -88,6 +100,8 @@ const db = vi.hoisted(() => {
           isTemplate: data.isTemplate ?? false,
           publishedSlug: data.publishedSlug ?? null,
           trashedAt: data.trashedAt ?? null,
+          favoriteAt: data.favoriteAt ?? null,
+          isUnsorted: data.isUnsorted ?? false,
           createdAt: now,
           updatedAt: now,
         };
@@ -100,13 +114,28 @@ const db = vi.hoisted(() => {
         Object.assign(row, data, { updatedAt: new Date() });
         return { ...row };
       },
-      updateMany: async ({ where, data }: { where: { id: { in: string[] }; trashedAt: null }; data: Partial<Row> }) => {
+      updateMany: async ({
+        where,
+        data,
+      }: {
+        where: { id: { in: string[] }; trashedAt?: null | { not: null } };
+        data: Partial<Row>;
+      }) => {
         let count = 0;
         for (const id of where.id.in) {
           const row = boards.get(id);
-          if (!row || row.trashedAt !== null) continue;
+          if (!row) continue;
+          if (where.trashedAt === null && row.trashedAt !== null) continue;
+          if (where.trashedAt !== null && where.trashedAt !== undefined && row.trashedAt === null) continue;
           Object.assign(row, data);
           count += 1;
+        }
+        return { count };
+      },
+      deleteMany: async ({ where }: { where: { id: { in: string[] } } }) => {
+        let count = 0;
+        for (const id of where.id.in) {
+          if (boards.delete(id)) count += 1;
         }
         return { count };
       },
@@ -331,6 +360,247 @@ describe('PATCH /boards/:id', () => {
     expect(response.statusCode).toBe(200);
     expect(response.json().board.title).toBe('Proyecto renombrado');
     expect(db.boards.get('proyecto')?.title).toBe('Proyecto renombrado');
+    await app.close();
+  });
+
+  it('marca y desmarca el favorito escribiendo `favoriteAt`', async () => {
+    const app = await buildApp();
+    const marked = await app.inject({
+      method: 'PATCH',
+      url: '/api/boards/proyecto',
+      payload: { favorite: true },
+    });
+
+    expect(marked.statusCode).toBe(200);
+    expect(marked.json().board.favorited).toBe(true);
+    expect(db.boards.get('proyecto')?.favoriteAt).toBeInstanceOf(Date);
+
+    const cleared = await app.inject({
+      method: 'PATCH',
+      url: '/api/boards/proyecto',
+      payload: { favorite: false },
+    });
+
+    expect(cleared.statusCode).toBe(200);
+    expect(cleared.json().board.favorited).toBe(false);
+    expect(db.boards.get('proyecto')?.favoriteAt).toBeNull();
+    await app.close();
+  });
+
+  it('rechaza un `favorite` que no sea booleano', async () => {
+    const app = await buildApp();
+    const response = await app.inject({
+      method: 'PATCH',
+      url: '/api/boards/proyecto',
+      payload: { favorite: 'sí' },
+    });
+
+    expect(response.statusCode).toBe(400);
+    expect(response.json().code).toBe('validation_error');
+    await app.close();
+  });
+});
+
+describe('GET /boards?filter=', () => {
+  it('`all` (por defecto) deja afuera la bandeja «Sin ordenar»', async () => {
+    db.seed({ id: 'bandeja', title: 'Sin ordenar', parentBoardId: 'root', isUnsorted: true });
+    const app = await buildApp();
+    const response = await app.inject({ method: 'GET', url: '/api/boards' });
+
+    expect(response.statusCode).toBe(200);
+    const ids = (response.json().boards as { id: string }[]).map((board) => board.id);
+    expect(ids).toContain('proyecto');
+    expect(ids).not.toContain('bandeja');
+    await app.close();
+  });
+
+  it('`favorites` devuelve solo los marcados, el más reciente primero', async () => {
+    db.seed({ id: 'viejo', title: 'Favorito viejo', parentBoardId: 'root', favoriteAt: new Date('2026-01-01T00:00:00Z') });
+    db.seed({ id: 'nuevo', title: 'Favorito nuevo', parentBoardId: 'root', favoriteAt: new Date('2026-06-01T00:00:00Z') });
+    const app = await buildApp();
+    const response = await app.inject({ method: 'GET', url: '/api/boards?filter=favorites' });
+
+    expect(response.statusCode).toBe(200);
+    const boards = response.json().boards as { id: string; favorited: boolean }[];
+    expect(boards.map((board) => board.id)).toEqual(['nuevo', 'viejo']);
+    expect(boards.every((board) => board.favorited)).toBe(true);
+    await app.close();
+  });
+
+  it('`recent` ordena por última modificación', async () => {
+    db.seed({ id: 'antiguo', title: 'Antiguo', parentBoardId: 'root', updatedAt: new Date(Date.now() - 86_400_000) });
+    db.seed({ id: 'flamante', title: 'Flamante', parentBoardId: 'root', updatedAt: new Date(Date.now() + 86_400_000) });
+    const app = await buildApp();
+    const response = await app.inject({ method: 'GET', url: '/api/boards?filter=recent' });
+
+    expect(response.statusCode).toBe(200);
+    const boards = response.json().boards as { id: string; updatedAt: number }[];
+    expect(boards[0]?.id).toBe('flamante');
+    const times = boards.map((board) => board.updatedAt);
+    expect(times).toEqual([...times].sort((a, b) => b - a));
+    await app.close();
+  });
+});
+
+describe('GET /boards/unsorted', () => {
+  it('crea la bandeja «Sin ordenar» la primera vez y la reutiliza después', async () => {
+    const app = await buildApp();
+    const first = await app.inject({ method: 'GET', url: '/api/boards/unsorted' });
+
+    expect(first.statusCode).toBe(200);
+    expect(first.json().created).toBe(true);
+    const board = first.json().board as { id: string; title: string; parentBoardId: string; favorited: boolean };
+    expect(board.title).toBe('Sin ordenar');
+    // Cuelga de la raíz: nunca una segunda raíz.
+    expect(board.parentBoardId).toBe('root');
+    expect(board.favorited).toBe(false);
+    expect(db.documents.has(board.id)).toBe(true);
+
+    const second = await app.inject({ method: 'GET', url: '/api/boards/unsorted' });
+    expect(second.statusCode).toBe(200);
+    expect(second.json().created).toBe(false);
+    expect((second.json().board as { id: string }).id).toBe(board.id);
+    expect([...db.boards.values()].filter((row) => row.isUnsorted)).toHaveLength(1);
+    await app.close();
+  });
+
+  it('rechaza mandar la bandeja a la papelera', async () => {
+    const app = await buildApp();
+    const created = await app.inject({ method: 'GET', url: '/api/boards/unsorted' });
+    const bandeja = (created.json().board as { id: string }).id;
+
+    const response = await app.inject({ method: 'DELETE', url: `/api/boards/${bandeja}` });
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({ code: 'cannot_trash_unsorted' });
+    expect(db.boards.get(bandeja)?.trashedAt).toBeNull();
+    await app.close();
+  });
+
+  it('devuelve la bandeja aunque estuviera en la papelera', async () => {
+    db.seed({ id: 'bandeja', title: 'Sin ordenar', parentBoardId: 'root', isUnsorted: true, trashedAt: new Date() });
+    const app = await buildApp();
+    const response = await app.inject({ method: 'GET', url: '/api/boards/unsorted' });
+
+    expect(response.statusCode).toBe(200);
+    expect(response.json().created).toBe(false);
+    expect((response.json().board as { id: string }).id).toBe('bandeja');
+    expect(db.boards.get('bandeja')?.trashedAt).toBeNull();
+    await app.close();
+  });
+});
+
+describe('papelera de tableros', () => {
+  it('GET /trash lista lo caído con título, icono, color y padre (lo último primero)', async () => {
+    db.seed({
+      id: 'vieja',
+      title: 'Vieja',
+      parentBoardId: 'root',
+      icon: '🧪',
+      color: 'blue',
+      trashedAt: new Date('2026-03-01T00:00:00Z'),
+    });
+    db.seed({ id: 'reciente', title: 'Reciente', parentBoardId: 'root', trashedAt: new Date('2026-08-01T00:00:00Z') });
+    const app = await buildApp();
+    const response = await app.inject({ method: 'GET', url: '/api/trash' });
+
+    expect(response.statusCode).toBe(200);
+    const boards = response.json().boards as { id: string; trashedAt: number | null }[];
+    expect(boards.map((board) => board.id)).toEqual(['reciente', 'vieja']);
+    expect(boards.every((board) => board.trashedAt !== null)).toBe(true);
+    expect(response.json().boards[1]).toMatchObject({
+      title: 'Vieja',
+      icon: '🧪',
+      color: 'blue',
+      parentBoardId: 'root',
+    });
+
+    // El listado normal y el de recientes no muestran lo que está en la papelera.
+    const normal = await app.inject({ method: 'GET', url: '/api/boards' });
+    expect((normal.json().boards as { id: string }[]).map((board) => board.id)).not.toContain('vieja');
+    await app.close();
+  });
+
+  it('restaurar devuelve el lote completo (el tablero y lo que cayó con él)', async () => {
+    const app = await buildApp();
+    const trashed = await app.inject({ method: 'DELETE', url: '/api/boards/proyecto' });
+    expect(trashed.statusCode).toBe(200);
+    expect(db.boards.get('referencias')?.trashedAt).not.toBeNull();
+
+    const restored = await app.inject({ method: 'POST', url: '/api/trash/proyecto/restore' });
+    expect(restored.statusCode).toBe(200);
+    expect((restored.json().board as { trashedAt: number | null }).trashedAt).toBeNull();
+    expect(db.boards.get('proyecto')?.trashedAt).toBeNull();
+    expect(db.boards.get('referencias')?.trashedAt).toBeNull();
+    await app.close();
+  });
+
+  it('deja en la papelera lo que se borró por separado (otra marca de tiempo)', async () => {
+    const older = new Date(Date.now() - 60_000);
+    db.seed({ id: 'hijo-solo', title: 'Borrado aparte', parentBoardId: 'proyecto', trashedAt: older });
+    const app = await buildApp();
+    await app.inject({ method: 'DELETE', url: '/api/boards/proyecto' });
+
+    const restored = await app.inject({ method: 'POST', url: '/api/trash/proyecto/restore' });
+    expect(restored.statusCode).toBe(200);
+    expect(db.boards.get('proyecto')?.trashedAt).toBeNull();
+    expect(db.boards.get('hijo-solo')?.trashedAt?.getTime()).toBe(older.getTime());
+    await app.close();
+  });
+
+  it('rechaza restaurar lo que no está en la papelera', async () => {
+    const app = await buildApp();
+    const response = await app.inject({ method: 'POST', url: '/api/trash/proyecto/restore' });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({ code: 'board_not_trashed' });
+    await app.close();
+  });
+
+  it('exige restaurar el padre antes que el hijo', async () => {
+    const app = await buildApp();
+    await app.inject({ method: 'DELETE', url: '/api/boards/proyecto' });
+
+    const response = await app.inject({ method: 'POST', url: '/api/trash/referencias/restore' });
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({ code: 'parent_trashed' });
+    expect(db.boards.get('referencias')?.trashedAt).not.toBeNull();
+
+    // Y si se restaura el padre, vuelve también el hijo.
+    await app.inject({ method: 'POST', url: '/api/trash/proyecto/restore' });
+    expect(db.boards.get('referencias')?.trashedAt).toBeNull();
+    await app.close();
+  });
+
+  it('restaurar un id inexistente responde 404', async () => {
+    const app = await buildApp();
+    const response = await app.inject({ method: 'POST', url: '/api/trash/no-existe/restore' });
+
+    expect(response.statusCode).toBe(404);
+    await app.close();
+  });
+
+  it('DELETE /trash/:id borra el lote definitivamente', async () => {
+    const app = await buildApp();
+    await app.inject({ method: 'DELETE', url: '/api/boards/proyecto' });
+
+    const response = await app.inject({ method: 'DELETE', url: '/api/trash/proyecto' });
+    expect(response.statusCode).toBe(200);
+    expect(response.json()).toMatchObject({ ok: true, deleted: 2 });
+    expect(db.boards.has('proyecto')).toBe(false);
+    expect(db.boards.has('referencias')).toBe(false);
+
+    const list = await app.inject({ method: 'GET', url: '/api/trash' });
+    expect(list.json().boards).toHaveLength(0);
+    await app.close();
+  });
+
+  it('DELETE /trash/:id rechaza lo que no está en la papelera', async () => {
+    const app = await buildApp();
+    const response = await app.inject({ method: 'DELETE', url: '/api/trash/proyecto' });
+
+    expect(response.statusCode).toBe(409);
+    expect(response.json()).toMatchObject({ code: 'board_not_trashed' });
+    expect(db.boards.has('proyecto')).toBe(true);
     await app.close();
   });
 });

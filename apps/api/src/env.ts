@@ -118,6 +118,16 @@ export const env = {
   maxUploadMb: readInt('MAX_UPLOAD_MB', 500),
   /** Límite del cuerpo JSON (los archivos grandes van por multipart). */
   jsonBodyLimitBytes: 8 * 1024 * 1024,
+  /**
+   * Búsqueda de lugares (proxy de Nominatim). Nominatim exige identificar la
+   * aplicación con un `User-Agent` propio, no pasar de una consulta por segundo
+   * y cachear: por eso los tres valores son configurables.
+   */
+  geocode: {
+    userAgent: readString('GEOCODE_USER_AGENT', 'TableroBot/0.1 (+https://github.com/asormar/tablero)'),
+    minIntervalMs: readInt('GEOCODE_MIN_INTERVAL_MS', 1000),
+    cacheTtlMs: readInt('GEOCODE_CACHE_TTL_MS', 10 * 60 * 1000),
+  },
   s3: {
     endpoint: readString('S3_ENDPOINT', 'http://localhost:9000'),
     accessKey: readString('S3_ACCESS_KEY', 'tablero'),

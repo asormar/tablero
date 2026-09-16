@@ -8,6 +8,7 @@ import { authRoutes } from './auth.js';
 import { boardsRoutes } from './boards.js';
 import { healthRoutes } from './health.js';
 import { linkPreviewRoutes } from './link-preview.js';
+import { mapsRoutes } from './maps.js';
 import { searchRoutes } from './search.js';
 import { tasksRoutes } from './tasks.js';
 
@@ -21,6 +22,7 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
       protectedScope.addHook('preHandler', requireSession);
       await protectedScope.register(assetsRoutes);
       await protectedScope.register(boardsRoutes);
+      await protectedScope.register(mapsRoutes);
       await protectedScope.register(searchRoutes);
       await protectedScope.register(tasksRoutes);
       await protectedScope.register(linkPreviewRoutes);

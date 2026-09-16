@@ -1,4 +1,10 @@
-/** GET /api/tasks — tareas derivadas de los elementos `todo` del documento Yjs. */
+/**
+ * GET /api/tasks — tareas derivadas de los elementos `todo` del documento Yjs.
+ *
+ * Acepta `filter=all|overdue|today|upcoming|done`, `boardId` opcional y `limit`;
+ * devuelve las tareas aplanadas de todos los tableros accesibles (o de uno solo)
+ * ordenadas para la vista global (§6.3).
+ */
 
 import type { FastifyInstance } from 'fastify';
 import { tasksQuerySchema } from '@tablero/shared';
@@ -6,7 +12,7 @@ import { tasksQuerySchema } from '@tablero/shared';
 import { loadBoardAccess } from '../lib/boards.js';
 import { notFound } from '../lib/errors.js';
 import { currentUser } from '../lib/session.js';
-import { collectTasks } from '../lib/tasks.js';
+import { collectTasks, tasksResponseSchema } from '../lib/tasks.js';
 
 export async function tasksRoutes(app: FastifyInstance): Promise<void> {
   app.get('/tasks', async (request) => {
@@ -25,6 +31,7 @@ export async function tasksRoutes(app: FastifyInstance): Promise<void> {
       query.filter,
       query.limit,
     );
-    return { filter: query.filter, tasks };
+    // La forma de la respuesta es un contrato: se valida antes de salir.
+    return tasksResponseSchema.parse({ filter: query.filter, tasks });
   });
 }

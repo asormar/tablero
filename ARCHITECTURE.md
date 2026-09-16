@@ -104,6 +104,44 @@ Yjs rechaza cualquier lectura de su contenido).
 - La rejilla de 8 px es el respaldo cuando no hay guía magnética dentro del
   umbral (6 px de mundo). `guides` y `gridSnap` se pueden desactivar por ajuste.
 
+### Papelera
+
+Borrar un elemento es **marcar, no mover**: recibe `deletedAt`/`deletedBy` y
+`getElements`/`getOrderedElements` lo ocultan. El texto enriquecido
+(`Y.XmlFragment`) nunca se toca y el orden de apilado se conserva solo, así que
+restaurar es quitar la marca. Motivos: mover el elemento a otra estructura
+obligaría a clonar el fragmento de texto (el mismo problema que documenta
+*Clonado de texto*), y así el `UndoManager` sigue cubriendo el borrado —
+`Ctrl/Cmd+Z` después de borrar devuelve la tarjeta **sin** dejar copia en la
+papelera, que era criterio de aceptación de la fase 1. Las columnas se llevan
+sus hijos y los devuelven con ellas. `purgeTrash` elimina definitivamente lo que
+superó los 30 días y se ejecuta al abrir el tablero: sin cron, que es lo que
+corresponde a un producto autoalojado.
+
+La papelera de **tableros** es otra cosa: vive en Postgres (`Board.trashedAt`) y
+la expone el API (`GET /api/trash`, `POST /api/trash/:id/restore`,
+`DELETE /api/trash/:id`). El panel de la interfaz muestra las dos juntas.
+
+### Conectores
+
+Un conector no guarda posición: guarda **a qué elemento y a qué lado** se ancla.
+La geometría (curva, punto medio de la etiqueta, caja envolvente) se recalcula en
+cada render con `connectorGeometry`, y por eso las flechas siguen a las tarjetas
+sin ningún trabajo de sincronización. El lado `auto` se resuelve mirando al otro
+extremo, así que el conector se reacomoda solo cuando las tarjetas cambian de
+posición relativa. Coherente con esto, `ElementType` no tiene una tarjeta de
+línea: las líneas libres también son conectores con extremos sin elemento.
+
+### Movimiento de elementos entre tableros
+
+Copiar elementos de un tablero a otro es **del lado del cliente**. Son dos
+documentos Yjs distintos y el texto enriquecido necesita el esquema de
+ProseMirror, que vive en la web (`y-prosemirror`), no en el API. El módulo de la
+web abre una sesión temporal del tablero destino, espera el `synced`,
+reconstruye los elementos con su texto y recién entonces los borra del origen.
+Mover **tableros** sí es del servidor (`POST /api/boards/:id/move`), porque ahí
+solo cambia `parentBoardId` en Postgres.
+
 ## Dependencias y versiones
 
 - **Zod 3**, no 4: los esquemas compartidos usan la API de la serie 3

@@ -15,7 +15,7 @@ comportarse y **en qué orden** construirla es el plan de producto y técnico
 | --- | --- | --- |
 | 1 | Base y lienzo: monorepo, Docker, autenticación, CRUD de tableros anidados, lienzo infinito con selección/arrastre/guías/virtualización, nota + encabezado + tarjeta de tablero, persistencia Yjs con Hocuspocus, deshacer/rehacer | **Completa y verificada** (ver *Verificación*) |
 | 2 | Contenido multimedia: subida de archivos, imagen, archivo, vídeo, audio, enlace, muestra de color, pegado inteligente | **Completa y verificada** (ver *Verificación*) |
-| 3 | Estructura y organización: columnas, tareas con fechas, conectores con etiquetas, tablas, documento largo, dibujo, mapa, «Sin ordenar», papelera, favoritos | Pendiente |
+| 3 | Estructura y organización: columnas, tareas con fechas, conectores con etiquetas, tablas, documento largo, dibujo, mapa, «Sin ordenar», papelera, favoritos | **Parcial**: elementos, columnas, conectores y mover entre tableros hechos y verificados; los paneles que dependen del API nuevo (Sin ordenar, papelera, favoritos, vista de tareas) van en la ronda siguiente |
 | 4 | Productividad: búsqueda global, paleta de comandos, plantillas, exportación/importación, historial, ajustes y tema oscuro, PWA y móvil | Pendiente |
 | 5 | Colaboración: compartir con roles, publicar, cursores en tiempo real, comentarios, notificaciones, actividad | Pendiente |
 | 6 | Extras: extensión de navegador, captura con token, pulido de rendimiento y accesibilidad, pruebas end-to-end | Pendiente |
@@ -147,3 +147,35 @@ Playwright.
 
 Pendiente de verificación manual (necesita gesto humano): el cuentagotas y el
 selector de color nativo, y la grabación con un micrófono real.
+
+## Verificación de la fase 3
+
+Lo que está hecho y comprobado por el agente principal con ejecución real:
+
+- **Criterio 1 (kanban)**: cuatro columnas en fila sin solapes, tarjetas dentro de
+  ellas y **una tarjeta movida de la columna 1 a la 2** con arrastre real: el
+  destino se resalta, los contadores pasan de `2,1` a `1,2` y el orden dentro de
+  la columna destino es el del punto de suelta. Confirmado además en el documento
+  persistido (`childrenIds` de cada columna).
+- **Criterio 2 (conectores)**: una flecha creada arrastrando desde el anclaje
+  derecho de una nota hasta otra, con el trazo medido **en vivo durante el
+  arrastre** (el extremo pasó de `688,720` a `1028,784` antes de soltar). En el
+  documento el conector se guarda como anclajes (`side: right` → `auto`), que es
+  lo que hace que siga a las tarjetas sin trabajo extra.
+- **`pnpm -r typecheck`** limpio en los tres paquetes, **256 tests** en `shared`,
+  **84** en el API (35 nuevos) y **243** en la web (100 nuevos); build OK.
+- **API de la fase 3** probado sobre una base creada desde cero: la bandeja «Sin
+  ordenar» se crea una sola vez y es la misma siempre, no se puede tirar (409
+  `cannot_trash_unsorted`), los favoritos filtran, la papelera de tableros lista /
+  restaura / borra definitivo, `/api/tasks` responde validado y
+  `/api/maps/search` devuelve lugares reales de Nominatim con caché.
+- Smokes: `smoke-rest` 26/26, `smoke:collab` 11/11 (439 bytes persistidos),
+  `smoke:assets` 24/24 y `smoke:upgrade` 9/9 (rechazo por `Origin` **y** que el
+  API siga vivo, incluida una ráfaga de rechazos).
+
+Pendiente de esta fase: los paneles de «Sin ordenar», papelera, favoritos y la
+vista global de tareas (segunda ronda), el bug conocido del doble clic en
+tarjetas cuyo DOM se recrea al seleccionarlas, y los hallazgos de la revisión de
+la fase 2 que tocan la web (mensaje de error de subida, botón de reintentar,
+archivos huérfanos al borrar tarjetas, `React.lazy` de los paneles y purga de
+cachés).

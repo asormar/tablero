@@ -53,14 +53,30 @@ export const createBoardSchema = z.object({
   templateId: idSchema.nullish(),
 });
 
+/**
+ * PATCH de tablero: solo estos campos. El esquema es `.strict()` y nombra los
+ * campos desconocidos en el error, para que el cliente reciba un 400 claro en
+ * vez de un 200 que ignora lo que mandó (caso `settings`: el modelo Board no
+ * tiene esa columna, los ajustes viven en `User.settings`).
+ */
 export const updateBoardSchema = z
-  .object({
-    title: z.string().trim().max(200).optional(),
-    icon: z.string().max(32).nullish(),
-    color: z.string().max(32).nullish(),
-    coverImageId: idSchema.nullish(),
-    settings: z.record(z.unknown()).optional(),
-  })
+  .object(
+    {
+      title: z.string().trim().max(200).optional(),
+      icon: z.string().max(32).nullish(),
+      color: z.string().max(32).nullish(),
+      coverImageId: idSchema.nullish(),
+    },
+    {
+      errorMap: (issue, ctx) =>
+        issue.code === z.ZodIssueCode.unrecognized_keys
+          ? {
+              message: `No se admiten campos desconocidos en la actualización de un tablero: ${issue.keys.join(', ')}`,
+            }
+          : { message: ctx.defaultError },
+    },
+  )
+  .strict()
   .refine((value) => Object.keys(value).length > 0, { message: 'Nada que actualizar' });
 
 export const moveBoardSchema = z.object({

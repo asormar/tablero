@@ -83,10 +83,14 @@ export function subtreeIds(boards: BoardSummary[], rootId: string): string[] {
 /**
  * ¿Se puede mover `boardId` dentro de `targetId`? Evita mover un tablero
  * dentro de uno de sus descendientes.
+ *
+ * Un destino `null` significa «al nivel superior», es decir, crear otra raíz:
+ * la cuenta tiene una sola raíz por diseño y solo la crea el registro, así que
+ * acá se rechaza (la API responde 409 `cannot_create_second_root`).
  */
 export function canMoveBoard(boards: BoardSummary[], boardId: string, targetId: string | null): boolean {
+  if (targetId === null) return false;
   if (boardId === targetId) return false;
-  if (targetId === null) return true;
   return !subtreeIds(boards, boardId).includes(targetId);
 }
 

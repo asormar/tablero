@@ -188,8 +188,11 @@ export async function loadBoardAccess(userId: string): Promise<BoardAccess> {
   return new BoardAccess(userId, boards as BoardRecord[], shares);
 }
 
-/** Rol de un usuario sobre un tablero concreto (atajo para el handshake WS). */
-export async function roleOnBoard(userId: string, boardId: string): Promise<EffectiveRole | null> {
+/** Rol efectivo de un tablero y su estado de papelera (atajo para el handshake WS). */
+export async function boardAccessFor(
+  userId: string,
+  boardId: string,
+): Promise<{ role: EffectiveRole | null; trashedAt: Date | null }> {
   const access = await loadBoardAccess(userId);
-  return access.roleOf(boardId);
+  return { role: access.roleOf(boardId), trashedAt: access.get(boardId)?.trashedAt ?? null };
 }

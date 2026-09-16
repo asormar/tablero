@@ -12,7 +12,9 @@ import { createUserWithRootBoard } from './lib/users.js';
 const DEMO = {
   email: 'demo@tablero.test',
   name: 'Cuenta demo',
-  password: 'demo-tablero-2026',
+  // La contraseña se puede fijar con DEMO_PASSWORD; el valor por defecto del
+  // desarrollo vive en esta constante y NUNCA se imprime por consola.
+  password: process.env.DEMO_PASSWORD ?? 'demo-tablero-2026',
 };
 
 async function main(): Promise<void> {
@@ -25,7 +27,7 @@ async function main(): Promise<void> {
   const { user, rootBoard } = await createUserWithRootBoard(DEMO);
   console.log(`Cuenta demo creada: ${user.email} (${user.id})`);
   console.log(`Tablero raíz: ${rootBoard.id} — "${rootBoard.title}"`);
-  console.log(`Contraseña: ${DEMO.password}`);
+  console.log('Contraseña: la de DEMO_PASSWORD (o la del código por defecto); no se imprime acá.');
 }
 
 main()

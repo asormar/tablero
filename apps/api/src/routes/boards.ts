@@ -162,8 +162,9 @@ export async function boardsRoutes(app: FastifyInstance): Promise<void> {
     const access = await loadBoardAccess(user.id);
     requireEditor(access, id);
 
-    // `settings` viene en updateBoardSchema pero el modelo Board del plan no
-    // tiene esa columna: se acepta y se ignora (documentado en el informe).
+    // `settings` ya no está en updateBoardSchema: el modelo Board no tiene esa
+    // columna y el esquema (`.strict()`) rechaza el campo con 400 en vez de
+    // aceptarlo y descartarlo en silencio.
     const data: { title?: string; icon?: string | null; color?: string | null; coverImageId?: string | null } = {};
     if (input.title !== undefined && input.title.length > 0) data.title = input.title;
     if (input.icon !== undefined) data.icon = input.icon ?? null;
@@ -218,13 +219,16 @@ export async function boardsRoutes(app: FastifyInstance): Promise<void> {
     requireEditor(access, id);
 
     const targetId = input.parentBoardId;
-    if (targetId !== null) {
-      if (!access.get(targetId) || !access.roleOf(targetId)) {
-        throw notFound('El tablero destino no existe o no tenés acceso');
-      }
-      if (!access.canEdit(targetId)) throw forbidden('Necesitás rol de editor en el destino', 'forbidden_role');
-      if (access.get(targetId)?.trashedAt) throw conflict('El destino está en la papelera', 'target_trashed');
+    // Las raíces solo se crean en el registro: aceptar `null` dejaría una
+    // segunda raíz, que además después no se puede mandar a la papelera.
+    if (targetId === null) {
+      throw conflict('Solo el registro crea el tablero raíz de una cuenta', 'cannot_create_second_root');
     }
+    if (!access.get(targetId) || !access.roleOf(targetId)) {
+      throw notFound('El tablero destino no existe o no tenés acceso');
+    }
+    if (!access.canEdit(targetId)) throw forbidden('Necesitás rol de editor en el destino', 'forbidden_role');
+    if (access.get(targetId)?.trashedAt) throw conflict('El destino está en la papelera', 'target_trashed');
     if (!access.canMove(id, targetId)) {
       throw conflict('No se puede mover un tablero dentro de sí mismo o de un descendiente', 'cannot_move_into_descendant');
     }
@@ -247,13 +251,21 @@ export async function boardsRoutes(app: FastifyInstance): Promise<void> {
       ? orderedSubtree(access, id).filter((candidate) => access.canEdit(candidate.id))
       : [record];
 
+    // Duplicar la raíz no puede crear otra raíz: la copia se anida dentro de la
+    // raíz de la cuenta (una sola raíz por usuario, la del registro). Si el
+    // tablero duplicado es la raíz de otro, la copia cuelga de la raíz propia.
+    const copyParentId = record.parentBoardId ?? access.rootBoard()?.id;
+    if (!copyParentId) throw conflict('La cuenta no tiene tablero raíz', 'missing_root_board');
+
     const idMap = new Map<string, string>();
     await prisma.$transaction(async (tx) => {
       for (const source of sources) {
+        // Un hijo cuyo padre no está en la copia (p. ej. filtrado por permisos)
+        // se anida en la copia de la raíz, nunca al nivel superior.
         const parentId =
           source.id === id
-            ? record.parentBoardId
-            : (source.parentBoardId ? idMap.get(source.parentBoardId) ?? null : null);
+            ? copyParentId
+            : (source.parentBoardId ? idMap.get(source.parentBoardId) ?? copyParentId : copyParentId);
         const created = await tx.board.create({
           data: {
             ownerId: user.id,

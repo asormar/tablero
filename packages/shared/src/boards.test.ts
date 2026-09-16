@@ -90,7 +90,11 @@ describe('subtreeIds / canMoveBoard', () => {
     expect(canMoveBoard(boards, 'proyecto', 'referencias')).toBe(false);
     expect(canMoveBoard(boards, 'proyecto', 'personal')).toBe(true);
     expect(canMoveBoard(boards, 'proyecto', 'proyecto')).toBe(false);
-    expect(canMoveBoard(boards, 'proyecto', null)).toBe(true);
+  });
+
+  it('rechaza mover a `null`: las raíces solo se crean en el registro', () => {
+    expect(canMoveBoard(boards, 'proyecto', null)).toBe(false);
+    expect(canMoveBoard(boards, 'referencias', null)).toBe(false);
   });
 });
 

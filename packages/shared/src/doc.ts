@@ -111,6 +111,10 @@ export function readElement(map: ElementMap): CanvasElement | null {
   if (commentsCount !== undefined) target.commentsCount = commentsCount;
   const locked = asBoolean(map.get('locked'));
   if (locked !== undefined) target.locked = locked;
+  const deletedAt = asNumber(map.get('deletedAt'));
+  if (deletedAt !== undefined) target.deletedAt = deletedAt;
+  const deletedBy = asString(map.get('deletedBy'));
+  if (deletedBy !== undefined) target.deletedBy = deletedBy;
 
   switch (type) {
     case 'note':
@@ -296,7 +300,7 @@ export function getElements(doc: Y.Doc): CanvasElement[] {
   const result: CanvasElement[] = [];
   elementsOf(doc).forEach((map) => {
     const element = readElement(map);
-    if (element) result.push(element);
+    if (element && !isTrashed(element)) result.push(element);
   });
   return result;
 }
@@ -312,13 +316,13 @@ export function getOrderedElements(doc: Y.Doc): CanvasElement[] {
     const map = store.get(id);
     if (!map) return;
     const element = readElement(map);
-    if (element) result.push(element);
+    if (element && !isTrashed(element)) result.push(element);
   });
   // Elementos huérfanos (sin entrada en `order`): al final, ordenados por creación.
   store.forEach((map, id) => {
     if (seen.has(id)) return;
     const element = readElement(map);
-    if (element) result.push(element);
+    if (element && !isTrashed(element)) result.push(element);
   });
   return result;
 }
@@ -431,6 +435,127 @@ export function removeElements(doc: Y.Doc, ids: string[], origin: unknown): void
       }
     }
   });
+}
+
+// --- Papelera ---------------------------------------------------------------
+
+/** Días que un elemento espera en la papelera antes de poder purgarse. */
+export const TRASH_TTL_DAYS = 30;
+export const TRASH_TTL_MS = TRASH_TTL_DAYS * 24 * 60 * 60 * 1000;
+
+/** ¿Está en la papelera? */
+export function isTrashed(element: Pick<CanvasElement, 'deletedAt'>): boolean {
+  return typeof element.deletedAt === 'number' && element.deletedAt > 0;
+}
+
+export type TrashElementsOptions = { deletedBy?: string; now?: number; withChildren?: boolean };
+
+/**
+ * Manda elementos a la papelera.
+ *
+ * No se saca nada del documento: se marca con `deletedAt` y `deletedBy`, así el
+ * texto enriquecido (que vive en su propio `Y.XmlFragment`) no se mueve,
+ * restaurar es borrar la marca y el orden de apilado se conserva solo. Las
+ * columnas se llevan sus hijos.
+ */
+export function trashElements(doc: Y.Doc, ids: string[], origin: unknown, options: TrashElementsOptions = {}): string[] {
+  const store = elementsOf(doc);
+  const now = options.now ?? Date.now();
+  const deletedBy = options.deletedBy ?? 'local';
+  const withChildren = options.withChildren ?? true;
+  const trashed: string[] = [];
+  if (ids.length === 0) return trashed;
+  transact(doc, origin, () => {
+    const pending = [...ids];
+    const seen = new Set<string>();
+    while (pending.length > 0) {
+      const id = pending.pop()!;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const map = store.get(id);
+      if (!map || map.get('deletedAt')) continue;
+      map.set('deletedAt', now);
+      map.set('deletedBy', deletedBy);
+      trashed.push(id);
+      if (withChildren) {
+        const children = map.get('childrenIds');
+        if (children instanceof Y.Array) {
+          for (const child of children.toArray()) {
+            if (typeof child === 'string') pending.push(child);
+          }
+        }
+      }
+    }
+  });
+  return trashed;
+}
+
+/** Saca elementos de la papelera, devolviéndolos a donde estaban. */
+export function restoreElements(
+  doc: Y.Doc,
+  ids: string[],
+  origin: unknown,
+  options: { withChildren?: boolean } = {},
+): string[] {
+  const store = elementsOf(doc);
+  const withChildren = options.withChildren ?? true;
+  const restored: string[] = [];
+  if (ids.length === 0) return restored;
+  transact(doc, origin, () => {
+    const pending = [...ids];
+    const seen = new Set<string>();
+    while (pending.length > 0) {
+      const id = pending.pop()!;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      const map = store.get(id);
+      if (!map || !map.get('deletedAt')) continue;
+      map.delete('deletedAt');
+      map.delete('deletedBy');
+      restored.push(id);
+      if (withChildren) {
+        const children = map.get('childrenIds');
+        if (children instanceof Y.Array) {
+          for (const child of children.toArray()) {
+            if (typeof child === 'string' && store.get(child)?.get('deletedAt')) pending.push(child);
+          }
+        }
+      }
+    }
+  });
+  return restored;
+}
+
+/** Lo que hay en la papelera, lo último borrado primero. */
+export function getTrashedElements(doc: Y.Doc): CanvasElement[] {
+  const result: CanvasElement[] = [];
+  elementsOf(doc).forEach((map) => {
+    const element = readElement(map);
+    if (element && isTrashed(element)) result.push(element);
+  });
+  return result.sort((a, b) => (b.deletedAt ?? 0) - (a.deletedAt ?? 0));
+}
+
+export function trashCount(doc: Y.Doc): number {
+  return getTrashedElements(doc).length;
+}
+
+/** Borra para siempre lo que lleva en la papelera más de `maxAgeMs`. */
+export function purgeTrash(doc: Y.Doc, origin: unknown, options: { maxAgeMs?: number; now?: number } = {}): string[] {
+  const maxAge = options.maxAgeMs ?? TRASH_TTL_MS;
+  const now = options.now ?? Date.now();
+  const ids = getTrashedElements(doc)
+    .filter((element) => now - (element.deletedAt ?? now) >= maxAge)
+    .map((element) => element.id);
+  if (ids.length > 0) removeElements(doc, ids, origin);
+  return ids;
+}
+
+/** Vacía la papelera para siempre. */
+export function emptyTrash(doc: Y.Doc, origin: unknown): string[] {
+  const ids = getTrashedElements(doc).map((element) => element.id);
+  if (ids.length > 0) removeElements(doc, ids, origin);
+  return ids;
 }
 
 /** Fragmento de texto enriquecido de un elemento, creándolo si no existe. */

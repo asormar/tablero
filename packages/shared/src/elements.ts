@@ -145,7 +145,10 @@ export type BaseElement = {
   commentsCount?: number;
   /** Posición bloqueada: no se puede arrastrar. */
   locked?: boolean;
-};
+  /** Papelera: marca de borrado (30 días antes de poder purgarse). */
+  deletedAt?: number | null;
+  deletedBy?: string | null;
+}
 
 export type NoteElement = BaseElement & { type: 'note' | 'document' | 'heading' | 'todo' };
 export type HeadingExtras = { size?: HeadingSize };

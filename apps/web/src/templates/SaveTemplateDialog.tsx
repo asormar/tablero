@@ -11,11 +11,13 @@ import { ApiError } from '@/api/client';
 import { useT } from '@/i18n';
 import { useAppStore } from '@/state/appStore';
 import { usePanelsStore } from '@/state/panelsStore';
+import { useFocusTrap } from '@/hooks/useFocusTrap';
 
 import { saveBoardAsTemplate } from './api';
 
 export function SaveTemplateDialog(): JSX.Element | null {
   const open = usePanelsStore((state) => state.saveTemplateOpen);
+  const trapRef = useFocusTrap<HTMLDivElement>(open);
   const t = useT();
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
@@ -58,13 +60,13 @@ export function SaveTemplateDialog(): JSX.Element | null {
 
   return (
     <div className="modal" role="dialog" aria-modal="true" aria-label={t('templates.saveTitle')}>
-      <div className="modal__panel save-template">
-        <header className="modal__head">
+      <div className="modal__panel save-template" ref={trapRef}>
+        <div className="modal__head">
           <h2 className="modal__title">{t('templates.saveTitle')}</h2>
           <button type="button" className="icon-button" title={t('common.close')} onClick={close}>
             <X size={15} />
           </button>
-        </header>
+        </div>
         <div className="modal__body save-template__body">
           <p className="save-template__hint">{t('templates.saveHint')}</p>
           <label className="field">

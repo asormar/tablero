@@ -224,7 +224,7 @@ export function Toolbar({ session }: ToolbarProps): JSX.Element {
         </div>
       ) : (
         <>
-      <div className="toolbar__group">
+      <div className="toolbar__group" role="group" aria-label="Crear">
         <button
           type="button"
           className="toolbar__tool"
@@ -274,12 +274,13 @@ export function Toolbar({ session }: ToolbarProps): JSX.Element {
         </button>
       </div>
 
-      <div className="toolbar__group" aria-label="Contenido">
+      <div className="toolbar__group" role="group" aria-label="Contenido">
         {CONTENT_TOOLS.map(renderContentTool)}
         <button
           type="button"
           className="toolbar__tool"
           title="Grabar audio con el micrófono"
+          aria-label="Grabar audio con el micrófono"
           onClick={() => setRecorderOpen(true)}
         >
           <Mic size={18} />
@@ -287,12 +288,13 @@ export function Toolbar({ session }: ToolbarProps): JSX.Element {
         </button>
       </div>
 
-      <div className="toolbar__group toolbar__group--structure" aria-label="Estructura">
+      <div className="toolbar__group toolbar__group--structure" role="group" aria-label="Estructura">
         {STRUCTURE_TOOLS.map(renderContentTool)}
         <button
           type="button"
           className={`toolbar__tool${commentPinMode ? ' is-active' : ''}`}
           title="Colocar un comentario suelto en el lienzo"
+          aria-label="Colocar un comentario en el lienzo"
           data-toolbar-comment-pin
           aria-pressed={commentPinMode}
           onClick={() => useUiStore.getState().setCommentPinMode(!commentPinMode)}
@@ -303,11 +305,12 @@ export function Toolbar({ session }: ToolbarProps): JSX.Element {
       </div>
 
       {isDevBuild ? (
-        <div className="toolbar__group toolbar__group--dev">
+        <div className="toolbar__group toolbar__group--dev" role="group" aria-label="Desarrollo">
           <button
             type="button"
             className="toolbar__tool"
             title="Generar 300 notas de prueba (Ctrl+Shift+Alt+N)"
+            aria-label="Generar 300 notas de prueba"
             onClick={addTestNotes}
           >
             <Grid2x2 size={18} />

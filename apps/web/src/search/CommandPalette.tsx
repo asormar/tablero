@@ -34,6 +34,7 @@ import { ApiError } from '@/api/client';
 import { createNestedBoard } from '@/app/boardService';
 import { focusElementInView } from '@/canvas/commands';
 import type { BoardSession } from '@/collab/BoardSession';
+import { useFocusTrap } from '@/hooks/useFocusTrap';
 import { useT } from '@/i18n';
 import { readingOrder } from '@/lib/readingOrder';
 import { useAppStore } from '@/state/appStore';
@@ -90,6 +91,7 @@ export function CommandPalette({
   const [reindexing, setReindexing] = useState(false);
   const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const trapRef = useFocusTrap<HTMLDivElement>(open);
   const currentBoardId = useAppStore((state) => state.currentBoardId);
   const boards = useAppStore((state) => state.boards);
 
@@ -343,7 +345,7 @@ export function CommandPalette({
 
   return (
     <div className="modal palette" role="dialog" aria-modal="true" aria-label={t('palette.aria')}>
-      <div className="modal__panel palette__panel">
+      <div className="modal__panel palette__panel" ref={trapRef}>
         <div className="palette__search">
           <Search size={15} aria-hidden="true" />
           <input
@@ -353,6 +355,7 @@ export function CommandPalette({
             value={query}
             placeholder={t('palette.placeholder')}
             aria-label={t('common.search')}
+            data-autofocus
             spellCheck={false}
             onChange={(event) => {
               setQuery(event.target.value);
@@ -540,6 +543,9 @@ export function CommandPalette({
           ) : null}
         </div>
 
+        <span className="sr-only" role="status" data-palette-status>
+          {loading ? t('palette.searching') : t('palette.resultCount', { count: String(total) })}
+        </span>
         <footer className="palette__footer">
           <span>{t('palette.hintNavigate')}</span>
           <span className="palette__footer-hint">

@@ -14,6 +14,7 @@ import { type BoardSummary, ROOT_BOARD_TITLE, buildBreadcrumbPath } from '@table
 import { listBoards, setBoardFavorite } from '@/api/boards';
 import { useAppStore } from '@/state/appStore';
 import { useUiStore } from '@/state/uiStore';
+import { useFocusTrap } from '@/hooks/useFocusTrap';
 
 function byRecent(a: BoardSummary, b: BoardSummary): number {
   return (b.updatedAt ?? 0) - (a.updatedAt ?? 0);
@@ -21,6 +22,7 @@ function byRecent(a: BoardSummary, b: BoardSummary): number {
 
 export function BoardsHome({ onOpenBoard }: { onOpenBoard(boardId: string): void }): JSX.Element | null {
   const open = useUiStore((state) => state.homeOpen);
+  const trapRef = useFocusTrap<HTMLDivElement>(open);
   const boards = useAppStore((state) => state.boards);
   const apiOnline = useAppStore((state) => state.apiOnline);
   const [favorites, setFavorites] = useState<BoardSummary[]>([]);
@@ -109,8 +111,8 @@ export function BoardsHome({ onOpenBoard }: { onOpenBoard(boardId: string): void
 
   return (
     <div className="modal" role="dialog" aria-modal="true" aria-label="Tableros">
-      <div className="modal__panel home">
-        <header className="modal__head">
+      <div className="modal__panel home" ref={trapRef}>
+        <div className="modal__head">
           <h2 className="modal__title">
             <Home size={15} /> Tableros
           </h2>
@@ -118,7 +120,7 @@ export function BoardsHome({ onOpenBoard }: { onOpenBoard(boardId: string): void
           <button type="button" className="icon-button" title="Cerrar (Esc)" onClick={close}>
             <X size={15} />
           </button>
-        </header>
+        </div>
         <div className="modal__body home__body">
           <section className="home__section" aria-label="Favoritos">
             <h3 className="home__section-title">

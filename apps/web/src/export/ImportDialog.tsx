@@ -20,6 +20,7 @@ import type { BoardSession } from '@/collab/BoardSession';
 import { useT } from '@/i18n';
 import { useAppStore } from '@/state/appStore';
 import { usePanelsStore } from '@/state/panelsStore';
+import { useFocusTrap } from '@/hooks/useFocusTrap';
 
 import {
   type ImportKind,
@@ -40,6 +41,7 @@ export function ImportDialog({
   onOpenBoard(boardId: string): void;
 }): JSX.Element | null {
   const open = usePanelsStore((state) => state.importOpen);
+  const trapRef = useFocusTrap<HTMLDivElement>(open);
   const t = useT();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -127,15 +129,18 @@ export function ImportDialog({
 
   return (
     <div className="modal" role="dialog" aria-modal="true" aria-label={t('import.title')}>
-      <div className="modal__panel import">
-        <header className="modal__head">
+      <div className="modal__panel import" ref={trapRef}>
+        <div className="modal__head">
           <h2 className="modal__title">{t('import.title')}</h2>
           {busy ? <Loader2 size={14} className="spin" /> : null}
           <button type="button" className="icon-button" title={t('common.close')} onClick={close}>
             <X size={15} />
           </button>
-        </header>
+        </div>
         <div className="modal__body import__body">
+          <p className="sr-only" role="status" data-import-status>
+            {busy ? t('import.working') : ''}
+          </p>
           <p className="import__hint">{t('import.hint')}</p>
           <div
             className="import__drop"

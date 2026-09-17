@@ -18,12 +18,19 @@
   --surface-3: #f1f1ef;
   --text: #2b2b28;
   --text-muted: #6b6b66;
-  --text-faint: #9a9a94;
+  /* `--text-faint` pasa AA (4.5:1) en las tres superficies: 5.28 / 5.05 / 4.67 */
+  --text-faint: #6c6c67;
   --border: rgba(0, 0, 0, 0.1);
   --border-strong: rgba(0, 0, 0, 0.18);
 
   --accent: #2f6fc9;
   --accent-soft: #deeafb;
+  /* Texto sobre `--accent` relleno y acento legible sobre `--accent-soft` */
+  --accent-ink: #ffffff;
+  --accent-strong: #24589f;
+  /* Estado de guardado: verde con AA sobre su propio fondo translúcido */
+  --sync-ok: #2f6a24;
+  --sync-warn: #8a4a10;
   --danger: #c93b3b;
   --guide: #e0577a;
 
@@ -53,11 +60,16 @@
     --surface-3: #33333a;
     --text: #ececef;
     --text-muted: #a9a9af;
-    --text-faint: #7d7d85;
+    /* `--text-faint` pasa AA en las tres superficies: 5.67 / 5.22 / 4.71 */
+    --text-faint: #9e9ea6;
     --border: rgba(255, 255, 255, 0.12);
     --border-strong: rgba(255, 255, 255, 0.22);
     --accent: #77aeee;
     --accent-soft: #1f2c40;
+    --accent-ink: #101820;
+    --accent-strong: #77aeee;
+    --sync-ok: #7cc46a;
+    --sync-warn: #e0a05a;
     --danger: #f08c8c;
     --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.4);
     --shadow-card-hover: 0 2px 8px rgba(0, 0, 0, 0.5);
@@ -79,11 +91,16 @@
   --surface-3: #33333a;
   --text: #ececef;
   --text-muted: #a9a9af;
-  --text-faint: #7d7d85;
+  /* `--text-faint` pasa AA en las tres superficies: 5.67 / 5.22 / 4.71 */
+  --text-faint: #9e9ea6;
   --border: rgba(255, 255, 255, 0.12);
   --border-strong: rgba(255, 255, 255, 0.22);
   --accent: #77aeee;
   --accent-soft: #1f2c40;
+  --accent-ink: #101820;
+  --accent-strong: #77aeee;
+  --sync-ok: #7cc46a;
+  --sync-warn: #e0a05a;
   --danger: #f08c8c;
   --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.4);
   --shadow-card-hover: 0 2px 8px rgba(0, 0, 0, 0.5);
@@ -136,6 +153,46 @@ kbd {
   font-family: var(--font-sans);
   font-size: 11px;
   color: var(--text-faint);
+}
+
+/*
+ * Foco visible (fase 6, accesibilidad): un anillo consistente para todo lo que
+ * recibe el foco con el teclado. `:focus-visible` no se activa con el ratón, así
+ * que el clic no lo muestra y `Tab` siempre sí. Los campos de texto no lo
+ * necesitan: cambian borde y sombra en `:focus` (ver `.field__input:focus` y
+ * compañía).
+ */
+button:focus-visible,
+a[href]:focus-visible,
+summary:focus-visible,
+[tabindex]:focus-visible,
+[role='button']:focus-visible,
+[role='tab']:focus-visible,
+[role='radio']:focus-visible,
+[role='menuitem']:focus-visible,
+[role='option']:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* Las tarjetas del lienzo también entran en el orden de tabulación. */
+.el:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* Contenido solo para lectores de pantalla (anuncios de estado, por ejemplo). */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
 
 .spin {
@@ -359,7 +416,7 @@ kbd {
 
 .icon-button.is-active {
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-strong);
 }
 
 .icon-button--danger:hover:not(:disabled) {
@@ -442,8 +499,8 @@ kbd {
 }
 
 .sync.is-saved {
-  color: #3e8a2f;
-  background: rgba(62, 138, 47, 0.12);
+  color: var(--sync-ok);
+  background: color-mix(in srgb, var(--sync-ok) 12%, transparent);
 }
 
 .sync.is-saving {
@@ -451,8 +508,8 @@ kbd {
 }
 
 .sync.is-offline {
-  color: #d2761f;
-  background: rgba(210, 118, 31, 0.14);
+  color: var(--sync-warn);
+  background: color-mix(in srgb, var(--sync-warn) 14%, transparent);
 }
 
 .sync__label {
@@ -1429,7 +1486,7 @@ kbd {
   height: 28px;
   border-radius: var(--radius-card);
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-strong);
   font-size: 16px;
 }
 
@@ -1514,7 +1571,7 @@ kbd {
   padding: 10px 12px;
   font-size: 13px;
   font-weight: 500;
-  color: #fff;
+  color: var(--accent-ink);
   background: var(--accent);
   border-radius: var(--radius-card);
   transition: filter var(--dur-fast) var(--ease);

@@ -95,7 +95,7 @@
 .button--primary {
   border-color: transparent;
   background: var(--accent);
-  color: #ffffff;
+  color: var(--accent-ink);
 }
 
 .button--primary:hover:not(:disabled) {
@@ -725,7 +725,7 @@
 
 .settings__segment.is-active {
   background: var(--accent);
-  color: #ffffff;
+  color: var(--accent-ink);
 }
 
 .settings__select {
@@ -844,6 +844,13 @@
   background: var(--accent-soft);
 }
 
+/* Con el fondo de acento suave, el texto secundario usa el acento fuerte:
+   `--text-muted` se quedaba en 4.4:1 (fase 6). */
+.history__item.is-active .history__item-meta,
+.history__item:hover .history__item-meta {
+  color: var(--accent-strong);
+}
+
 .history__item-date {
   font-weight: 500;
 }
@@ -864,7 +871,7 @@
 }
 
 .history__delta.is-up {
-  color: #2f7d32;
+  color: var(--sync-ok);
 }
 
 .history__delta.is-down {

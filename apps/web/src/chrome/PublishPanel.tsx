@@ -16,6 +16,7 @@ import { degradationMessage, isMissingEndpoint } from '@/api/degraded';
 import { publishBoard, unpublishBoard, type Publication } from '@/api/sharing';
 import { useSessionPermission } from '@/collab/SessionContext';
 import { capabilityRefusal } from '@/collab/roles';
+import { useFocusTrap } from '@/hooks/useFocusTrap';
 import { publicBoardUrl } from '@/lib/routes';
 import { writeSystemText } from '@/lib/clipboard';
 import { useAppStore } from '@/state/appStore';
@@ -34,6 +35,9 @@ export function PublishPanel({ boardId }: { boardId: string }): JSX.Element | nu
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  /** Anuncio accesible de las acciones asíncronas (`role=status`). */
+  const [status, setStatus] = useState('');
+  const trapRef = useFocusTrap<HTMLDivElement>(open);
 
   const publishedSlug = publication?.slug ?? board?.publishedSlug ?? null;
   const publishedAt = publication?.publishedAt ?? board?.publishedAt ?? null;
@@ -55,6 +59,7 @@ export function PublishPanel({ boardId }: { boardId: string }): JSX.Element | nu
   const publish = async (): Promise<void> => {
     setBusy(true);
     setError(null);
+    setStatus('Publicando el tablero…');
     try {
       const result = await publishBoard(boardId, {
         password: password.trim().length > 0 ? password.trim() : null,
@@ -62,6 +67,7 @@ export function PublishPanel({ boardId }: { boardId: string }): JSX.Element | nu
       });
       setPublication(result);
       setPassword('');
+      setStatus(`Tablero publicado en /p/${result.slug}.`);
       reportActivity(boardId, {
         action: 'board.publish',
         meta: { slug: result.slug, includeSubBoards, hasPassword: result.hasPassword },
@@ -74,6 +80,7 @@ export function PublishPanel({ boardId }: { boardId: string }): JSX.Element | nu
           ? 'La API todavía no expone la publicación de tableros.'
           : degradationMessage(cause, 'Publicar'),
       );
+      setStatus('No se pudo publicar el tablero.');
     } finally {
       setBusy(false);
     }
@@ -82,13 +89,16 @@ export function PublishPanel({ boardId }: { boardId: string }): JSX.Element | nu
   const unpublish = async (): Promise<void> => {
     setBusy(true);
     setError(null);
+    setStatus('Dejando de publicar…');
     try {
       await unpublishBoard(boardId);
       setPublication({ slug: '', url: null, includeSubBoards, hasPassword: false, publishedAt: null });
+      setStatus('El tablero dejó de estar publicado.');
       reportActivity(boardId, { action: 'board.unpublish' });
       setNotice('El tablero dejó de estar publicado.');
     } catch (cause) {
       setError(degradationMessage(cause, 'Dejar de publicar'));
+      setStatus('No se pudo dejar de publicar el tablero.');
     } finally {
       setBusy(false);
     }
@@ -98,6 +108,7 @@ export function PublishPanel({ boardId }: { boardId: string }): JSX.Element | nu
     if (value.length === 0) return;
     const ok = await writeSystemText(value);
     setCopied(ok);
+    setStatus(ok ? 'Enlace copiado al portapapeles.' : 'No se pudo copiar el enlace.');
     if (!ok) setNotice('El navegador no dejó copiar al portapapeles. Copia el enlace a mano.');
   };
 
@@ -106,20 +117,26 @@ export function PublishPanel({ boardId }: { boardId: string }): JSX.Element | nu
       <div
         className="modal publish-panel"
         role="dialog"
+        aria-modal="true"
         aria-label="Publicar el tablero"
         data-publish-panel
         data-publish-state={publishedSlug ? 'published' : 'draft'}
+        ref={trapRef}
       >
-        <header className="modal__head">
+        <div className="modal__head">
           <h2 className="modal__title">
             {publishedSlug ? <Globe size={15} /> : <GlobeLock size={15} />} Publicar «{board?.title ?? 'Tablero'}»
           </h2>
-          <button type="button" className="icon-button" title="Cerrar" onClick={() => setOpen(false)}>
+          <button type="button" className="icon-button" title="Cerrar" aria-label="Cerrar" data-autofocus onClick={() => setOpen(false)}>
             <X size={14} />
           </button>
-        </header>
+        </div>
 
         <div className="modal__body">
+          <p className="sr-only" role="status" data-publish-status>
+            {status}
+          </p>
+
           {publishedSlug ? (
             <p className="publish-panel__banner" data-publish-banner>
               Este tablero está <strong>publicado</strong>

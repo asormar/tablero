@@ -23,11 +23,13 @@ import { elementPlainText } from '@/search/searchLocal';
 import { useAppStore } from '@/state/appStore';
 import { usePanelsStore } from '@/state/panelsStore';
 import { useUiStore } from '@/state/uiStore';
+import { useFocusTrap } from '@/hooks/useFocusTrap';
 
 import { type ListRow, buildListRows, listSummary } from './listRows';
 
 export function ListView(): JSX.Element | null {
   const open = usePanelsStore((state) => state.listViewOpen);
+  const trapRef = useFocusTrap<HTMLDivElement>(open);
   const t = useT();
   const session = useSession();
   const elements = useSessionElements();
@@ -80,7 +82,7 @@ export function ListView(): JSX.Element | null {
   );
 
   return (
-    <div className="list-view" role="dialog" aria-modal="true" aria-label={t('listView.title')} data-list-view>
+    <div className="list-view" role="dialog" aria-modal="true" aria-label={t('listView.title')} data-list-view ref={trapRef}>
       <header className="list-view__head">
         <h2 className="list-view__title">
           <List size={15} aria-hidden="true" /> {t('listView.title')}

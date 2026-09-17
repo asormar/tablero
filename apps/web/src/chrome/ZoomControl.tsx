@@ -27,6 +27,7 @@ export function ZoomControl({ session }: { session: BoardSession }): JSX.Element
         type="button"
         className="zoom__button"
         title="Alejar (−)"
+        aria-label="Alejar (−)"
         onClick={() => useUiStore.getState().zoomStep(-1, anchor)}
       >
         <Minus size={14} />
@@ -35,6 +36,7 @@ export function ZoomControl({ session }: { session: BoardSession }): JSX.Element
         type="button"
         className="zoom__value"
         title="Restablecer al 100 % (Ctrl+0)"
+        aria-label="Restablecer al 100 % (Ctrl+0)"
         onClick={() => useUiStore.getState().zoomAtPoint(anchor, 1)}
       >
         {formatZoom(scale)}
@@ -43,6 +45,7 @@ export function ZoomControl({ session }: { session: BoardSession }): JSX.Element
         type="button"
         className="zoom__button"
         title="Acercar (+)"
+        aria-label="Acercar (+)"
         onClick={() => useUiStore.getState().zoomStep(1, anchor)}
       >
         <Plus size={14} />
@@ -52,6 +55,7 @@ export function ZoomControl({ session }: { session: BoardSession }): JSX.Element
         type="button"
         className="zoom__button"
         title="Ajustar a pantalla (Shift+1)"
+        aria-label="Ajustar a pantalla (Shift+1)"
         onClick={() => fitToScreen(session)}
       >
         <Maximize2 size={14} />
@@ -69,6 +73,7 @@ export function ZoomControlCompact({ session }: { session: BoardSession }): JSX.
         type="button"
         className="zoom__button"
         title="Alejar (−)"
+        aria-label="Alejar (−)"
         onClick={() => useUiStore.getState().zoomStep(-1, anchor)}
       >
         <Minus size={13} />
@@ -77,6 +82,7 @@ export function ZoomControlCompact({ session }: { session: BoardSession }): JSX.
         type="button"
         className="zoom__value"
         title="Restablecer al 100 % (Ctrl+0)"
+        aria-label="Restablecer al 100 % (Ctrl+0)"
         onClick={() => useUiStore.getState().zoomAtPoint(anchor, 1)}
       >
         {formatZoom(scale)}
@@ -85,6 +91,7 @@ export function ZoomControlCompact({ session }: { session: BoardSession }): JSX.
         type="button"
         className="zoom__button"
         title="Acercar (+)"
+        aria-label="Acercar (+)"
         onClick={() => useUiStore.getState().zoomStep(1, anchor)}
       >
         <Plus size={13} />
@@ -93,6 +100,7 @@ export function ZoomControlCompact({ session }: { session: BoardSession }): JSX.
         type="button"
         className="zoom__button"
         title="Ajustar a pantalla (Shift+1)"
+        aria-label="Ajustar a pantalla (Shift+1)"
         onClick={() => fitToScreen(session)}
       >
         <Maximize2 size={13} />

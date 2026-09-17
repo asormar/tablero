@@ -1379,7 +1379,7 @@ tr:hover .tbl__row-handle {
 
 .panel__tab.is-active {
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-strong);
   font-weight: 600;
 }
 
@@ -1728,7 +1728,7 @@ tr:hover .tbl__row-handle {
 .tasks__filter.is-active {
   background: var(--accent-soft);
   border-color: transparent;
-  color: var(--accent);
+  color: var(--accent-strong);
   font-weight: 600;
 }
 

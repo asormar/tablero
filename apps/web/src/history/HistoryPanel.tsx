@@ -20,6 +20,7 @@ import { useSession } from '@/collab/SessionContext';
 import { useLanguage, useT } from '@/i18n';
 import { useAppStore } from '@/state/appStore';
 import { usePanelsStore } from '@/state/panelsStore';
+import { useFocusTrap } from '@/hooks/useFocusTrap';
 
 import { listBoardVersions, restoreBoardVersion } from './api';
 import { RELOAD_NOTICE_KEY } from './reloadNotice';
@@ -29,6 +30,7 @@ export { RELOAD_NOTICE_KEY };
 
 export function HistoryPanel(): JSX.Element | null {
   const open = usePanelsStore((state) => state.historyOpen);
+  const trapRef = useFocusTrap<HTMLDivElement>(open);
   const session = useSession();
   const t = useT();
   const language = useLanguage();
@@ -114,8 +116,8 @@ export function HistoryPanel(): JSX.Element | null {
 
   return (
     <div className="modal" role="dialog" aria-modal="true" aria-label={t('history.title')}>
-      <div className="modal__panel history">
-        <header className="modal__head">
+      <div className="modal__panel history" ref={trapRef}>
+        <div className="modal__head">
           <h2 className="modal__title">
             <History size={15} aria-hidden="true" /> {t('history.title')}
           </h2>
@@ -123,9 +125,12 @@ export function HistoryPanel(): JSX.Element | null {
           <button type="button" className="icon-button" title={t('common.close')} onClick={close}>
             <X size={15} />
           </button>
-        </header>
+        </div>
 
         <div className="modal__body history__body">
+          <p className="sr-only" role="status" data-history-status>
+            {restoring ? t('history.restoring') : loading ? t('history.loading') : ''}
+          </p>
           <p className="history__hint">{t('history.hint')}</p>
 
           {error ? (

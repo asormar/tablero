@@ -19,6 +19,7 @@ import { useT, LANGUAGES, type Language } from '@/i18n';
 import { isDevBuild } from '@/lib/renderStats';
 import { usePanelsStore } from '@/state/panelsStore';
 import { useAppStore } from '@/state/appStore';
+import { useFocusTrap } from '@/hooks/useFocusTrap';
 
 import { type StorageReport, deleteOrphans, fetchStorage, formatBytes } from './api';
 import { SHORTCUT_GROUPS, DEV_SHORTCUT_GROUP } from './shortcuts';
@@ -26,6 +27,7 @@ import { useSettingsStore } from './settingsStore';
 
 export function SettingsPanel(): JSX.Element | null {
   const open = usePanelsStore((state) => state.settingsOpen);
+  const trapRef = useFocusTrap<HTMLDivElement>(open);
   const t = useT();
   const settings = useSettingsStore((state) => state.settings);
   const remoteUnavailable = useSettingsStore((state) => state.remoteUnavailable);
@@ -84,13 +86,13 @@ export function SettingsPanel(): JSX.Element | null {
 
   return (
     <div className="modal" role="dialog" aria-modal="true" aria-label={t('settings.title')}>
-      <div className="modal__panel settings">
-        <header className="modal__head">
+      <div className="modal__panel settings" ref={trapRef}>
+        <div className="modal__head">
           <h2 className="modal__title">{t('settings.title')}</h2>
           <button type="button" className="icon-button" title={t('common.close')} onClick={close}>
             <X size={15} />
           </button>
-        </header>
+        </div>
 
         <div className="modal__body settings__body">
           <section className="settings__section" aria-label={t('settings.appearance')}>

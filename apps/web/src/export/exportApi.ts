@@ -27,8 +27,12 @@ function extractFilename(response: Response, fallback: string): string {
   return plain?.[1] ?? fallback;
 }
 
-async function download(path: string, fallbackName: string): Promise<{ filename: string; bytes: number }> {
-  const response = await fetch(`${API_BASE_URL}${path}`, { credentials: 'include' });
+async function download(
+  path: string,
+  fallbackName: string,
+  method: 'GET' | 'POST' = 'GET',
+): Promise<{ filename: string; bytes: number }> {
+  const response = await fetch(`${API_BASE_URL}${path}`, { method, credentials: 'include' });
   if (!response.ok) {
     let message = `Error ${response.status}`;
     try {
@@ -66,7 +70,9 @@ export async function exportBoard(
   includeAssets = true,
 ): Promise<{ filename: string; bytes: number }> {
   const query = `?format=${encodeURIComponent(format)}&includeAssets=${includeAssets ? 'true' : 'false'}`;
-  return download(`/boards/${encodeURIComponent(boardId)}/export${query}`, fallbackName);
+  // El contrato del API es `POST /api/boards/:id/export` (ver la cabecera del
+  // módulo): armarlo con GET daba 404 y el botón de exportar no hacía nada.
+  return download(`/boards/${encodeURIComponent(boardId)}/export${query}`, fallbackName, 'POST');
 }
 
 export async function exportAccount(fallbackName: string): Promise<{ filename: string; bytes: number }> {

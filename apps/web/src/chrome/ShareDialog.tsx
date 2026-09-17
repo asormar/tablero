@@ -10,12 +10,13 @@
  * rompe**: lo dice y deja seguir trabajando.
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { Copy, Link2, Mail, ShieldCheck, Trash2, UserPlus, X } from 'lucide-react';
 
 import { reportActivity } from '@/api/activity';
 import { degradationMessage, isMissingEndpoint } from '@/api/degraded';
+import { useFocusTrap } from '@/hooks/useFocusTrap';
 import {
   addMember,
   createInvitation,
@@ -56,6 +57,14 @@ export function ShareDialog({ boardId }: { boardId: string }): JSX.Element | nul
   const setNotice = useAppStore((state) => state.setNotice);
   const close = (): void => setOpen(false);
   const ref = useOutsideClose<HTMLDivElement>(open, close);
+  const trapRef = useFocusTrap<HTMLDivElement>(open);
+  const attachRef = useCallback(
+    (node: HTMLDivElement | null): void => {
+      ref.current = node;
+      trapRef.current = node;
+    },
+    [ref, trapRef],
+  );
 
   const { members, error, missing, reload } = useBoardMembers(boardId, { ownerId: board?.ownerId ?? null });
   const [invitations, setInvitations] = useState<Invitation[]>([]);
@@ -66,6 +75,8 @@ export function ShareDialog({ boardId }: { boardId: string }): JSX.Element | nul
   const [busy, setBusy] = useState(false);
   const [lastLink, setLastLink] = useState<string | null>(null);
   const [copied, setCopied] = useState<string | null>(null);
+  /** Texto para el anuncio accesible de las acciones asíncronas (`role=status`). */
+  const [status, setStatus] = useState('');
 
   const myRole = board?.role ?? null;
   const isOwner =
@@ -110,11 +121,13 @@ export function ShareDialog({ boardId }: { boardId: string }): JSX.Element | nul
     if (target.length === 0 || busy) return;
     setBusy(true);
     setInviteError(null);
+    setStatus(`Enviando la invitación a ${target}…`);
     try {
       const invitation = await createInvitation(boardId, { email: target, role, expiresInDays });
       const link = inviteUrl(invitation.token);
       setInvitations((current) => [invitation, ...current]);
       setLastLink(link);
+      setStatus(`Invitación enviada a ${target}.`);
       setEmail('');
       void copy(link, invitation.id);
       reportActivity(boardId, { action: 'member.invite', meta: { email: target, role } });
@@ -124,30 +137,37 @@ export function ShareDialog({ boardId }: { boardId: string }): JSX.Element | nul
         ? 'La API todavía no expone las invitaciones.'
         : degradationMessage(error, 'Invitar');
       setInviteError(message);
+      setStatus(`No se pudo invitar a ${target}.`);
     } finally {
       setBusy(false);
     }
   };
 
   const changeRole = async (member: BoardMember, next: 'viewer' | 'commenter' | 'editor'): Promise<void> => {
+    setStatus(`Cambiando el rol de ${member.name}…`);
     try {
       await updateMemberRole(boardId, member.userId, next);
       invalidateMembers(boardId);
       reload();
+      setStatus(`Rol de ${member.name}: ${ROLE_LABELS[next]}.`);
       reportActivity(boardId, { action: 'member.role', meta: { userId: member.userId, role: next } });
     } catch (error) {
       setNotice(degradationMessage(error, 'Cambiar el rol'));
+      setStatus(`No se pudo cambiar el rol de ${member.name}.`);
     }
   };
 
   const kick = async (member: BoardMember): Promise<void> => {
+    setStatus(`Quitando a ${member.name}…`);
     try {
       await removeMember(boardId, member.userId);
       invalidateMembers(boardId);
       reload();
+      setStatus(`${member.name} ya no tiene acceso al tablero.`);
       reportActivity(boardId, { action: 'member.remove', meta: { userId: member.userId } });
     } catch (error) {
       setNotice(degradationMessage(error, 'Quitar al miembro'));
+      setStatus(`No se pudo quitar a ${member.name}.`);
     }
   };
 
@@ -155,17 +175,28 @@ export function ShareDialog({ boardId }: { boardId: string }): JSX.Element | nul
 
   return (
     <div className="modal-backdrop" role="presentation">
-      <div className="modal share-dialog" role="dialog" aria-label="Compartir el tablero" data-share-dialog ref={ref}>
-        <header className="modal__head">
+      <div
+        className="modal share-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Compartir el tablero"
+        data-share-dialog
+        ref={attachRef}
+      >
+        <div className="modal__head">
           <h2 className="modal__title">
             <ShieldCheck size={15} /> Compartir «{board?.title ?? 'Tablero'}»
           </h2>
-          <button type="button" className="icon-button" title="Cerrar" onClick={close}>
+          <button type="button" className="icon-button" title="Cerrar" aria-label="Cerrar" onClick={close}>
             <X size={14} />
           </button>
-        </header>
+        </div>
 
         <div className="modal__body">
+          <p className="sr-only" role="status" data-share-status>
+            {status}
+          </p>
+
           <p className="share-dialog__role" data-share-role={myRole ?? 'unknown'}>
             Tu rol:{' '}
             <strong>{myRole ? ROLE_LABELS[myRole] : myMember ? ROLE_LABELS[myMember.role] : 'desconocido'}</strong>
@@ -220,6 +251,7 @@ export function ShareDialog({ boardId }: { boardId: string }): JSX.Element | nul
                           type="button"
                           className="icon-button"
                           title={`Expulsar a ${member.name}`}
+                          aria-label={`Expulsar a ${member.name}`}
                           data-share-remove={member.userId}
                           onClick={() => void kick(member)}
                         >
@@ -245,6 +277,7 @@ export function ShareDialog({ boardId }: { boardId: string }): JSX.Element | nul
                 type="email"
                 placeholder="persona@ejemplo.com"
                 aria-label="Email a invitar"
+                data-autofocus
                 data-share-email
                 value={email}
                 onChange={(event) => setEmail(event.target.value)}
@@ -296,7 +329,7 @@ export function ShareDialog({ boardId }: { boardId: string }): JSX.Element | nul
             {lastLink ? (
               <p className="share-dialog__link" data-share-last-link>
                 <Link2 size={12} /> Enlace: <code>{lastLink}</code>
-                <button type="button" className="icon-button" title="Copiar enlace" onClick={() => void copy(lastLink, 'last')}>
+                <button type="button" className="icon-button" title="Copiar enlace" aria-label="Copiar enlace" onClick={() => void copy(lastLink, 'last')}>
                   <Copy size={12} />
                 </button>
                 {copied === 'last' ? <span className="share-dialog__copied">copiado</span> : null}
@@ -317,6 +350,7 @@ export function ShareDialog({ boardId }: { boardId: string }): JSX.Element | nul
                       type="button"
                       className="icon-button"
                       title="Copiar enlace de invitación"
+                      aria-label="Copiar enlace de invitación"
                       data-share-copy={invitation.id}
                       onClick={() => void copy(inviteUrl(invitation.token), invitation.id)}
                     >
@@ -327,6 +361,7 @@ export function ShareDialog({ boardId }: { boardId: string }): JSX.Element | nul
                       type="button"
                       className="icon-button"
                       title="Revocar invitación"
+                      aria-label="Revocar invitación"
                       onClick={() => {
                         void revokeInvitation(invitation.id)
                           .then(() => setInvitations((current) => current.filter((item) => item.id !== invitation.id)))

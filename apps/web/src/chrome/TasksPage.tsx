@@ -17,6 +17,7 @@ import { type TaskFilter, dueDateLabel, isOverdue } from '@tablero/shared';
 import { type TaskRow, fetchTasks } from '@/api/tasks';
 import { useAppStore } from '@/state/appStore';
 import { useUiStore } from '@/state/uiStore';
+import { useFocusTrap } from '@/hooks/useFocusTrap';
 
 const FILTERS: { id: TaskFilter; label: string }[] = [
   { id: 'all', label: 'Todas' },
@@ -30,6 +31,7 @@ type BoardGroup = { boardId: string; boardTitle: string; rows: TaskRow[] };
 
 export function TasksPage({ onOpenBoard }: { onOpenBoard(boardId: string): void }): JSX.Element | null {
   const open = useUiStore((state) => state.tasksOpen);
+  const trapRef = useFocusTrap<HTMLDivElement>(open);
   const [filter, setFilter] = useState<TaskFilter>('overdue');
   const [rows, setRows] = useState<TaskRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -92,8 +94,8 @@ export function TasksPage({ onOpenBoard }: { onOpenBoard(boardId: string): void 
 
   return (
     <div className="modal" role="dialog" aria-modal="true" aria-label="Tareas">
-      <div className="modal__panel tasks">
-        <header className="modal__head">
+      <div className="modal__panel tasks" ref={trapRef}>
+        <div className="modal__head">
           <h2 className="modal__title">
             <ListChecks size={15} /> Tareas
           </h2>
@@ -104,7 +106,7 @@ export function TasksPage({ onOpenBoard }: { onOpenBoard(boardId: string): void 
           <button type="button" className="icon-button" title="Cerrar (Esc)" onClick={close}>
             <X size={15} />
           </button>
-        </header>
+        </div>
 
         <div className="tasks__filters" role="tablist" aria-label="Filtros de tareas">
           {FILTERS.map((entry) => (

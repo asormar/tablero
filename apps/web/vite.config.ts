@@ -39,6 +39,16 @@ const pwaManifest = {
   },
 };
 
+/**
+ * Destino del proxy de `/api` y `/collab`.
+ *
+ * En desarrollo apunta al API del 8787; la suite de punta a punta (`e2e/`) arranca
+ * su propia instancia del API en otro puerto y la declara con `API_PROXY_TARGET`,
+ * así la web de prueba no habla nunca con el servidor de desarrollo.
+ */
+const apiProxyTarget = process.env.API_PROXY_TARGET ?? 'http://localhost:8787';
+const collabProxyTarget = apiProxyTarget.replace(/^http/, 'ws');
+
 export default defineConfig({
   plugins: [
     react(),
@@ -77,8 +87,8 @@ export default defineConfig({
     strictPort: false,
     proxy: {
       // Evita CORS en desarrollo: el cliente usa rutas relativas `/api/**`.
-      '/api': { target: 'http://localhost:8787', changeOrigin: true },
-      '/collab': { target: 'ws://localhost:8787', ws: true },
+      '/api': { target: apiProxyTarget, changeOrigin: true },
+      '/collab': { target: collabProxyTarget, ws: true },
     },
   },
   // La vista previa del build necesita el mismo proxy que el servidor de
@@ -87,8 +97,8 @@ export default defineConfig({
     port: Number(process.env.PREVIEW_PORT ?? 4173),
     strictPort: false,
     proxy: {
-      '/api': { target: 'http://localhost:8787', changeOrigin: true },
-      '/collab': { target: 'ws://localhost:8787', ws: true },
+      '/api': { target: apiProxyTarget, changeOrigin: true },
+      '/collab': { target: collabProxyTarget, ws: true },
     },
   },
   optimizeDeps: {

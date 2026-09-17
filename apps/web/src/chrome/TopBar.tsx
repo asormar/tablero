@@ -69,6 +69,11 @@ export function TopBar({ session, boardId, onOpenBoard }: TopBarProps): JSX.Elem
   const activityOpen = usePanelsStore((state) => state.activityOpen);
   const permission = useSessionPermission();
   const theme = useSettingsStore((state) => state.resolvedTheme);
+  /** Nombre accesible del botón de publicar (coincide con lo que se ve). */
+  const publishHint =
+    permission.role === 'owner' || permission.role === null
+      ? 'Publicar el tablero'
+      : 'Solo el dueño puede publicar';
 
   useEffect(() => {
     setTitle(board?.title ?? '');
@@ -131,6 +136,7 @@ export function TopBar({ session, boardId, onOpenBoard }: TopBarProps): JSX.Elem
           type="button"
           className={`topbar__search${paletteOpen ? ' is-active' : ''}`}
           title={t('topbar.search')}
+          aria-label={t('topbar.search')}
           data-topbar-search
           aria-keyshortcuts="Control+K"
           onClick={() => usePanelsStore.getState().setPaletteOpen(true)}
@@ -145,6 +151,7 @@ export function TopBar({ session, boardId, onOpenBoard }: TopBarProps): JSX.Elem
             type="button"
             className="icon-button"
             title={t('topbar.undo')}
+            aria-label={t('topbar.undo')}
             disabled={!canUndo}
             onClick={() => undoWithPrune(session)}
           >
@@ -154,6 +161,7 @@ export function TopBar({ session, boardId, onOpenBoard }: TopBarProps): JSX.Elem
             type="button"
             className="icon-button"
             title={t('topbar.redo')}
+            aria-label={t('topbar.redo')}
             disabled={!canRedo}
             onClick={() => redoWithPrune(session)}
           >
@@ -165,6 +173,7 @@ export function TopBar({ session, boardId, onOpenBoard }: TopBarProps): JSX.Elem
           type="button"
           className="icon-button"
           title={t('topbar.fit')}
+          aria-label={t('topbar.fit')}
           onClick={() => fitToScreen(session)}
         >
           <Maximize2 size={15} />
@@ -188,6 +197,7 @@ export function TopBar({ session, boardId, onOpenBoard }: TopBarProps): JSX.Elem
             type="button"
             className={`icon-button${captureOpen ? ' is-active' : ''}`}
             title={t('toolbar.capture')}
+            aria-label={t('toolbar.capture')}
             data-topbar-capture
             aria-pressed={captureOpen}
             onClick={() => usePanelsStore.getState().setCaptureOpen(true)}
@@ -198,6 +208,7 @@ export function TopBar({ session, boardId, onOpenBoard }: TopBarProps): JSX.Elem
             type="button"
             className="icon-button"
             title={t('topbar.history')}
+            aria-label={t('topbar.history')}
             data-topbar-history
             onClick={() => usePanelsStore.getState().setHistoryOpen(true)}
           >
@@ -207,6 +218,7 @@ export function TopBar({ session, boardId, onOpenBoard }: TopBarProps): JSX.Elem
             type="button"
             className="icon-button"
             title={t('topbar.export')}
+            aria-label={t('topbar.export')}
             data-topbar-export
             onClick={() => usePanelsStore.getState().setExportOpen(true)}
           >
@@ -216,6 +228,7 @@ export function TopBar({ session, boardId, onOpenBoard }: TopBarProps): JSX.Elem
             type="button"
             className="icon-button"
             title={t('topbar.import')}
+            aria-label={t('topbar.import')}
             data-topbar-import
             onClick={() => usePanelsStore.getState().setImportOpen(true)}
           >
@@ -225,6 +238,7 @@ export function TopBar({ session, boardId, onOpenBoard }: TopBarProps): JSX.Elem
             type="button"
             className="icon-button"
             title={t('templates.title')}
+            aria-label={t('templates.title')}
             data-topbar-templates
             onClick={() => usePanelsStore.getState().setTemplatesOpen(true)}
           >
@@ -234,6 +248,7 @@ export function TopBar({ session, boardId, onOpenBoard }: TopBarProps): JSX.Elem
             type="button"
             className="icon-button"
             title={t('topbar.saveTemplate')}
+            aria-label={t('topbar.saveTemplate')}
             data-topbar-save-template
             onClick={() => usePanelsStore.getState().setSaveTemplateOpen(true)}
           >
@@ -243,6 +258,7 @@ export function TopBar({ session, boardId, onOpenBoard }: TopBarProps): JSX.Elem
             type="button"
             className="icon-button"
             title={t('topbar.present')}
+            aria-label={t('topbar.present')}
             data-topbar-present
             onClick={() => usePanelsStore.getState().setPresentationOpen(true)}
           >
@@ -252,6 +268,7 @@ export function TopBar({ session, boardId, onOpenBoard }: TopBarProps): JSX.Elem
             type="button"
             className="icon-button"
             title={t('topbar.listView')}
+            aria-label={t('topbar.listView')}
             data-topbar-list
             onClick={() => usePanelsStore.getState().setListViewOpen(true)}
           >
@@ -261,6 +278,7 @@ export function TopBar({ session, boardId, onOpenBoard }: TopBarProps): JSX.Elem
             type="button"
             className="icon-button"
             title={t('topbar.settings')}
+            aria-label={t('topbar.settings')}
             data-topbar-settings
             onClick={() => usePanelsStore.getState().setSettingsOpen(true)}
           >
@@ -272,6 +290,7 @@ export function TopBar({ session, boardId, onOpenBoard }: TopBarProps): JSX.Elem
           type="button"
           className={`icon-button${panelOpen && panelTab === 'comments' ? ' is-active' : ''}`}
           title="Comentarios del tablero"
+          aria-label="Comentarios del tablero"
           data-topbar-comments
           aria-pressed={panelOpen && panelTab === 'comments'}
           onClick={() => useUiStore.getState().openPanel('comments')}
@@ -284,6 +303,7 @@ export function TopBar({ session, boardId, onOpenBoard }: TopBarProps): JSX.Elem
             type="button"
             className={`icon-button${shareOpen ? ' is-active' : ''}`}
             title="Compartir el tablero"
+            aria-label="Compartir el tablero"
             data-topbar-share
             aria-pressed={shareOpen}
             onClick={() => usePanelsStore.getState().setShareOpen(true)}
@@ -293,11 +313,8 @@ export function TopBar({ session, boardId, onOpenBoard }: TopBarProps): JSX.Elem
           <button
             type="button"
             className={`icon-button${publishOpen ? ' is-active' : ''}`}
-            title={
-              permission.role === 'owner' || permission.role === null
-                ? 'Publicar el tablero'
-                : 'Solo el dueño puede publicar'
-            }
+            title={publishHint}
+            aria-label={publishHint}
             data-topbar-publish
             data-publish-allowed={permission.role === 'owner' || permission.role === null ? 'yes' : 'no'}
             aria-pressed={publishOpen}
@@ -310,6 +327,7 @@ export function TopBar({ session, boardId, onOpenBoard }: TopBarProps): JSX.Elem
             type="button"
             className={`icon-button${activityOpen ? ' is-active' : ''}`}
             title="Actividad del tablero"
+            aria-label="Actividad del tablero"
             data-topbar-activity
             aria-pressed={activityOpen}
             onClick={() => usePanelsStore.getState().setActivityOpen(true)}
@@ -323,6 +341,7 @@ export function TopBar({ session, boardId, onOpenBoard }: TopBarProps): JSX.Elem
           type="button"
           className={`icon-button${panelOpen && panelTab === 'unsorted' ? ' is-active' : ''}`}
           title={t('topbar.unsorted')}
+          aria-label={t('topbar.unsorted')}
           aria-pressed={panelOpen && panelTab === 'unsorted'}
           onClick={() => useUiStore.getState().openPanel('unsorted')}
         >
@@ -333,6 +352,7 @@ export function TopBar({ session, boardId, onOpenBoard }: TopBarProps): JSX.Elem
           type="button"
           className={`icon-button${panelOpen && panelTab === 'trash' ? ' is-active' : ''}`}
           title={t('topbar.trash')}
+          aria-label={t('topbar.trash')}
           aria-pressed={panelOpen && panelTab === 'trash'}
           onClick={() => useUiStore.getState().openPanel('trash')}
         >
@@ -343,6 +363,7 @@ export function TopBar({ session, boardId, onOpenBoard }: TopBarProps): JSX.Elem
           type="button"
           className="icon-button"
           title={t('topbar.boards')}
+          aria-label={t('topbar.boards')}
           onClick={() => useUiStore.getState().setHomeOpen(true)}
         >
           <Home size={15} />
@@ -352,6 +373,7 @@ export function TopBar({ session, boardId, onOpenBoard }: TopBarProps): JSX.Elem
           type="button"
           className="icon-button"
           title={t('topbar.tasks')}
+          aria-label={t('topbar.tasks')}
           onClick={() => useUiStore.getState().setTasksOpen(true)}
         >
           <ListChecks size={15} />
@@ -361,6 +383,7 @@ export function TopBar({ session, boardId, onOpenBoard }: TopBarProps): JSX.Elem
           type="button"
           className="icon-button"
           title={t('topbar.shortcuts')}
+          aria-label={t('topbar.shortcuts')}
           onClick={() => useUiStore.getState().setHelpOpen(true)}
         >
           ?

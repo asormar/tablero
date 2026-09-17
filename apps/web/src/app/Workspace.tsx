@@ -286,6 +286,10 @@ function WorkspaceShell({
     });
   }, [onOpenBoard]);
 
+  const boardTitle = useAppStore(
+    (state) => state.boards.find((item) => item.id === boardId)?.title ?? 'Tablero',
+  );
+
   return (
     <div className="workspace">
       <TopBar session={session} boardId={boardId} onOpenBoard={onOpenBoard} />
@@ -303,7 +307,8 @@ function WorkspaceShell({
           </span>
         </div>
       ) : null}
-      <div className="workspace__main">
+      <main className="workspace__main" aria-label="Tablero">
+        <h1 className="sr-only">{boardTitle}</h1>
         <Toolbar session={session} onOpenBoard={onOpenBoard} />
         <div className="workspace__canvas">
           <Canvas session={session} onOpenBoard={onOpenBoard} />
@@ -314,7 +319,7 @@ function WorkspaceShell({
           <PerfOverlay />
         </div>
         <SidePanel />
-      </div>
+      </main>
       <ContextMenu session={session} />
       <ShortcutsModal />
       <DocumentPage session={session} />

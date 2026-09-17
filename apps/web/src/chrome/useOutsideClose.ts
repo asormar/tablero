@@ -2,12 +2,12 @@
 
 import { useEffect, useRef } from 'react';
 
-import type { RefObject } from 'react';
+import type { MutableRefObject } from 'react';
 
 export function useOutsideClose<T extends HTMLElement>(
   active: boolean,
   onClose: () => void,
-): RefObject<T> {
+): MutableRefObject<T | null> {
   const ref = useRef<T>(null);
 
   useEffect(() => {

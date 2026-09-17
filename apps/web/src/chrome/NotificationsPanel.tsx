@@ -179,6 +179,7 @@ export function NotificationsPanel({ enabled = true }: { enabled?: boolean }): J
           type="button"
           className="icon-button"
           title="Marcar todas como leídas"
+          aria-label="Marcar todas como leídas"
           data-notification-mark-all
           disabled={count === 0}
           onClick={() => void markAll()}

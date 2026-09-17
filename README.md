@@ -17,8 +17,8 @@ comportarse y **en qué orden** construirla es el plan de producto y técnico
 | 2 | Contenido multimedia: subida de archivos, imagen, archivo, vídeo, audio, enlace, muestra de color, pegado inteligente | **Completa y verificada** (ver *Verificación*) |
 | 3 | Estructura y organización: columnas, tareas con fechas, conectores con etiquetas, tablas, documento largo, dibujo, mapa, «Sin ordenar», papelera, favoritos | **Completa**: elementos, columnas, conectores y mover entre tableros, más la segunda ronda de la web (bandeja «Sin ordenar», papelera de elementos y tableros, favoritos y recientes, vista global de tareas) y los hallazgos de la revisión de la fase 2 que tocaban la web. Ver *Verificación* |
 | 4 | Productividad: búsqueda global, paleta de comandos, plantillas, exportación/importación, historial, ajustes y tema oscuro, PWA y móvil | **Completa y verificada** (ver *Verificación de la fase 4*) |
-| 5 | Colaboración: compartir con roles, publicar, cursores en tiempo real, comentarios, notificaciones, actividad | Pendiente |
-| 6 | Extras: extensión de navegador, captura con token, pulido de rendimiento y accesibilidad, pruebas end-to-end | Pendiente |
+| 5 | Colaboración: compartir con roles, publicar, cursores en tiempo real, comentarios, notificaciones, actividad | **Completa y verificada** (ver *Verificación de la fase 5* y `docs/review/fase-5.md`) |
+| 6 | Extras: extensión de navegador, captura con token, pulido de rendimiento y accesibilidad, pruebas end-to-end | **Completa y verificada** (ver *Verificación de la fase 6*) |
 
 ## Requisitos
 
@@ -38,7 +38,8 @@ cp .env.example apps/api/.env
 
 # 3. Dependencias y base de datos
 pnpm install
-pnpm --filter @tablero/api prisma:generate
+# `pnpm install` genera el cliente de Prisma solo (script `postinstall` de la
+# raíz); si el esquema cambia, volvé a generarlo con `pnpm db:generate`.
 pnpm --filter @tablero/api exec prisma migrate dev --name init
 
 # 4. Arrancar (dos terminales)

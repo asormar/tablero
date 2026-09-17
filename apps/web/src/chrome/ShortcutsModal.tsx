@@ -10,6 +10,7 @@ import { useEffect } from 'react';
 
 import { X } from 'lucide-react';
 
+import { useFocusTrap } from '@/hooks/useFocusTrap';
 import { useT } from '@/i18n';
 import { isDevBuild } from '@/lib/renderStats';
 import { DEV_SHORTCUT_GROUP, SHORTCUT_GROUPS } from '@/settings/shortcuts';
@@ -19,6 +20,7 @@ export function ShortcutsModal(): JSX.Element | null {
   const open = useUiStore((state) => state.helpOpen);
   const t = useT();
   const close = (): void => useUiStore.getState().setHelpOpen(false);
+  const trapRef = useFocusTrap<HTMLDivElement>(open);
 
   useEffect(() => {
     if (!open) return;
@@ -38,13 +40,13 @@ export function ShortcutsModal(): JSX.Element | null {
 
   return (
     <div className="modal" role="dialog" aria-modal="true" aria-label={t('shortcuts.title')} onClick={close}>
-      <div className="modal__panel" onClick={(event) => event.stopPropagation()}>
-        <header className="modal__head">
+      <div className="modal__panel" onClick={(event) => event.stopPropagation()} ref={trapRef}>
+        <div className="modal__head">
           <h2 className="modal__title">{t('shortcuts.title')}</h2>
-          <button type="button" className="icon-button" title={t('common.close')} onClick={close}>
+          <button type="button" className="icon-button" title={t('common.close')} aria-label={t('common.close')} data-autofocus onClick={close}>
             <X size={16} />
           </button>
-        </header>
+        </div>
         <div className="modal__body">
           {groups.map((group) => (
             <section key={group.titleKey} className="shortcuts">

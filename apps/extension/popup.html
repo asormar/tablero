@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Capturar en Tablero</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main class="popup">
+      <header class="popup__head">
+        <h1 class="popup__title">Capturar en Tablero</h1>
+        <p class="popup__hint" id="target">Leyendo la pestaña activa…</p>
+      </header>
+
+      <section class="card" aria-labelledby="capture-heading">
+        <h2 class="card__heading" id="capture-heading">Página actual</h2>
+
+        <div class="field">
+          <label class="field__label" for="title">Título</label>
+          <input class="field__input" id="title" type="text" autocomplete="off" />
+        </div>
+
+        <div class="field">
+          <label class="field__label" for="url">URL</label>
+          <input class="field__input" id="url" type="text" autocomplete="off" spellcheck="false" />
+        </div>
+
+        <div class="field">
+          <label class="field__label" for="selection">Selección de texto</label>
+          <textarea
+            class="field__input field__input--area"
+            id="selection"
+            rows="3"
+            placeholder="Sin selección"
+          ></textarea>
+        </div>
+
+        <label class="check">
+          <input type="checkbox" id="with-image" />
+          <span>Adjuntar la parte visible (imagen <code>dataUrl</code>)</span>
+        </label>
+
+        <button class="button button--primary" type="button" id="capture">Enviar a «Sin ordenar»</button>
+        <p class="status" id="capture-status" role="status" aria-live="polite"></p>
+      </section>
+
+      <details class="card card--settings" id="settings">
+        <summary class="card__heading card__heading--summary">Ajustes</summary>
+
+        <div class="field">
+          <label class="field__label" for="api-base">URL base del API</label>
+          <input class="field__input" id="api-base" type="text" autocomplete="off" spellcheck="false" />
+        </div>
+
+        <div class="field">
+          <label class="field__label" for="token">Token personal</label>
+          <input
+            class="field__input"
+            id="token"
+            type="password"
+            autocomplete="off"
+            spellcheck="false"
+            placeholder="Pegá acá tu token de captura"
+          />
+          <p class="field__hint" id="token-state"></p>
+        </div>
+
+        <div class="row">
+          <button class="button" type="button" id="save-settings">Guardar</button>
+          <button class="button" type="button" id="clear-token">Borrar token</button>
+          <button class="button" type="button" id="test-connection">Probar conexión</button>
+        </div>
+
+        <p class="status" id="settings-status" role="status" aria-live="polite"></p>
+      </details>
+    </main>
+
+    <script type="module" src="popup.js"></script>
+  </body>
+</html>

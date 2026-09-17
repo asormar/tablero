@@ -22,9 +22,11 @@ import {
 import { useAppStore } from '@/state/appStore';
 import { usePanelsStore } from '@/state/panelsStore';
 import { useUiStore } from '@/state/uiStore';
+import { useFocusTrap } from '@/hooks/useFocusTrap';
 
 export function ActivityPanel({ boardId }: { boardId: string }): JSX.Element | null {
   const open = usePanelsStore((state) => state.activityOpen);
+  const trapRef = useFocusTrap<HTMLDivElement>(open);
   const setOpen = usePanelsStore((state) => state.setActivityOpen);
   const [entries, setEntries] = useState<ActivityEntry[]>([]);
   const [cursor, setCursor] = useState<string | null>(null);
@@ -71,11 +73,13 @@ export function ActivityPanel({ boardId }: { boardId: string }): JSX.Element | n
       <div
         className="modal activity-panel"
         role="dialog"
+        aria-modal="true"
         aria-label="Registro de actividad"
         data-activity-panel
         data-activity-count={entries.length}
+        ref={trapRef}
       >
-        <header className="modal__head">
+        <div className="modal__head">
           <h2 className="modal__title">
             <ActivitySquare size={15} /> Actividad del tablero
           </h2>
@@ -91,7 +95,7 @@ export function ActivityPanel({ boardId }: { boardId: string }): JSX.Element | n
           <button type="button" className="icon-button" title="Cerrar" onClick={() => setOpen(false)}>
             <X size={14} />
           </button>
-        </header>
+        </div>
 
         <div className="modal__body">
           {missing ? (

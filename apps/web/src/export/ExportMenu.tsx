@@ -15,6 +15,7 @@ import type { BoardSession } from '@/collab/BoardSession';
 import { useT } from '@/i18n';
 import { useAppStore } from '@/state/appStore';
 import { usePanelsStore } from '@/state/panelsStore';
+import { useFocusTrap } from '@/hooks/useFocusTrap';
 
 import { exportAccount, exportBoard, saveBlob } from './exportApi';
 import { renderBoardToPng } from './exportPng';
@@ -23,6 +24,7 @@ import { printBoard } from './printBoard';
 
 export function ExportMenu({ session }: { session: BoardSession }): JSX.Element | null {
   const open = usePanelsStore((state) => state.exportOpen);
+  const trapRef = useFocusTrap<HTMLDivElement>(open);
   const t = useT();
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -64,15 +66,18 @@ export function ExportMenu({ session }: { session: BoardSession }): JSX.Element 
 
   return (
     <div className="modal" role="dialog" aria-modal="true" aria-label={t('export.title')}>
-      <div className="modal__panel export">
-        <header className="modal__head">
+      <div className="modal__panel export" ref={trapRef}>
+        <div className="modal__head">
           <h2 className="modal__title">{t('export.title')}</h2>
           {busy ? <Loader2 size={14} className="spin" /> : null}
           <button type="button" className="icon-button" title={t('common.close')} onClick={close}>
             <X size={15} />
           </button>
-        </header>
+        </div>
         <div className="modal__body export__body">
+          <p className="sr-only" role="status" data-export-status>
+            {busy ? `Generando el archivo (${busy})…` : ''}
+          </p>
           {serverFormats.map((format) => (
             <button
               key={format.key}

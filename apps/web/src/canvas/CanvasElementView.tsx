@@ -20,10 +20,16 @@ import { CardCommentBadge } from '@/collab/CommentLayer';
 import { can as canCapability } from '@/collab/roles';
 import { useSessionElement, useSessionPermission } from '@/collab/SessionContext';
 import { ElementContent } from '@/elements/ElementContent';
+import { useT } from '@/i18n';
+import { cardAriaLabel } from '@/lib/a11y';
 import { countElementRender, isDevBuild } from '@/lib/renderStats';
 import { noteSurface } from '@/lib/smartPaste';
+import { blocksToPlainText } from '@/lib/textBlocks';
+import { elementTypeLabel } from '@/search/typeLabels';
 import { useSettingsStore } from '@/settings/settingsStore';
+import { useUiStore } from '@/state/uiStore';
 
+import { editElement } from './commands';
 import { observeHeight, unobserveHeight } from './measure';
 import { registerNode } from './nodeRegistry';
 
@@ -52,6 +58,7 @@ function CanvasElementViewBase(props: CanvasElementViewProps): JSX.Element | nul
   const { session, id, type } = props;
   const element = useSessionElement(id);
   const theme = useSettingsStore((state) => state.resolvedTheme);
+  const t = useT();
   const permission = useSessionPermission();
   const readOnly = !canCapability(permission.role, 'edit');
   const ref = useRef<HTMLDivElement | null>(null);
@@ -101,6 +108,39 @@ function CanvasElementViewBase(props: CanvasElementViewProps): JSX.Element | nul
     style.color = surface.color;
   }
 
+  // Nombre accesible: tipo traducido + adelanto del texto (fase 6).
+  // `getTextBlocks` está cacheado por versión del elemento (la misma
+  // suscripción que ya trae `useSessionElement`), así que esta lectura no
+  // agrega trabajo por render ni una suscripción extra por tarjeta.
+  const label = cardAriaLabel(elementTypeLabel(type, t), blocksToPlainText(session.getTextBlocks(id)), { locked: element.locked });
+
+  /**
+   * Teclado (fase 6): al recibir el foco la tarjeta entra en la selección — así
+   * las flechas, `Supr` y el menú contextual funcionan igual que con el ratón.
+   */
+  const focusCard = (): void => {
+    const ui = useUiStore.getState();
+    if (ui.editingId === id) return;
+    if (ui.selection.length === 1 && ui.selection[0] === id) return;
+    ui.select([id]);
+  };
+
+  /** `Shift+F10` / tecla Menú abre el menú de la tarjeta, como el clic derecho. */
+  const onCardKeyDown = (event: React.KeyboardEvent<HTMLDivElement>): void => {
+    // Solo cuando el foco está en la tarjeta, no dentro de su editor.
+    if (event.target !== event.currentTarget) return;
+    if (event.key === 'ContextMenu' || (event.shiftKey && event.key === 'F10')) {
+      event.preventDefault();
+      const rect = ref.current?.getBoundingClientRect();
+      useUiStore.getState().setContextMenu({ x: Math.round(rect?.left ?? 0) + 24, y: Math.round(rect?.top ?? 0) + 24, targetId: id });
+      return;
+    }
+    if (event.key === 'Enter' && !readOnly) {
+      event.preventDefault();
+      editElement(session, id);
+    }
+  };
+
   return (
     <div
       ref={ref}
@@ -109,7 +149,10 @@ function CanvasElementViewBase(props: CanvasElementViewProps): JSX.Element | nul
       data-type={type}
       style={style}
       role="group"
-      aria-label={type}
+      aria-label={label}
+      tabIndex={0}
+      onFocus={focusCard}
+      onKeyDown={onCardKeyDown}
       onPointerEnter={() => setHovered(true)}
       onPointerLeave={() => setHovered(false)}
     >
@@ -134,6 +177,7 @@ function CanvasElementViewBase(props: CanvasElementViewProps): JSX.Element | nul
               key={side}
               className={`el__anchor el__anchor--${side}`}
               data-anchor={side}
+              aria-hidden="true"
               title="Arrastrar para conectar con otra tarjeta"
             />
           ))}
@@ -141,10 +185,10 @@ function CanvasElementViewBase(props: CanvasElementViewProps): JSX.Element | nul
       ) : null}
       {!readOnly && props.showHandles && !element.locked ? (
         <>
-          <span className="el__handle el__handle--w" data-handle="w" />
-          <span className="el__handle el__handle--e" data-handle="e" />
+          <span className="el__handle el__handle--w" data-handle="w" aria-hidden="true" />
+          <span className="el__handle el__handle--e" data-handle="e" aria-hidden="true" />
           {ASPECT_RESIZABLE.includes(type) ? (
-            <span className="el__handle el__handle--se" data-handle="se" title="Redimensionar proporcional" />
+            <span className="el__handle el__handle--se" data-handle="se" aria-hidden="true" title="Redimensionar proporcional" />
           ) : null}
         </>
       ) : null}

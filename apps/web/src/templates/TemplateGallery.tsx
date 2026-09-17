@@ -16,6 +16,7 @@ import { ApiError } from '@/api/client';
 import { useT } from '@/i18n';
 import { useAppStore } from '@/state/appStore';
 import { usePanelsStore } from '@/state/panelsStore';
+import { useFocusTrap } from '@/hooks/useFocusTrap';
 
 import {
   type TemplateSummary,
@@ -34,6 +35,7 @@ export function TemplateGallery({
   onCreateBlank?(): void;
 }): JSX.Element | null {
   const open = usePanelsStore((state) => state.templatesOpen);
+  const trapRef = useFocusTrap<HTMLDivElement>(open);
   const t = useT();
   const [templates, setTemplates] = useState<TemplateSummary[]>([]);
   const [loading, setLoading] = useState(false);
@@ -97,8 +99,8 @@ export function TemplateGallery({
 
   return (
     <div className="modal" role="dialog" aria-modal="true" aria-label={t('templates.title')}>
-      <div className="modal__panel templates">
-        <header className="modal__head">
+      <div className="modal__panel templates" ref={trapRef}>
+        <div className="modal__head">
           <h2 className="modal__title">
             <LayoutTemplate size={15} /> {t('templates.title')}
           </h2>
@@ -106,7 +108,7 @@ export function TemplateGallery({
           <button type="button" className="icon-button" title={t('common.close')} onClick={close}>
             <X size={15} />
           </button>
-        </header>
+        </div>
 
         <div className="templates__body">
           <aside className="templates__sidebar" aria-label={t('templates.categories')}>

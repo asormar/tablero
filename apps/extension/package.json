@@ -1,0 +1,15 @@
+{
+  "name": "@tablero/extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Extensión de navegador de Tablero: manda la página actual a «Sin ordenar» con el token personal",
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && node scripts/build-assets.mjs",
+    "icons": "node scripts/make-icons.mjs",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "typescript": "^5.6.3"
+  }
+}

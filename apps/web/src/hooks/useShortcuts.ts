@@ -79,9 +79,14 @@ export function useShortcuts(session: BoardSession): void {
           return;
         }
         if (ui.editingId) {
+          const editing = ui.editingId;
           const active = document.activeElement;
           if (active instanceof HTMLElement) active.blur();
-          clearSelectionAndEditing();
+          // Se sale de la edición pero **no** se pierde la selección: con el
+          // teclado, el flujo es crear → escribir → `Esc` → mover con flechas
+          // (fase 6). La tarjeta sigue seleccionada y el foco vuelve a ella.
+          ui.setEditing(null);
+          document.querySelector<HTMLElement>(`[data-element-id="${editing}"]`)?.focus();
           return;
         }
         if (ui.selection.length > 0) ui.clearSelection();

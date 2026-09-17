@@ -15,9 +15,11 @@ import type { BoardSession } from '@/collab/BoardSession';
 import { transferElements, transferFailureMessage } from '@/lib/boardTransfer';
 import { useAppStore } from '@/state/appStore';
 import { useUiStore } from '@/state/uiStore';
+import { useFocusTrap } from '@/hooks/useFocusTrap';
 
 export function MoveToDialog({ session }: { session: BoardSession }): JSX.Element | null {
   const open = useUiStore((state) => state.moveToOpen);
+  const trapRef = useFocusTrap<HTMLDivElement>(open);
   const selection = useUiStore((state) => state.selection);
   const boards = useAppStore((state) => state.boards);
   const [query, setQuery] = useState('');
@@ -67,15 +69,15 @@ export function MoveToDialog({ session }: { session: BoardSession }): JSX.Elemen
 
   return (
     <div className="modal" role="dialog" aria-modal="true" aria-label="Mover a otro tablero">
-      <div className="modal__panel move-to">
-        <header className="modal__head">
+      <div className="modal__panel move-to" ref={trapRef}>
+        <div className="modal__head">
           <h2 className="modal__title">
             <FolderInput size={15} /> Mover a…
           </h2>
           <button type="button" className="icon-button" title="Cerrar (Esc)" onClick={close}>
             <X size={15} />
           </button>
-        </header>
+        </div>
         <div className="modal__body">
           <label className="move-to__search">
             <Search size={13} />

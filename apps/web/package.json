@@ -7,6 +7,12 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "build:e2e": "vite build --outDir dist-e2e",
+    "preview:e2e": "vite preview --outDir dist-e2e",
+    "e2e": "playwright test --config e2e/playwright.config.ts",
+    "e2e:headed": "playwright test --config e2e/playwright.config.ts --headed",
+    "e2e:typecheck": "tsc -p e2e/tsconfig.json --noEmit",
+    "e2e:report": "playwright show-report e2e/report",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest"
@@ -37,6 +43,7 @@
     "zustand": "^4.5.7"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "@types/leaflet": "^1.9.22",
     "@types/node": "^22.10.0",
     "@types/react": "^18.3.12",

@@ -363,7 +363,7 @@
   height: 28px;
   border-radius: 50%;
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-ink);
   flex: none;
 }
 
@@ -628,7 +628,7 @@
   padding: 1px 5px;
   border-radius: 8px;
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--accent-strong);
   font-size: 10px;
 }
 
@@ -713,7 +713,7 @@
 
 .link-card__sizes button.is-active {
   border-color: var(--accent);
-  color: var(--accent);
+  color: var(--accent-strong);
   background: var(--accent-soft);
 }
 
@@ -1024,7 +1024,7 @@
 
 .crop-editor__aspects button.is-active {
   border-color: var(--accent);
-  color: var(--accent);
+  color: var(--accent-strong);
   background: var(--accent-soft);
 }
 
@@ -1050,7 +1050,7 @@
 .crop-editor__accept {
   border-color: var(--accent);
   background: var(--accent);
-  color: #fff;
+  color: var(--accent-ink);
 }
 
 .crop-editor__stage {

@@ -32,5 +32,10 @@ pnpm-debug.log*
 # Test / coverage
 coverage/
 
+# Playwright (apps/web/e2e)
+apps/web/dist-e2e/
+apps/web/test-results/
+apps/web/e2e/report/
+
 # Prisma
 apps/api/prisma/migrations/dev.db*

@@ -355,7 +355,7 @@
 }
 
 .comment-composer__refusal {
-  color: #b35d0c;
+  color: var(--sync-warn);
 }
 
 .comment-composer__send {
@@ -364,7 +364,7 @@
   border: none;
   border-radius: 6px;
   background: var(--accent, #2f6fc9);
-  color: #fff;
+  color: var(--accent-ink, #fff);
   font-size: 12px;
   cursor: pointer;
 }
@@ -639,7 +639,7 @@
   border: none;
   border-radius: 6px;
   background: var(--accent, #2f6fc9);
-  color: #fff;
+  color: var(--accent-ink, #fff);
   font-size: 12.5px;
   cursor: pointer;
 }

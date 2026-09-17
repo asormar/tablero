@@ -266,6 +266,72 @@ selector de color nativo y grabación con micrófono real.
   fusión CRDT revivía lo restaurado. El mecanismo, el formato del ZIP y el
   contrato del cliente están documentados en `ARCHITECTURE.md`.
 
-Pendiente de esta fase: la revisión independiente de fase-3 + fase-4 (las dos
-corridas de la revisión de la fase 3 murieron sin informe y la tercera la paré yo
-por la pausa pedida).
+Revisada: `docs/review/fase-3-4.md` (sin bloqueantes; el índice al instanciar una
+plantilla y al duplicar un tablero quedó arreglado, y los cuatro puntos que estaban
+abiertos de la fase 3 —doble clic, filas de tarea, los cuatro paneles y la
+liberación de assets— se cerraron sin fallos).
+
+## Verificación de la fase 5
+
+- **Roles de punta a punta, con dos cuentas en dos navegadores**: invitar como
+  lector deja el tablero en solo lectura (el aviso «Estás como lector…» es
+  explícito y `N`, `T` y el doble clic no crean nada); pasar esa misma cuenta a
+  editor cierra su conexión (`connectionsClosed: 1`) y al reconectar edita de
+  verdad — el texto «EDITADO POR BRUNO» quedó en el documento del servidor y la
+  búsqueda lo encontró (índice y persistencia sincronizados en vivo).
+- **Tiempo real**: con las dos sesiones abiertas en el mismo tablero aparecen los
+  **cursores ajenos** con nombre y color, la selección ajena y el indicador de
+  quién está mirando («Bruno E2E»).
+- **Herencia y sobrescritura**: un editor del padre entra al subtablero como
+  editor; con una fila propia de lector en el hijo, renombrar el hijo da **403**
+  y renombrar el padre sigue dando **200**.
+- **Publicar**: `POST /publish` con slug de 12 caracteres; la vista `/p/:slug`
+  abre **sin sesión** en solo lectura y muestra el contenido real. Al verificarla
+  apareció y se arregló un defecto de desarrollo: la sesión de solo lectura se
+  creaba con `useMemo` y el doble montaje de React la dejaba destruida, así que la
+  página se quedaba en «Cargando…» (ahora la sesión se crea dentro del efecto).
+- **Comentarios y notificaciones**: comentar una tarjeta con una mención crea el
+  hilo (contador en la tarjeta) y al mencionado le llega la notificación —el panel
+  muestra «Ana E2E te mencionó en *Tablero compartido E2E*»—; marcar como leídas
+  baja el contador a cero.
+- `pnpm -r typecheck` limpio; **shared 269**, **api 267**, **web 556** tests;
+  build OK; y los seis humos en verde, incluido `smoke:colaboracion` (**38/38**).
+- Revisión independiente: `docs/review/fase-5.md` (sin bloqueantes; el rol
+  comentarista, el `postinstall` de `prisma generate` y cinco casos de borde
+  quedaron arreglados y verificados).
+
+Pendiente de esta fase: los cuatro hallazgos que la revisión dejó fuera de
+alcance (el 401 público que confirma el slug, `assigneeId` sin documentar, el
+tamaño de `phase5.css` y los 400 que enumeran valores válidos).
+
+## Verificación de la fase 6
+
+- **Extensión** (`apps/extension`, Manifest V3): cargada en Chromium y probada de
+  punta a punta contra una instancia local — página real de Wikipedia con texto
+  seleccionado, captura que llega a «Sin ordenar» y el documento decodificado del
+  servidor con **título, selección y URL** (las cuatro comprobaciones en verde);
+  token inválido y API caída muestran errores distintos y claros. El único hueco:
+  adjuntar la captura de imagen responde `capture_unsupported_type` (400) y la
+  extensión lo dice sin romperse, aunque la nota igual llega.
+- **Pruebas end-to-end**: `apps/web/e2e` con Playwright, **14 pruebas** que cubren
+  registro e ingreso, tablero desde plantilla, nota, tarea con fecha, columna,
+  conector, subida de una imagen real, búsqueda global que abre el tablero y
+  resalta el elemento, publicación sin sesión, restauración de una versión,
+  exportación a Markdown y ZIP de ida y vuelta, y la papelera. Corridas completas
+  en verde, incluida una corrida propia del agente principal.
+- **Accesibilidad**: auditoría con navegador real y arreglos (foco visible,
+  tarjetas alcanzables con teclado y con `Shift+F10` para el menú contextual,
+  trampa de foco y cierre con `Esc` en los diálogos, `role="status"` en las
+  acciones asíncronas y contraste AA en los dos temas): **0 violaciones** en el
+  espacio de trabajo y los paneles. Tests nuevos de accesibilidad, trampa de foco
+  y contraste de tema.
+- **Rendimiento**: medido con CDP sobre 300 tarjetas — **60 fotogramas por
+  segundo** (16,6 ms por fotograma de media), ~67 MB de memoria tras recolectar,
+  arranque y tarjetas visibles documentados. La medición es del agente que hizo el
+  pase de rendimiento; el agente principal no logró reproducirla (el botón de
+  siembra es solo de desarrollo y no estaba presente en su sesión), aunque sí
+  verificó 60 fps en el lienzo y la misma propiedad en la fase 1 con 302 tarjetas.
+
+Con esto el proyecto queda completo: las seis fases implementadas, verificadas por
+el agente principal y revisadas por un revisor independiente de otro modelo.
+

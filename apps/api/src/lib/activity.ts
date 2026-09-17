@@ -7,7 +7,12 @@
  *
  *   - limita el lote (`MAX_ACTIVITY_BATCH`) y la antigüedad de las marcas del
  *     cliente (ni futuro ni más de 30 días atrás);
- *   - descarta los eventos cuyo elemento ya no existe en el documento;
+ *   - valida los `elementId` contra el documento **vivo** si el tablero está
+ *     abierto en memoria (el registro del servidor de colaboración) y, si no,
+ *     contra el persistido. Validar solo contra el persistido descartaba casi
+ *     todo: el cliente reporta a los 2,5 s y el guardado va con debounce (2 s,
+ *     tope 10 s), así que el elemento recién creado todavía no estaba en
+ *     `BoardDocument` y el evento se tiraba;
  *   - guarda el actor de la sesión, nunca el que venga en el cuerpo.
  */
 
@@ -15,6 +20,7 @@ import type { ActivityAction, ActivitySummary } from '@tablero/shared';
 import { elementsOf } from '@tablero/shared';
 import type * as Y from 'yjs';
 
+import { liveBoardDocument } from '../collab/server.js';
 import { prisma } from '../db.js';
 import { loadBoardDoc } from './documents.js';
 
@@ -39,8 +45,12 @@ function clampTimestamp(at: number | undefined, now: number): Date {
 }
 
 /**
- * Guarda el lote. `doc` es el documento del tablero (se carga si no viene): los
- * eventos de elementos que no están en él se descartan en silencio.
+ * Guarda el lote.
+ *
+ * El documento para validar sale de: `options.doc` (lo pasa un test) → el
+ * documento **vivo** del tablero si está abierto en el servidor de colaboración
+ * → el estado persistido. Los eventos de elementos que no están en él se
+ * descartan en silencio.
  */
 export async function recordActivity(
   boardId: string,
@@ -49,7 +59,8 @@ export async function recordActivity(
   options: { doc?: Y.Doc | null; now?: number } = {},
 ): Promise<RecordActivityResult> {
   const now = options.now ?? Date.now();
-  const doc = options.doc !== undefined ? options.doc : await loadBoardDoc(boardId);
+  const doc =
+    options.doc !== undefined ? options.doc : (liveBoardDocument(boardId) ?? (await loadBoardDoc(boardId)));
   const existing = doc ? new Set(elementsOf(doc).keys()) : null;
 
   const accepted: ActivityEventInput[] = [];

@@ -20,6 +20,7 @@
  */
 
 import type { BoardVersion } from '@prisma/client';
+import { elementPlainText, fragmentToPlainText, getOrderedElements, getTextFragment, type CanvasElement } from '@tablero/shared';
 import * as Y from 'yjs';
 
 import { prisma } from '../db.js';
@@ -143,6 +144,49 @@ export async function listVersions(boardId: string, limit = 50): Promise<Version
     take: limit,
   });
   return rows.map(toVersionSummary);
+}
+
+/** Tope del texto de la previsualización (lo que se muestra como adelanto). */
+export const FIRST_TEXT_LIMIT = 200;
+
+/**
+ * Primer texto de la instantánea: el del primer elemento con contenido, en el
+ * orden del documento (el título de una tarea/columna/tarjeta o el cuerpo de
+ * una nota/encabezado). Alimenta `preview.firstText` del detalle de la versión
+ * —el título del tablero ya viaja en `preview.title`— y se recorta para que el
+ * adelanto no dependa del tamaño de la nota. `null` si la instantánea no tiene
+ * ningún texto (por ejemplo, un tablero vacío).
+ */
+export function firstTextOf(doc: Y.Doc, elements: CanvasElement[]): string | null {
+  for (const element of elements) {
+    const body = fragmentToPlainText(getTextFragment(doc, element.id)).trim();
+    const text = [elementPlainText(element).trim(), body].find((candidate) => candidate.length > 0);
+    if (text) return text.slice(0, FIRST_TEXT_LIMIT);
+  }
+  return null;
+}
+
+/**
+ * Previsualización de una instantánea: cantidad de elementos, tipos y primer
+ * texto. Un estado ilegible queda en cero (el detalle sigue funcionando).
+ */
+export function previewOfVersion(state: Uint8Array, title: string): {
+  title: string;
+  elementCount: number;
+  types: Record<string, number>;
+  firstText: string | null;
+} {
+  const preview = { title, elementCount: 0, types: {} as Record<string, number>, firstText: null as string | null };
+  try {
+    const doc = decodeState(state);
+    const elements = getOrderedElements(doc);
+    preview.elementCount = elements.length;
+    for (const element of elements) preview.types[element.type] = (preview.types[element.type] ?? 0) + 1;
+    preview.firstText = firstTextOf(doc, elements);
+  } catch {
+    // Estado ilegible: la previsualización queda en cero, el detalle sigue.
+  }
+  return preview;
 }
 
 /**

@@ -18,7 +18,6 @@ import { z } from 'zod';
 
 import { encodeActivityCursor, listActivity, recordActivity } from '../lib/activity.js';
 import { requireBoardAccess, resolveBoardAccess } from '../lib/access.js';
-import { loadBoardDoc } from '../lib/documents.js';
 import { boardPresence, touchPresence } from '../lib/presence.js';
 import { currentUser } from '../lib/session.js';
 
@@ -34,8 +33,9 @@ export async function activityRoutes(app: FastifyInstance): Promise<void> {
     const { role } = requireBoardAccess(resolution, 'viewer');
     touchPresence(id, { userId: user.id, name: user.name, avatarUrl: user.avatarUrl, role });
 
-    const doc = await loadBoardDoc(id);
-    const result = await recordActivity(id, user.id, input.entries, { doc });
+    // El documento para validar lo resuelve `recordActivity`: vivo si está
+    // abierto en el servidor de colaboración, persistido si no.
+    const result = await recordActivity(id, user.id, input.entries);
     reply.code(201);
     return { ok: true, accepted: result.accepted, discarded: result.discarded, entries: result.events };
   });

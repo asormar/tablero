@@ -231,6 +231,32 @@ export async function loadBoardAccess(userId: string): Promise<BoardAccess> {
   return new BoardAccess(userId, boards as BoardRecord[], memberships);
 }
 
+/**
+ * Ids del subárbol de un tablero (la raíz incluida), nivel por nivel.
+ *
+ * Lo usan los cambios de rol y las expulsiones: el permiso alcanza a los
+ * subtableros por herencia, así que hay que cerrar las conexiones del afectado
+ * en todo el subárbol, no solo en el tablero donde se toca la fila.
+ */
+export async function boardSubtreeIds(rootId: string): Promise<string[]> {
+  const ids = [rootId];
+  const seen = new Set(ids);
+  let frontier = ids;
+  while (frontier.length > 0) {
+    const rows = await prisma.board.findMany({
+      where: { parentBoardId: { in: frontier } },
+      select: { id: true, parentBoardId: true },
+    });
+    const current = new Set(frontier);
+    frontier = rows
+      .filter((row) => row.parentBoardId !== null && current.has(row.parentBoardId) && !seen.has(row.id))
+      .map((row) => row.id);
+    for (const id of frontier) seen.add(id);
+    ids.push(...frontier);
+  }
+  return ids;
+}
+
 export type UnsortedBoardResult = { access: BoardAccess; board: BoardRecord; created: boolean };
 
 /** Título e icono de la bandeja de entrada de la cuenta (§4.3 del plan). */

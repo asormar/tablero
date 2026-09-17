@@ -13,7 +13,7 @@
  */
 
 import type { FastifyInstance } from 'fastify';
-import { getOrderedElements, idSchema } from '@tablero/shared';
+import { idSchema } from '@tablero/shared';
 import { z } from 'zod';
 
 import { closeBoardConnections, beginBoardRestore, finishBoardRestore } from '../collab/server.js';
@@ -23,7 +23,14 @@ import { loadBoardAccess } from '../lib/boards.js';
 import { decodeState } from '../lib/documents.js';
 import { notFound } from '../lib/errors.js';
 import { currentUser } from '../lib/session.js';
-import { applyVersion, listVersions, pruneVersions, recordVersion, snapshotDocument } from '../lib/versions.js';
+import {
+  applyVersion,
+  listVersions,
+  previewOfVersion,
+  pruneVersions,
+  recordVersion,
+  snapshotDocument,
+} from '../lib/versions.js';
 
 const idParamsSchema = z.object({ id: idSchema });
 const versionParamsSchema = z.object({ id: idSchema, vid: idSchema });
@@ -48,20 +55,7 @@ export async function versionsRoutes(app: FastifyInstance): Promise<void> {
     const version = await prisma.boardVersion.findFirst({ where: { id: vid, boardId: id } });
     if (!version) throw notFound('La versión no existe para este tablero', 'version_not_found');
 
-    const preview: {
-      title: string;
-      elementCount: number;
-      types: Record<string, number>;
-      firstText: string | null;
-    } = { title: record.title, elementCount: 0, types: {}, firstText: null };
-    try {
-      const doc = decodeState(new Uint8Array(version.yjsState));
-      const elements = getOrderedElements(doc);
-      preview.elementCount = elements.length;
-      for (const element of elements) preview.types[element.type] = (preview.types[element.type] ?? 0) + 1;
-    } catch {
-      // Estado ilegible: la previsualización queda en cero, el detalle sigue.
-    }
+    const preview = previewOfVersion(new Uint8Array(version.yjsState), record.title);
 
     return {
       version: {

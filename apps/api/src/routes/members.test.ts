@@ -254,6 +254,22 @@ const db = vi.hoisted(() => {
 
 vi.mock('../db.js', () => ({ prisma: db.prisma }));
 
+/**
+ * El cierre de conexiones es del servidor de colaboración (Hocuspocus): acá se
+ * dobla para registrar en qué tableros se pidió el cierre y contar el total.
+ */
+const collab = vi.hoisted(() => ({
+  closed: [] as { boardId: string; userIds?: string[] }[],
+  perBoard: 1,
+}));
+
+vi.mock('../collab/server.js', () => ({
+  closeBoardConnectionsWithCode: (boardId: string, options: { userIds?: string[] } = {}) => {
+    collab.closed.push({ boardId, ...(options.userIds ? { userIds: options.userIds } : {}) });
+    return collab.perBoard;
+  },
+}));
+
 vi.mock('../lib/session.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../lib/session.js')>();
   return {
@@ -276,7 +292,7 @@ vi.mock('../lib/email.js', async (importOriginal) => {
   };
 });
 
-const { membersRoutes } = await import('./members.js');
+const { invitationViewRoutes, membersRoutes } = await import('./members.js');
 
 async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({ logger: false });
@@ -292,6 +308,9 @@ async function buildApp(): Promise<FastifyInstance> {
     reply.code(500).send({ error: (error as Error).message, code: 'internal_error' });
   });
   await app.register(membersRoutes, { prefix: '/api' });
+  // La vista de la invitación es pública y va en su propio plugin (el registro
+  // real la monta fuera del scope con sesión).
+  await app.register(invitationViewRoutes, { prefix: '/api' });
   await app.ready();
   return app;
 }
@@ -303,6 +322,8 @@ beforeEach(() => {
   db.board('ajeno', { title: 'Ajeno', ownerId: 'user_caro' });
   db.member('proyecto', 'user_beto', 'editor', 'user_ana');
   db.session.id = 'user_ana';
+  collab.closed.length = 0;
+  collab.perBoard = 1;
 });
 
 describe('GET /api/boards/:id/members', () => {
@@ -400,6 +421,32 @@ describe('PATCH y DELETE de miembros', () => {
     await app.close();
   });
 
+  it('cierra las conexiones del afectado en el tablero y en todo su subárbol', async () => {
+    const app = await buildApp();
+    db.board('subtema', { title: 'Subtema', parentBoardId: 'proyecto' });
+    db.board('nieto', { title: 'Nieto', parentBoardId: 'subtema' });
+    db.board('otro', { title: 'Otro', parentBoardId: 'inicio' });
+
+    const changed = await app.inject({
+      method: 'PATCH',
+      url: '/api/boards/proyecto/members/user_beto',
+      payload: { role: 'viewer' },
+    });
+    expect(changed.statusCode).toBe(200);
+    // Un cierre por cada tablero del subárbol (la raíz incluida), y siempre
+    // acotado al usuario afectado.
+    expect(collab.closed.map((row) => row.boardId).sort()).toEqual(['nieto', 'proyecto', 'subtema']);
+    expect(collab.closed.every((row) => row.userIds?.join(',') === 'user_beto')).toBe(true);
+    expect(changed.json().connectionsClosed).toBe(3);
+
+    collab.closed.length = 0;
+    const removed = await app.inject({ method: 'DELETE', url: '/api/boards/proyecto/members/user_beto' });
+    expect(removed.statusCode).toBe(200);
+    expect(collab.closed.map((row) => row.boardId).sort()).toEqual(['nieto', 'proyecto', 'subtema']);
+    expect(removed.json().connectionsClosed).toBe(3);
+    await app.close();
+  });
+
   it('no deja tocar al dueño ni a un no-miembro', async () => {
     const app = await buildApp();
     const owner = await app.inject({
@@ -483,6 +530,21 @@ describe('invitaciones', () => {
       payload: { email: 'nueva@tablero.test', role: 'dueño' },
     });
     expect(badRole.statusCode).toBe(400);
+    await app.close();
+  });
+
+  it('el dueño no puede invitarse a sí mismo (409 `already_owner`, como el alta directa)', async () => {
+    const app = await buildApp();
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/boards/proyecto/invitations',
+      payload: { email: 'ana@tablero.test', role: 'viewer' },
+    });
+    expect(response.statusCode).toBe(409);
+    expect(response.json().code).toBe('already_owner');
+    // No queda una invitación basura ni sale un email.
+    expect(db.invitations.size).toBe(0);
+    expect(db.emails).toHaveLength(0);
     await app.close();
   });
 

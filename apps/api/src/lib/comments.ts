@@ -19,7 +19,7 @@
  */
 
 import type { CommentRow } from '@tablero/shared';
-import { COMMENT_MAX_LENGTH, readComments, removeComment, resolveComment } from '@tablero/shared';
+import { COMMENT_MAX_LENGTH, elementsOf, readComments, removeComment, resolveComment } from '@tablero/shared';
 import type { CommentEntry } from '@tablero/shared';
 import * as Y from 'yjs';
 
@@ -46,19 +46,29 @@ export type ExtractedCommentRow = {
 
 export const COMMENT_SYNC_ORIGIN = 'comments:sync';
 
-/** Una fila por comentario (raíz o respuesta) con la forma plana del documento. */
+/**
+ * Una fila por comentario (raíz o respuesta) con la forma plana del documento.
+ *
+ * Contrato del anclaje: `elementId` solo viaja si el elemento **existe en el
+ * documento** (igual que valida `recordActivity`). Un comentario anclado a una
+ * tarjeta borrada queda como **chincheta libre** (`elementId: null`): el
+ * comentario no se pierde (podría tener respuestas y texto del usuario) y sigue
+ * apareciendo en el listado, sin apuntar a nada.
+ */
 export function commentRowsFromDoc(boardId: string, doc: Y.Doc): ExtractedCommentRow[] {
   const entries = readComments(doc);
+  const elementIds = new Set(elementsOf(doc).keys());
   const roots = new Map(entries.filter((entry) => entry.parentId === null).map((entry) => [entry.id, entry]));
   return entries.map((entry: CommentEntry) => {
     // Resolver es del hilo entero: la respuesta hereda la marca de su raíz para
     // que los filtros de abiertos/resueltos no la dejen suelta.
     const root = entry.parentId !== null ? roots.get(entry.parentId) : entry;
     const resolvedAt = root?.resolvedAt ?? entry.resolvedAt;
+    const elementId = entry.elementId !== null && elementIds.has(entry.elementId) ? entry.elementId : null;
     return {
       id: entry.id,
       boardId,
-      elementId: entry.elementId,
+      elementId,
       parentCommentId: entry.parentId,
       authorId: entry.authorId,
       body: entry.body.slice(0, COMMENT_MAX_LENGTH),
@@ -73,15 +83,42 @@ export function commentRowsFromDoc(boardId: string, doc: Y.Doc): ExtractedCommen
 }
 
 /**
+ * Quita las filas que la tabla no puede guardar: un autor que ya no existe (FK
+ * a `User`) o una respuesta cuyo hilo padre no está en el documento (FK propia
+ * de `parentCommentId`). Un documento manipulado (o una cuenta borrada) no
+ * puede tumbar la sincronización.
+ */
+async function withoutDanglingReferences(rows: ExtractedCommentRow[]): Promise<ExtractedCommentRow[]> {
+  if (rows.length === 0) return rows;
+  const authorIds = [...new Set(rows.map((row) => row.authorId))];
+  const authors = await prisma.user.findMany({ where: { id: { in: authorIds } }, select: { id: true } });
+  const known = new Set(authors.map((author) => author.id));
+  const commentIds = new Set(rows.map((row) => row.id));
+  return rows.filter(
+    (row) => known.has(row.authorId) && (row.parentCommentId === null || commentIds.has(row.parentCommentId)),
+  );
+}
+
+/**
  * Sincroniza la tabla con el documento: upsert de lo que hay y borrado de lo
  * que ya no está. Como los ids de las filas son los del documento, borrar un
  * hilo o una respuesta en el documento los borra también de la tabla.
+ *
+ * El documento es del cliente y no siempre está bien formado, así que la
+ * sincronización **nunca lanza** por un comentario raro:
+ *
+ *   - un comentario de un autor que ya no existe no se sincroniza (la tabla
+ *     tiene FK a `User` y antes tumbaba la petición con un 500); se ignora en
+ *     silencio, como los eventos de actividad de elementos inexistentes;
+ *   - una respuesta cuyo hilo padre no está en el documento tampoco (FK propia
+ *     de `parentCommentId`).
  */
 export async function syncBoardComments(
   boardId: string,
   doc: Y.Doc,
 ): Promise<{ upserted: number; removed: number; mentions: number; replies: number }> {
-  const rows = commentRowsFromDoc(boardId, doc);
+  const extracted = commentRowsFromDoc(boardId, doc);
+  const rows = await withoutDanglingReferences(extracted);
   const ids = rows.map((row) => row.id);
   const removed = await prisma.comment.deleteMany({ where: { boardId, id: { notIn: ids } } });
 
@@ -154,14 +191,19 @@ function mentionKey(value: string): string {
 
 /**
  * Candidatos de un miembro para resolver `@token`: email, parte local del email,
- * nombre completo y primer nombre. La mención escrita en el editor no puede
- * llevar espacios (`@Beto Lector` llega como `@Beto`), por eso el primer nombre
- * es el candidato que más se usa.
+ * nombre completo y **cada palabra** del nombre. La mención escrita en el editor
+ * no puede llevar espacios (`@Beto Lector` llega como `@Beto`), así que se
+ * resuelve por cualquier palabra: «D Caro» se menciona con `@D` o con `@Caro`
+ * (antes solo valía la primera palabra, y `@Caro` no encontraba a nadie).
  */
 function mentionCandidates(target: { name: string; email: string }): string[] {
   const local = target.email.split('@')[0] ?? '';
-  const firstWord = target.name.trim().split(/\s+/)[0] ?? '';
-  return [mentionKey(target.email), mentionKey(local), mentionKey(target.name), mentionKey(firstWord)].filter(
+  const words = target.name
+    .trim()
+    .split(/\s+/)
+    .map(mentionKey)
+    .filter((word) => word.length >= 2);
+  return [...new Set([mentionKey(target.email), mentionKey(local), mentionKey(target.name), ...words])].filter(
     (candidate) => candidate.length >= 2,
   );
 }

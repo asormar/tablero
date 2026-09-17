@@ -6,12 +6,15 @@
  *   GET    /api/assets/:id        detalle (`{ asset: AssetSummary }`)
  *   GET    /api/assets/:id/raw    302 a la URL firmada del original (15 min)
  *   GET    /api/assets/:id/thumb  302 a la miniatura firmada (o al original)
- *   DELETE /api/assets/:id        borra el archivo y sus objetos
+ *   DELETE /api/assets/:id        borra el archivo y sus objetos (409 si está en uso)
  *
  * Reglas:
  * - Todas exigen sesión y **solo el propietario** lee o borra su archivo: un
  *   asset ajeno responde 404 (no 403: no se filtra su existencia).
  * - Las claves de S3 nunca salen al cliente; el cliente usa `assetRoutes`.
+ * - Un archivo **en uso** (referenciado por el documento de algún tablero
+ *   accesible o usado como portada) no se borra: 409 `asset_in_use`, salvo
+ *   `?force=true`.
  * - La subida es `multipart/form-data`; el progreso lo lleva la web. `presign`
  *   (subida directa firmada) queda fuera de esta fase: sin un paso de
  *   confirmación, crearía filas de assets que nunca llegan a subirse.
@@ -47,9 +50,9 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 import { prisma } from '../db.js';
 import { env } from '../env.js';
 import { requireBoardView, resolveBoardAccessFrom } from '../lib/access.js';
-import { deleteAssetObjects } from '../lib/assets.js';
+import { deleteAssetObjects, referencedAssetIds } from '../lib/assets.js';
 import { loadBoardAccess } from '../lib/boards.js';
-import { badRequest, HttpError, notFound } from '../lib/errors.js';
+import { badRequest, conflict, HttpError, notFound } from '../lib/errors.js';
 import { emptyProcessing, processAv, processImage, type MediaProcessing } from '../lib/media.js';
 import { currentUser } from '../lib/session.js';
 import {
@@ -398,8 +401,25 @@ export async function assetsRoutes(app: FastifyInstance): Promise<void> {
     reply.redirect(url, 302);
   });
 
+  /**
+   * Borra el archivo del usuario. Antes de tocar nada se comprueban las
+   * referencias (`referencedAssetIds`): un archivo en uso responde 409
+   * `asset_in_use` y solo se borra con `?force=true` (la salida explícita del
+   * usuario, que deja el `assetId` colgado a propósito). El borrado de huérfanos
+   * (`DELETE /api/storage/orphans`) usa el mismo cálculo de referencias.
+   */
   app.delete('/assets/:id', async (request) => {
     const row = await requireOwnAsset(request);
+    const force = isTruthyFlag(request.query ? (request.query as Record<string, unknown>)['force'] : undefined);
+    if (!force) {
+      const { referenced } = await referencedAssetIds(row.ownerId);
+      if (referenced.has(row.id)) {
+        throw conflict(
+          'El archivo está en uso en un tablero: quitalo del documento o repetí la petición con ?force=true',
+          'asset_in_use',
+        );
+      }
+    }
     await deleteAssetObjects(row, (key, error) => {
       // El objeto huérfano no puede bloquear el borrado pedido por el usuario.
       request.log.warn({ err: error, key }, 'No se pudo borrar el objeto de S3');

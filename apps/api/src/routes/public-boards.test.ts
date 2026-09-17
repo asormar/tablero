@@ -210,12 +210,14 @@ describe('POST /api/boards/:id/publish', () => {
     await app.close();
   });
 
-  it('solo el dueño publica; un editor recibe 403', async () => {
+  it('solo el dueño publica; un editor recibe 404 (sin filtrar la existencia)', async () => {
     const app = await buildApp(true);
     db.boards.get('proyecto')!.ownerId = 'user_otro';
     db.prisma.boardMember.findMany = async () => [{ boardId: 'proyecto', userId: 'user_ana', role: 'editor' }];
     const response = await app.inject({ method: 'POST', url: '/api/boards/proyecto/publish', payload: {} });
-    expect(response.statusCode).toBe(403);
+    // Un no-dueño (miembro o ajeno) recibe la misma respuesta que un tablero
+    // inexistente: el endpoint no revela la relación del llamador con el tablero.
+    expect(response.statusCode).toBe(404);
     await app.close();
   });
 

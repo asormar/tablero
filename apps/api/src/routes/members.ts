@@ -22,7 +22,7 @@ import { z } from 'zod';
 import { closeBoardConnectionsWithCode } from '../collab/server.js';
 import { prisma } from '../db.js';
 import { requireBoardAccess, resolveBoardAccess, resolveBoardAccessFrom } from '../lib/access.js';
-import { loadBoardAccess } from '../lib/boards.js';
+import { boardSubtreeIds, loadBoardAccess } from '../lib/boards.js';
 import { conflict, notFound } from '../lib/errors.js';
 import {
   acceptInvitation,
@@ -48,6 +48,22 @@ function maskEmail(email: string): string {
   if (!local || !domain) return '***';
   const visible = local.slice(0, 1);
   return `${visible}${'*'.repeat(Math.max(1, Math.min(local.length - 1, 8)))}@${domain}`;
+}
+
+/**
+ * Cierra las conexiones del usuario en el tablero **y en sus subtableros**.
+ *
+ * Un cambio de rol (o una expulsión) alcanza a los descendientes por herencia,
+ * así que el socket del afectado tiene que caer también donde estaba mirando un
+ * hijo con rol heredado. El total que se devuelve es el que se cerró de verdad:
+ * antes, con el interesado en un subtablero, la respuesta decía 0 y su socket
+ * seguía escribiendo con el permiso viejo.
+ */
+async function closeUserConnections(boardId: string, userId: string): Promise<number> {
+  const ids = await boardSubtreeIds(boardId);
+  let closed = 0;
+  for (const id of ids) closed += closeBoardConnectionsWithCode(id, { userIds: [userId] });
+  return closed;
 }
 
 export async function membersRoutes(app: FastifyInstance): Promise<void> {
@@ -124,7 +140,7 @@ export async function membersRoutes(app: FastifyInstance): Promise<void> {
       where: { id: existing.id },
       data: { role: input.role },
     });
-    const closed = closeBoardConnectionsWithCode(id, { userIds: [userId] });
+    const closed = await closeUserConnections(id, userId);
     request.log.info({ boardId: id, userId, role: input.role, closed }, 'Rol de miembro actualizado');
     const members = await boardMemberSummaries(id);
     return {
@@ -146,7 +162,7 @@ export async function membersRoutes(app: FastifyInstance): Promise<void> {
     const deleted = await prisma.boardMember.deleteMany({ where: { boardId: id, userId } });
     if (deleted.count === 0) throw notFound('Esa persona no es miembro del tablero', 'member_not_found');
 
-    const closed = closeBoardConnectionsWithCode(id, { userIds: [userId] });
+    const closed = await closeUserConnections(id, userId);
     request.log.info({ boardId: id, userId, closed }, 'Miembro expulsado del tablero');
     return { ok: true, connectionsClosed: closed, members: await boardMemberSummaries(id) };
   });
@@ -173,6 +189,7 @@ export async function membersRoutes(app: FastifyInstance): Promise<void> {
       boardTitle: board.title,
       email: input.email,
       role: input.role,
+      ownerId: board.ownerId,
       invitedById: user.id,
       invitedByName: user.name,
       expiresInDays: input.expiresInDays,
@@ -210,9 +227,37 @@ export async function membersRoutes(app: FastifyInstance): Promise<void> {
 
   /**
    * Vista de la invitación. Es **pública** (el token del enlace es la
-   * credencial); el email va enmascarado salvo que quien consulte tenga sesión
-   * con ese mismo email.
+   * credencial); vive en `invitationViewRoutes` porque este plugin se registra
+   * dentro del scope con sesión. El email va enmascarado salvo que quien
+   * consulte tenga sesión con ese mismo email.
    */
+  // (ruta registrada en `invitationViewRoutes`, al final del archivo)
+
+  /** Aceptar: exige sesión y que el email coincida con el de la invitación. */
+  app.post('/invitations/:token/accept', async (request) => {
+    const user = currentUser(request);
+    const { token } = tokenParamsSchema.parse(request.params);
+    const result = await acceptInvitation(token, user);
+    // El resumen del tablero (con el rol ya resuelto) viaja en `board`: es lo
+    // que lee la web para llevarte al tablero recién aceptado.
+    const access = await loadBoardAccess(user.id);
+    const record = access.get(result.boardId);
+    const board = record ? access.summary(record) : null;
+    const role = access.roleOf(result.boardId) ?? result.role;
+    return { ...result, role, board };
+  });
+}
+
+/**
+ * Vista de una invitación por su token, **sin sesión** (fase 5, contrato de
+ * `ARCHITECTURE.md`: «el token es la credencial»). Es la única ruta del módulo
+ * fuera del scope protegido, así que va en su propio plugin y `routes/index.ts`
+ * la registra con las públicas.
+ *
+ * Si quien consulta tiene sesión con el email de la invitación, se lo muestra
+ * completo y marca `emailMatches`; si no, va enmascarado.
+ */
+export async function invitationViewRoutes(app: FastifyInstance): Promise<void> {
   app.get('/invitations/:token', async (request) => {
     const { token } = tokenParamsSchema.parse(request.params);
     const view = await invitationByToken(token);
@@ -231,19 +276,5 @@ export async function membersRoutes(app: FastifyInstance): Promise<void> {
         emailMatches: sameEmail,
       },
     };
-  });
-
-  /** Aceptar: exige sesión y que el email coincida con el de la invitación. */
-  app.post('/invitations/:token/accept', async (request) => {
-    const user = currentUser(request);
-    const { token } = tokenParamsSchema.parse(request.params);
-    const result = await acceptInvitation(token, user);
-    // El resumen del tablero (con el rol ya resuelto) viaja en `board`: es lo
-    // que lee la web para llevarte al tablero recién aceptado.
-    const access = await loadBoardAccess(user.id);
-    const record = access.get(result.boardId);
-    const board = record ? access.summary(record) : null;
-    const role = access.roleOf(result.boardId) ?? result.role;
-    return { ...result, role, board };
   });
 }

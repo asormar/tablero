@@ -19,6 +19,69 @@ import { registerRoutes } from './routes/index.js';
 
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
+/** Tope de caracteres del método+ruta en los mensajes de error (y en los logs). */
+export const MAX_URL_IN_MESSAGE = 200;
+
+/**
+ * Método + URL para un mensaje de error, acotado: un id de 10 000 caracteres no
+ * tiene por qué viajar entero en la respuesta del 404 ni en el log.
+ */
+export function shortenUrl(url: string, max: number = MAX_URL_IN_MESSAGE): string {
+  if (url.length <= max) return url;
+  return `${url.slice(0, max)}… (${url.length} caracteres)`;
+}
+
+/**
+ * Stack sin rutas absolutas: cada frame queda como `archivo.ts:línea:columna`.
+ * Un `err` serializado por pino guarda el stack completo con las rutas de la
+ * máquina (`C:\Users\…`), que no aportan nada al diagnóstico y filtran la
+ * estructura del host en los logs.
+ */
+export function sanitizeErrorStack(stack: string | undefined, maxLines = 20): string | undefined {
+  if (!stack) return undefined;
+  return stripAbsolutePaths(stack, maxLines);
+}
+
+/** `file:///C:/a/b/x.ts` (los módulos ESM de Node en Windows) → solo el nombre. */
+const FILE_URL_PATH = /file:\/\/+(?:[^\s()"']*\/)([^\s()"'/]+)/g;
+
+/**
+ * Ruta absoluta de Windows (`C:\a\b\x.ts` o `C:/a/b/x.ts`) → solo el nombre.
+ * El lookbehind evita comerse `s:/` de una URL (`https://…`).
+ */
+const WINDOWS_PATH = /(?<![\w:/])[A-Za-z]:[\\/](?:[^\s()"']*[\\/])*([^\s()"'\\/]+)/g;
+
+/** Ruta absoluta POSIX (`/a/b/x.ts`) → solo el nombre (no toca URLs `http://…`). */
+const POSIX_PATH = /(^|[\s"'(])\/(?:[^\s()"']*\/)*([^\s()"'/]+)/g;
+
+/**
+ * Quita las rutas absolutas de un texto (el mensaje y el stack de un `Error`):
+ * queda el nombre del archivo, que es lo que sirve para ubicar el fallo.
+ */
+export function stripAbsolutePaths(text: string, maxLines?: number): string {
+  const lines = text.split('\n');
+  const selected = maxLines === undefined ? lines : lines.slice(0, maxLines);
+  return selected
+    .map((line) =>
+      line
+        .replace(FILE_URL_PATH, '$1')
+        .replace(WINDOWS_PATH, '$1')
+        .replace(POSIX_PATH, (_match, prefix: string, file: string) => `${prefix}${file}`),
+    )
+    .join('\n');
+}
+
+/** Datos de un error para el log: nombre, mensaje y stack sin rutas absolutas. */
+export function describeErrorForLog(error: Error): { name: string; message: string; stack?: string } {
+  const description: { name: string; message: string; stack?: string } = {
+    name: error.name,
+    message: stripAbsolutePaths(error.message),
+  };
+  const stack = sanitizeErrorStack(error.stack);
+  if (stack) description.stack = stack;
+  return description;
+}
+
 function originOf(value: string | undefined): string | null {
   if (!value) return null;
   try {
@@ -60,7 +123,7 @@ function isZodError(error: unknown): error is ZodError {
   return error instanceof ZodError || (error instanceof Error && error.name === 'ZodError');
 }
 
-function errorHandler(this: FastifyInstance, error: Error, request: FastifyRequest, reply: FastifyReply): void {
+export function errorHandler(this: FastifyInstance, error: Error, request: FastifyRequest, reply: FastifyReply): void {
   if (error instanceof HttpError) {
     reply.code(error.statusCode).send(error.toApiError());
     return;
@@ -85,7 +148,7 @@ function errorHandler(this: FastifyInstance, error: Error, request: FastifyReque
       reply.code(409).send({ error: 'La operación viola una referencia', code: 'foreign_key_violation' } satisfies ApiError);
       return;
     }
-    request.log.error({ err: error, code: error.code }, 'Error de Prisma no mapeado');
+    request.log.warn({ ...describeErrorForLog(error), code: error.code }, 'Error de Prisma no mapeado');
     reply.code(500).send({ error: 'Error interno del servidor', code: 'internal_error' } satisfies ApiError);
     return;
   }
@@ -104,7 +167,10 @@ function errorHandler(this: FastifyInstance, error: Error, request: FastifyReque
     return;
   }
 
-  request.log.error({ err: error }, 'Error no controlado');
+  // Un 500 no es un error de la petición: se registra en `warn` con el stack
+  // recortado (sin rutas absolutas de la máquina) y el cliente recibe un
+  // mensaje genérico, sin detalles internos.
+  request.log.warn(describeErrorForLog(error), 'Error no controlado');
   reply.code(500).send({ error: 'Error interno del servidor', code: 'internal_error' } satisfies ApiError);
 }
 
@@ -161,7 +227,9 @@ export async function buildApp(): Promise<FastifyInstance> {
   app.addHook('onRequest', csrfGuard);
   app.setErrorHandler(errorHandler);
   app.setNotFoundHandler((request, reply) => {
-    reply.code(404).send({ error: `Ruta no encontrada: ${request.method} ${request.url}`, code: 'route_not_found' } satisfies ApiError);
+    reply
+      .code(404)
+      .send({ error: `Ruta no encontrada: ${request.method} ${shortenUrl(request.url)}`, code: 'route_not_found' } satisfies ApiError);
   });
 
   await registerRoutes(app);

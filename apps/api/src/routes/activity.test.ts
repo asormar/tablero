@@ -138,6 +138,19 @@ const db = vi.hoisted(() => {
 
 vi.mock('../db.js', () => ({ prisma: db.prisma }));
 
+/**
+ * Servidor de colaboración simulado: `liveBoardDocument` devuelve el documento
+ * vivo del tablero (o `null` si no hay ninguno abierto en memoria).
+ */
+const collab = vi.hoisted(() => ({ live: null as unknown }));
+
+vi.mock('../collab/server.js', () => ({
+  liveBoardDocument: () => collab.live as Y.Doc | null,
+  closeBoardConnections: async () => ({ connections: 0, unloaded: false, waitedMs: 0 }),
+  beginBoardRestore: () => undefined,
+  finishBoardRestore: () => undefined,
+}));
+
 vi.mock('../lib/session.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../lib/session.js')>();
   return {
@@ -169,6 +182,7 @@ async function buildApp(): Promise<FastifyInstance> {
 beforeEach(() => {
   db.reset();
   resetPresence();
+  collab.live = null;
   db.board('inicio', { title: 'Inicio' });
   db.board('proyecto', { title: 'Proyecto', parentBoardId: 'inicio' });
   db.board('ajeno', { title: 'Ajeno', ownerId: 'user_caro' });
@@ -201,6 +215,34 @@ describe('POST /api/boards/:id/activity', () => {
     expect(body.entries.map((entry) => entry.action)).toEqual(['element.create', 'board.publish']);
     // El actor sale de la sesión, no del cuerpo.
     expect(body.entries[0]).toMatchObject({ userId: 'user_ana', userName: 'Ana' });
+    await app.close();
+  });
+
+  it('valida contra el documento vivo cuando el tablero está abierto (el persistido va por detrás)', async () => {
+    // El persistido es la foto vieja (sin la nota nueva); el vivo ya la tiene.
+    const persisted = createBoardDoc();
+    addElement(persisted, 'note', { createdBy: 'user_ana', x: 0, y: 0 }, 'test');
+    db.documents.set('proyecto', Buffer.from(Y.encodeStateAsUpdate(persisted)));
+
+    const live = createBoardDoc();
+    addElement(live, 'note', { createdBy: 'user_ana', x: 0, y: 0 }, 'test');
+    const recienCreada = addElement(live, 'note', { createdBy: 'user_ana', x: 0, y: 100 }, 'test');
+    collab.live = live;
+
+    const app = await buildApp();
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/boards/proyecto/activity',
+      payload: {
+        entries: [{ action: 'element.create', elementId: recienCreada, elementType: 'note' }],
+      },
+    });
+
+    expect(response.statusCode).toBe(201);
+    // Antes de mirar el documento vivo esto se descartaba: la nota todavía no
+    // estaba en `BoardDocument`.
+    expect(response.json()).toMatchObject({ accepted: 1, discarded: 0 });
+    expect(db.activities[0]).toMatchObject({ elementId: recienCreada, action: 'element.create' });
     await app.close();
   });
 

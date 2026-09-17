@@ -279,6 +279,12 @@ describe('barrido de tareas vencidas', () => {
     const today = new Date().toISOString().slice(0, 10);
     expect(String(overdue[0]!.dedupeKey)).toMatch(/^task-overdue:proyecto:.+:item-1:\d{4}-\d{2}-\d{2}:user_(ana|beto)$/);
     expect(String(overdue[0]!.dedupeKey)).toContain(`:${today}:`);
+    // `meta.dueDate` es el vencimiento real de la tarea (ayer), no el día del
+    // barrido: el aviso tiene que decir cuándo venció.
+    const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+    const meta = overdue[0]!.meta as { dueDate: string };
+    expect(meta.dueDate).toBe(yesterday);
+    expect(meta.dueDate).not.toBe(today);
 
     // Segundo barrido (se reinicia el throttle del panel): no duplica.
     resetPanelSweepThrottle();

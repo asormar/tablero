@@ -189,11 +189,13 @@ describe('GET /api/boards/:id/versions', () => {
 });
 
 describe('GET /api/boards/:id/versions/:vid', () => {
-  it('devuelve la previsualización con los tipos de elemento', async () => {
+  it('devuelve la previsualización con los tipos de elemento y el primer texto', async () => {
     const doc = createBoardDoc();
-    addElement(doc, 'note', { createdBy: 'ana', x: 0, y: 0 }, 'test');
+    const primeraNota = addElement(doc, 'note', { createdBy: 'ana', x: 0, y: 0 }, 'test');
     addElement(doc, 'note', { createdBy: 'ana', x: 0, y: 100 }, 'test');
     addElement(doc, 'todo', { createdBy: 'ana', x: 0, y: 200, items: [] }, 'test');
+    const fragment = ensureTextFragment(doc, primeraNota, 'test');
+    if (fragment) writeTextParagraphs(fragment, 'Primera nota con texto', 'test');
     db.versions.push({
       id: 'ver_uno',
       boardId: 'board_uno',
@@ -209,11 +211,37 @@ describe('GET /api/boards/:id/versions/:vid', () => {
     expect(response.statusCode).toBe(200);
     expect(response.json()).toMatchObject({
       version: { id: 'ver_uno', origin: 'auto' },
-      preview: { title: 'Tablero con historial', elementCount: 3, types: { note: 2, todo: 1 } },
+      preview: {
+        title: 'Tablero con historial',
+        elementCount: 3,
+        types: { note: 2, todo: 1 },
+        // El adelanto de la versión es el texto de la primera nota.
+        firstText: 'Primera nota con texto',
+      },
     });
 
     const missing = await app.inject({ method: 'GET', url: '/api/boards/board_uno/versions/no_existe' });
     expect(missing.statusCode).toBe(404);
+    await app.close();
+  });
+
+  it('`firstText` queda en null si la instantánea no tiene ningún texto', async () => {
+    const doc = createBoardDoc();
+    addElement(doc, 'note', { createdBy: 'ana', x: 0, y: 0 }, 'test');
+    db.versions.push({
+      id: 'ver_vacia',
+      boardId: 'board_uno',
+      yjsState: Buffer.from(Y.encodeStateAsUpdate(doc)),
+      elementCount: 1,
+      sizeBytes: 40,
+      origin: 'auto',
+      createdAt: new Date(),
+    });
+
+    const app = await buildApp();
+    const response = await app.inject({ method: 'GET', url: '/api/boards/board_uno/versions/ver_vacia' });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().preview).toMatchObject({ elementCount: 1, firstText: null });
     await app.close();
   });
 });

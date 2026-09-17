@@ -15,6 +15,7 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 
 import { HocuspocusProvider, HocuspocusProviderWebsocket } from '@hocuspocus/provider';
+import { addComment, addElement, readComments } from '@tablero/shared';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import WebSocket from 'ws';
 import * as Y from 'yjs';
@@ -113,6 +114,10 @@ const db = vi.hoisted(() => {
       },
     },
     searchIndex: { deleteMany: async () => ({ count: 0 }), upsert: async () => ({}) },
+    // La sincronización de comentarios valida los autores contra `User`.
+    user: {
+      findMany: async ({ where }: { where: { id: { in: string[] } } }) => where.id.in.map((id) => ({ id })),
+    },
     $transaction: async (arg: unknown) =>
       Array.isArray(arg) ? Promise.all(arg) : (arg as (tx: unknown) => Promise<unknown>)(prisma),
   };
@@ -354,6 +359,61 @@ describe('permisos por rol en el socket', () => {
     const serverDocument = collab.hocuspocus.documents.get('board_compartido');
     expect(serverDocument).toBeDefined();
     expect(serverDocument!.getMap('lector').get('intento')).toBeUndefined();
+    close();
+  });
+
+  it('un comentarista crea comentarios por el socket y no puede editar una nota', async () => {
+    db.addBoard('board_comentarista');
+    db.addMember('board_comentarista', 'user_beto', 'commenter');
+
+    const { provider, close } = createProvider('board_comentarista', VIEWER_TOKEN);
+    const synced = await waitFor(() => provider.synced);
+    expect(synced).toBe(true);
+    // El scope del protocolo sigue siendo «solo lectura»: el permiso de
+    // comentar es una excepción por mensaje, no una escritura libre.
+    expect(provider.authorizedScope).toBe('readonly');
+
+    // 1) Un comentario: el update toca solo `comments` y el servidor lo aplica.
+    const commentId = addComment(
+      provider.document,
+      { elementId: null, x: 40, y: 60, authorId: 'user_beto', authorName: 'Beto', body: 'Comentario del comentarista' },
+      'test',
+    );
+    const applied = await waitFor(() => {
+      const serverDocument = collab.hocuspocus.documents.get('board_comentarista');
+      return serverDocument ? readComments(serverDocument).some((entry) => entry.id === commentId) : false;
+    });
+    expect(applied).toBe(true);
+
+    // 2) Una nota: el update toca `elements` y se descarta.
+    const noteId = addElement(provider.document, 'note', { createdBy: 'user_beto', x: 10, y: 10 }, 'test');
+    await new Promise((resolve) => setTimeout(resolve, 1_500));
+    const serverDocument = collab.hocuspocus.documents.get('board_comentarista')!;
+    expect(serverDocument.getMap('elements').get(noteId)).toBeUndefined();
+
+    // El descarte no cierra la conexión (el cliente puede tener cambios
+    // locales): el canal sigue vivo para lo que sí puede hacer.
+    expect(provider.isConnected).toBe(true);
+    close();
+  });
+
+  it('un lector no puede comentar (el update de `comments` se descarta)', async () => {
+    db.addBoard('board_lector_comentarios');
+    db.addMember('board_lector_comentarios', 'user_beto', 'viewer');
+
+    const { provider, close } = createProvider('board_lector_comentarios', VIEWER_TOKEN);
+    const synced = await waitFor(() => provider.synced);
+    expect(synced).toBe(true);
+
+    const commentId = addComment(
+      provider.document,
+      { elementId: null, x: 0, y: 0, authorId: 'user_beto', authorName: 'Beto', body: 'No debería entrar' },
+      'test',
+    );
+    await new Promise((resolve) => setTimeout(resolve, 1_500));
+    const serverDocument = collab.hocuspocus.documents.get('board_lector_comentarios');
+    expect(serverDocument).toBeDefined();
+    expect(readComments(serverDocument!).some((entry) => entry.id === commentId)).toBe(false);
     close();
   });
 

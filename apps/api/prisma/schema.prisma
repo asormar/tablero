@@ -32,7 +32,11 @@ model User {
   avatarUrl    String?
   passwordHash String
   settings     Json     @default("{}")
-  captureToken String   @unique @default(cuid())
+  /// Token personal de captura: 32 bytes aleatorios en base64url (no un cuid
+  /// predecible). Se genera en `createUserWithRootBoard` y se rota con
+  /// `POST /api/settings/capture-token`; sin `@default` para que ningún alta
+  /// pueda quedarse con uno generado por la librería.
+  captureToken String   @unique
   createdAt    DateTime @default(now())
 
   boards        Board[]        @relation("BoardOwner")

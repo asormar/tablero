@@ -180,12 +180,25 @@ describe('Markdown y texto plano', () => {
     expect(markdown).toContain('### 📄 Tablero: Tablero hijo');
   });
 
-  it('el texto plano pierde la sintaxis pero conserva el contenido', () => {
+  it('el texto plano pierde la sintaxis pero conserva el contenido y los metadatos de las tareas', () => {
     const plain = renderPlainText(data);
     expect(plain).toContain('TABLERO DE PRUEBA');
-    expect(plain).toContain('[x] Con acento: reunión');
+    // Misma información que el Markdown: fecha y prioridad de la tarea.
+    expect(plain).toContain('[x] Con acento: reunión (vence 2026-09-20, prioridad high)');
+    // Las subtareas siguen sangradas y sin metadatos propios.
+    expect(plain).toContain('    [x] Subtarea hecha');
+    expect(plain).not.toContain('Subtarea hecha (');
     expect(plain).toContain('uno\tdos');
     expect(plain).not.toContain('<mark>');
+  });
+
+  it('el texto plano de las tareas lleva lo mismo que el Markdown (fecha y prioridad)', () => {
+    const markdown = renderMarkdown(data);
+    const plain = renderPlainText(data);
+    for (const fragment of ['vence 2026-09-20', 'prioridad high']) {
+      expect(markdown).toContain(fragment);
+      expect(plain).toContain(fragment);
+    }
   });
 
   it('el texto indexable por elemento sale del fragmento enriquecido', () => {

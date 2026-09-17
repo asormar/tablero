@@ -1,5 +1,7 @@
 /** Usuarios: alta con tablero raíz y utilidades de contraseña. */
 
+import { randomBytes } from 'node:crypto';
+
 import { hash as argonHash, verify as argonVerify } from '@node-rs/argon2';
 import { ROOT_BOARD_TITLE } from '@tablero/shared';
 import type { User } from '@prisma/client';
@@ -44,6 +46,17 @@ export async function verifyPassword(passwordHash: string, password: string): Pr
 export const ROOT_BOARD_ICON = '🏠';
 
 /**
+ * Token personal de captura: 32 bytes aleatorios en base64url (43 caracteres),
+ * el mismo formato que el token de sesión. Antes era el `cuid()` que ponía
+ * Prisma por defecto: predecible (lleva el timestamp y un contador) y sin
+ * rotación. Se genera en el alta (`createUserWithRootBoard`) y se puede rotar
+ * con `POST /api/settings/capture-token`, que invalida el anterior.
+ */
+export function createCaptureToken(): string {
+  return randomBytes(32).toString('base64url');
+}
+
+/**
  * Alta de usuario: cuenta + tablero raíz 'Inicio' + documento Yjs vacío, todo
  * en una transacción (un usuario sin raíz deja la app inutilizable).
  */
@@ -51,7 +64,7 @@ export async function createUserWithRootBoard(input: { email: string; name: stri
   const passwordHash = await hashPassword(input.password);
   return prisma.$transaction(async (tx) => {
     const user = await tx.user.create({
-      data: { email: input.email, name: input.name, passwordHash },
+      data: { email: input.email, name: input.name, passwordHash, captureToken: createCaptureToken() },
     });
     const rootBoard = await tx.board.create({
       data: {

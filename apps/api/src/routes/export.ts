@@ -8,6 +8,13 @@
  * El ZIP incluye los archivos reales leídos de MinIO en streaming (un archivo
  * por vez, sin cargarlos enteros en memoria) y también el Markdown y el texto
  * plano, para que la copia sea legible sin descomprimir el JSON.
+ *
+ * **Rol mínimo:** la exportación de un tablero exige **editor** (o el dueño). El
+ * JSON y el ZIP llevan el `document.state` completo (el estado Yjs en base64,
+ * que restaura el documento entero) y el Markdown/texto llevan todo el
+ * contenido: no es una vista de lectura más. Un lector recibe 403
+ * `forbidden_role`. El ZIP de la cuenta (`GET /api/export/account`) es solo de
+ * los tableros propios.
  */
 
 import type { Asset } from '@prisma/client';
@@ -18,7 +25,7 @@ import * as Y from 'yjs';
 import { z } from 'zod';
 
 import { prisma } from '../db.js';
-import { requireBoardView, resolveBoardAccessFrom } from '../lib/access.js';
+import { requireBoardEditor, resolveBoardAccessFrom } from '../lib/access.js';
 import { loadBoardAccess, type BoardAccess, type BoardRecord } from '../lib/boards.js';
 import { encodeStateBase64, loadBoardDoc } from '../lib/documents.js';
 import {
@@ -114,7 +121,8 @@ export async function exportRoutes(app: FastifyInstance): Promise<void> {
     const { id } = idParamsSchema.parse(request.params);
     const query = boardExportQuerySchema.parse(request.query ?? {});
     const access = await loadBoardAccess(user.id);
-    const { board: record } = requireBoardView(resolveBoardAccessFrom(access, id));
+    // Editor o dueño: el payload (JSON/ZIP) incluye el estado Yjs completo.
+    const { board: record } = requireBoardEditor(resolveBoardAccessFrom(access, id));
 
     const baseName = safeZipName(record.title, 'tablero');
     const format = FORMATS[query.format];

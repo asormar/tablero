@@ -14,7 +14,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import Fastify, { type FastifyInstance } from 'fastify';
 import { ZodError } from 'zod';
-import { addComment, addElement, createBoardDoc, formatZodError, readComments } from '@tablero/shared';
+import { addComment, addElement, createBoardDoc, formatZodError, readComments, removeElements } from '@tablero/shared';
 import * as Y from 'yjs';
 
 import { HttpError } from '../lib/errors.js';
@@ -74,6 +74,14 @@ const db = vi.hoisted(() => {
         if (where.userId) rows = rows.filter((row) => row.userId === where.userId);
         return rows.map((row) => ({ ...row, user: users.get(row.userId) ?? null }));
       },
+    },
+    user: {
+      /**
+       * La sincronización de comentarios valida los autores antes de escribir:
+       * los ids que no están en `users` se ignoran (documento manipulado).
+       */
+      findMany: async ({ where }: { where: { id: { in: string[] } } }) =>
+        where.id.in.filter((id) => users.has(id)).map((id) => ({ id })),
     },
     boardDocument: {
       findUnique: async ({ where }: { where: { boardId: string } }) => {
@@ -320,6 +328,79 @@ describe('GET /api/boards/:id/comments', () => {
     db.members.delete('proyecto:user_caro');
     const response = await app.inject({ method: 'GET', url: '/api/boards/ajeno/comments' });
     expect(response.statusCode).toBe(404);
+    await app.close();
+  });
+
+  it('un comentario anclado a una tarjeta borrada queda como chincheta libre', async () => {
+    const { cardId, rootId } = seedDocument('proyecto');
+    const app = await buildApp();
+    const first = await app.inject({ method: 'GET', url: '/api/boards/proyecto/comments' });
+    const firstRow = (first.json().comments as { id: string; elementId: string | null }[]).find((row) => row.id === rootId)!;
+    expect(firstRow.elementId).toBe(cardId);
+
+    // Se borra la tarjeta del documento (como haría el cliente) y se resincroniza.
+    const doc = createBoardDoc();
+    Y.applyUpdate(doc, new Uint8Array(db.documents.get('proyecto')!));
+    removeElements(doc, [cardId], 'test');
+    db.documents.set('proyecto', Buffer.from(Y.encodeStateAsUpdate(doc)));
+
+    const after = await app.inject({ method: 'GET', url: '/api/boards/proyecto/comments' });
+    expect(after.statusCode).toBe(200);
+    const row = (after.json().comments as { id: string; elementId: string | null; body: string }[]).find(
+      (candidate) => candidate.id === rootId,
+    )!;
+    // El comentario no se pierde: pierde el ancla (y sigue en el listado).
+    expect(row.elementId).toBeNull();
+    expect(row.body).toBe('¿Lo revisás, @beto?');
+    await app.close();
+  });
+
+  it('un comentario de un autor que no existe se ignora sin tumbar la sincronización', async () => {
+    const doc = createBoardDoc();
+    const cardId = addElement(doc, 'note', { createdBy: 'user_ana', x: 0, y: 0 }, 'test');
+    addComment(
+      doc,
+      { elementId: cardId, authorId: 'user_fantasma', authorName: 'Fantasma', body: 'Autor borrado', mentions: [] },
+      'test',
+    );
+    addComment(doc, { elementId: cardId, authorId: 'user_ana', authorName: 'Ana', body: 'Autor real', mentions: [] }, 'test');
+    // Una respuesta sin su hilo padre (documento manipulado) tampoco puede entrar.
+    addComment(
+      doc,
+      { parentId: 'cm_inexistente', elementId: cardId, authorId: 'user_ana', authorName: 'Ana', body: 'Respuesta huérfana', mentions: [] },
+      'test',
+    );
+    db.documents.set('proyecto', Buffer.from(Y.encodeStateAsUpdate(doc)));
+
+    const app = await buildApp();
+    const response = await app.inject({ method: 'GET', url: '/api/boards/proyecto/comments' });
+    expect(response.statusCode).toBe(200);
+    const rows = response.json().comments as { body: string }[];
+    expect(rows.map((row) => row.body)).toEqual(['Autor real']);
+    expect(response.json().open).toBe(1);
+    await app.close();
+  });
+
+  it('la mención resuelve por cualquier palabra del nombre (`@Caro` para «D Caro»)', async () => {
+    // Solo hay una persona cuyo nombre contiene «Caro»: la mención `@Caro` es suya.
+    db.members.delete('proyecto:user_caro');
+    db.users.set('user_dcaro', { id: 'user_dcaro', email: 'dcaro@tablero.test', name: 'D Caro', avatarUrl: null });
+    db.members.set('proyecto:user_dcaro', { boardId: 'proyecto', userId: 'user_dcaro', role: 'viewer' });
+
+    const doc = createBoardDoc();
+    const cardId = addElement(doc, 'note', { createdBy: 'user_ana', x: 0, y: 0 }, 'test');
+    addComment(
+      doc,
+      { elementId: cardId, authorId: 'user_ana', authorName: 'Ana', body: '¿Lo mirás, @Caro?', mentions: [] },
+      'test',
+    );
+    db.documents.set('proyecto', Buffer.from(Y.encodeStateAsUpdate(doc)));
+
+    const app = await buildApp();
+    const response = await app.inject({ method: 'GET', url: '/api/boards/proyecto/comments' });
+    expect(response.statusCode).toBe(200);
+    const mentions = db.notifications.filter((row) => row.kind === 'mention');
+    expect(mentions.map((row) => row.userId)).toEqual(['user_dcaro']);
     await app.close();
   });
 });

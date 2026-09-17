@@ -18,7 +18,7 @@ import { idSchema, publishBoardSchema, publicBoardQuerySchema, publicDocumentQue
 import { z } from 'zod';
 
 import { prisma } from '../db.js';
-import { requireBoardAccess, resolveBoardAccess } from '../lib/access.js';
+import { requireBoardAccess, resolveBoardAccess, type BoardAccessResolution } from '../lib/access.js';
 import { forbidden, notFound, unauthorized } from '../lib/errors.js';
 import {
   checkPublicPassword,
@@ -71,14 +71,28 @@ async function requirePublicBoard(slug: string, password: string | undefined): P
   return board;
 }
 
+/**
+ * Tablero del dueño para gestionar la publicación, o 404.
+ *
+ * Publicar es una acción del dueño, pero la respuesta **no** distingue «miembro
+ * sin permiso» (403) de «ajeno» (404): las tres rutas de gestión responden
+ * igual que el resto del API a quien no puede —404, sin revelar la existencia
+ * del tablero— y el endpoint no sirve para sondear la relación del llamador con
+ * el tablero.
+ */
+function requirePublishOwner(resolution: BoardAccessResolution) {
+  const required = requireBoardAccess(resolution, 'viewer');
+  if (required.role !== 'owner') throw notFound('El tablero no existe o no tenés acceso');
+  return required.board;
+}
+
 /** Scope protegido (con sesión): gestión de la publicación. */
 export async function publishRoutes(app: FastifyInstance): Promise<void> {
   app.get('/boards/:id/publish', async (request) => {
     const user = currentUser(request);
     const { id } = boardParamsSchema.parse(request.params);
     const resolution = await resolveBoardAccess(user.id, id);
-    const { board, role } = requireBoardAccess(resolution, 'viewer');
-    if (role !== 'owner') throw forbidden('Publicar es una acción del dueño', 'forbidden_owner');
+    const board = requirePublishOwner(resolution);
 
     const row = await prisma.board.findUnique({
       where: { id },
@@ -106,8 +120,7 @@ export async function publishRoutes(app: FastifyInstance): Promise<void> {
     const { id } = boardParamsSchema.parse(request.params);
     const input = publishBoardSchema.parse(request.body ?? {});
     const resolution = await resolveBoardAccess(user.id, id);
-    const { board, role } = requireBoardAccess(resolution, 'viewer');
-    if (role !== 'owner') throw forbidden('Publicar es una acción del dueño', 'forbidden_owner');
+    const board = requirePublishOwner(resolution);
 
     const result = await publishBoard(id, input, {
       publishedSlug: board.publishedSlug,
@@ -134,8 +147,7 @@ export async function publishRoutes(app: FastifyInstance): Promise<void> {
     const user = currentUser(request);
     const { id } = boardParamsSchema.parse(request.params);
     const resolution = await resolveBoardAccess(user.id, id);
-    const { role } = requireBoardAccess(resolution, 'viewer');
-    if (role !== 'owner') throw forbidden('Despublicar es una acción del dueño', 'forbidden_owner');
+    requirePublishOwner(resolution);
     await unpublishBoard(id);
     request.log.info({ boardId: id }, 'Tablero despublicado');
     return { ok: true };

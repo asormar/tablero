@@ -9,11 +9,14 @@
  *   rechaza igual que en `GET /api/boards/:id/document` (409 `board_trashed`).
  * - **Permisos por rol**: los resuelve `resolveBoardAccess` (la misma función
  *   que usan las rutas REST). El rol viaja en el estado de la conexión y un
- *   `viewer` (o `commenter`) no puede aplicar updates: el servidor los descarta
- *   (`readOnly` del protocolo más una segunda barrera en `beforeHandleMessage`).
- *   Los cierres usan **solo** los códigos del protocolo: 4401 `Unauthorized`
- *   (sin sesión), 4403 `Forbidden` (sin permiso o permiso perdido) y 4205
- *   `Reset Connection` (guardia de restauración). 4403 y 4205 son reabribles.
+ *   `viewer` no puede aplicar updates: el servidor los descarta (`readOnly` del
+ *   protocolo más una segunda barrera en `beforeHandleMessage`). Un
+ *   `commenter` tiene una excepción acotada: **solo** los updates que tocan el
+ *   mapa de comentarios (`comment-writes.ts`) se aplican; cualquier otro se
+ *   descarta con el mismo camino. Los cierres usan **solo** los códigos del
+ *   protocolo: 4401 `Unauthorized` (sin sesión), 4403 `Forbidden` (sin permiso o
+ *   permiso perdido) y 4205 `Reset Connection` (guardia de restauración). 4403 y
+ *   4205 son reabribles.
  * - **Presencia**: al conectar se registra nombre, rol y color (derivado del id)
  *   en `lib/presence.ts`; `GET /api/boards/:id/presence` la expone.
  * - Origen: si el handshake trae cookie de sesión, el `Origin` tiene que ser
@@ -25,9 +28,9 @@
 
 import type { IncomingMessage, Server as HttpServer } from 'node:http';
 
-import { Hocuspocus, IncomingMessage as HocuspocusMessage, MessageType } from '@hocuspocus/server';
+import { Hocuspocus, IncomingMessage as HocuspocusMessage, MessageType, OutgoingMessage } from '@hocuspocus/server';
 import type { EffectiveRole } from '@tablero/shared';
-import { canEdit, canView, cursorColor, elementCount } from '@tablero/shared';
+import { canComment, canEdit, canView, cursorColor, elementCount } from '@tablero/shared';
 import { WebSocketServer } from 'ws';
 import * as Y from 'yjs';
 
@@ -39,6 +42,7 @@ import { syncSearchIndex } from '../lib/documents.js';
 import { releasePresence, touchPresence } from '../lib/presence.js';
 import { SESSION_COOKIE, parseCookieHeader, resolveSession } from '../lib/session.js';
 import { pruneVersions, recordVersion } from '../lib/versions.js';
+import { isCommentsOnlyUpdate } from './comment-writes.js';
 
 export const COLLAB_PATH = '/collab';
 
@@ -186,6 +190,20 @@ export function boardConnectionUserIds(boardId: string): string[] {
 }
 
 /**
+ * Documento **vivo** de un tablero, si está abierto en memoria en el servidor
+ * de colaboración (`null` si no hay servidor o el tablero no está abierto).
+ *
+ * Es el mismo registro del que sale la persistencia (`onStoreDocument`), así que
+ * va por delante del estado de `BoardDocument`: este último se escribe con
+ * debounce (2 s, tope 10 s) y no refleja lo que el cliente acaba de hacer. Los
+ * caminos que validan entradas del cliente (por ejemplo la actividad) tienen que
+ * mirar acá primero.
+ */
+export function liveBoardDocument(boardId: string): Y.Doc | null {
+  return activeServer?.documents.get(boardId) ?? null;
+}
+
+/**
  * Transacción sobre el documento vivo (si hay servidor). Devuelve `false`
  * cuando no hay servidor: el llamador decide el camino alternativo.
  */
@@ -272,21 +290,26 @@ function protocolError(message: string, code: number, reason: string): Error {
 const SYNC_STEP2 = 1;
 const SYNC_UPDATE = 2;
 
+/** Mensaje que escribe en el documento: su clase y el update de Yjs. */
+export type DocumentWrite = { kind: 'update' | 'step2'; payload: Uint8Array };
+
 /**
- * ¿El mensaje entrante trae cambios de documento? Se lee la cabecera del
- * protocolo (nombre del documento + tipo + subtipo) sin depender de internals:
- * awareness y sync-step1 no escriben, sync-step2 y update sí.
+ * Mensaje entrante que escribe en el documento (`null` si no lo es): se lee la
+ * cabecera del protocolo (nombre del documento + tipo + subtipo) sin depender de
+ * internals. Awareness y sync-step1 no escriben; sync-step2 y update sí, y su
+ * contenido es el update de Yjs que va a continuación.
  */
-function isDocumentWrite(update: Uint8Array): boolean {
+export function documentWrite(message: Uint8Array): DocumentWrite | null {
   try {
-    const message = new HocuspocusMessage(update);
-    message.readVarString();
-    const type = message.readVarUint();
-    if (type !== MessageType.Sync) return false;
-    const subType = message.readVarUint();
-    return subType === SYNC_STEP2 || subType === SYNC_UPDATE;
+    const incoming = new HocuspocusMessage(message);
+    incoming.readVarString();
+    const type = incoming.readVarUint();
+    if (type !== MessageType.Sync) return null;
+    const subType = incoming.readVarUint();
+    if (subType !== SYNC_STEP2 && subType !== SYNC_UPDATE) return null;
+    return { kind: subType === SYNC_STEP2 ? 'step2' : 'update', payload: incoming.readVarUint8Array() };
   } catch {
-    return false;
+    return null;
   }
 }
 
@@ -298,6 +321,19 @@ export function createCollabServer(options: { log?: (message: string) => void } 
     quiet: true,
     debounce: 2000,
     maxDebounce: 10_000,
+    /*
+     * Timeout de conexión y del *idle* de autenticación. Impacta en dos cosas:
+     *
+     *   - Un upgrade que nunca manda el mensaje de autenticación (o lo manda
+     *     inválido) quedaba con el TCP abierto hasta el valor por defecto de
+     *     Hocuspocus (**30 s**, `Configuration.timeout` en la librería). Eso es
+     *     una conexión semiabierta que ocupa un socket 30 s por intento; con 10 s
+     *     se corta con 4401 `Unauthorized` mucho antes.
+     *   - Es también el período del ping/pong que la librería usa para detectar
+     *     conexiones muertas (`Connection.check`), así que el intervalo no baja
+     *     del segundo: 10 s pinguea liviano y detecta una conexión caída en ~20 s.
+     */
+    timeout: 10_000,
     // El apagado lo maneja el servidor Fastify (onClose), no las señales del SO.
     stopOnSignals: false,
 
@@ -397,17 +433,44 @@ export function createCollabServer(options: { log?: (message: string) => void } 
     },
 
     /**
-     * Tercera barrera al aplicar updates: el protocolo ya descarta los cambios
-     * de un canal de solo lectura (`readOnly`), acá queda el registro de que el
-     * intento llegó y se descartó (y la comprobación explícita de que el canal
-     * no tiene permiso de escritura).
+     * Tercera barrera al aplicar updates, ahora **por tipo de cambio**.
      *
-     * No se cierra la conexión: el cliente del lector puede tener cambios
+     * El editor y el dueño pasan de largo. Para el resto:
+     *
+     *   - un `viewer` no escribe nada: `readOnly` queda en `true` y el
+     *     receptor del protocolo descarta sync-step2 y update (como siempre);
+     *   - un `commenter` **sí** puede escribir comentarios: si el update toca
+     *     solo `doc.getMap('comments')` (`comment-writes.ts`), se aplica **acá
+     *     mismo** y el receptor del protocolo no lo toca (el canal sigue en solo
+     *     lectura); cualquier otro update se descarta y queda en el log.
+     *
+     * Por qué se aplica acá y no se deja `readOnly = false` para que lo aplique
+     * el receptor: `readOnly` es estado de la conexión y el receptor lo consulta
+     * *después* del hook. Dos mensajes seguidos del cliente (una creación de
+     * comentario son dos transacciones) llegan en el mismo tick y el hook del
+     * segundo pisaba el flag antes de que corriera el apply del primero: el
+     * update permitido se perdía. Aplicando en el hook, decisión y aplicación
+     * son la misma unidad.
+     *
+     * Un lote mixto (comentario + edición en el mismo update) se descarta
+     * entero: un update de Yjs no se puede aplicar por partes. El cliente
+     * reintenta sus cambios locales.
+     *
+     * Limitación conocida (de Yjs, no del filtro): si el cliente arrastra
+     * cambios locales que el servidor no aceptó —un editor degradado a
+     * comentarista con ediciones sin subir, o un cliente hostil—, esos cambios
+     * dejan un **hueco en el reloj** de ese cliente y los structs posteriores
+     * (comentarios incluidos) quedan en `store.pendingStructs` hasta que el
+     * hueco se llene, que es lo mismo que le pasa a cualquier update de Yjs que
+     * llega con un hueco. Un comentarista con el documento sincronizado (el
+     * caso de la interfaz: su rol no le deja editar) no lo tiene.
+     *
+     * No se cierra la conexión: el cliente descartado puede tener cambios
      * locales sin sincronizar y cerrarle el socket lo dejaría reconectando en
      * bucle. El cierre con 4403 `Forbidden` se reserva para cuando el permiso
      * *cambia* (expulsión, cambio de rol, tablero a la papelera).
      */
-    async beforeHandleMessage({ connection, update, documentName }) {
+    async beforeHandleMessage({ connection, update, document, documentName }) {
       const context = connection.context as CollabContext | undefined;
       // Sin sesión en el contexto (no debería pasar: el handshake lo exige) la
       // conexión se cierra con 4401 `Unauthorized`.
@@ -415,8 +478,23 @@ export function createCollabServer(options: { log?: (message: string) => void } 
         throw protocolError('No autenticado', UNAUTHORIZED_CODE, 'Unauthorized');
       }
       if (context.canWrite) return;
-      if (!isDocumentWrite(update)) return;
-      log(`collab: ${context.userId} intentó escribir en ${documentName} como ${context.role}: update descartado`);
+      const write = documentWrite(update);
+      if (write === null) return; // awareness o sync-step1: no escriben
+      if (canComment(context.role) && isCommentsOnlyUpdate(document, write.payload)) {
+        Y.applyUpdate(document, write.payload, connection);
+        if (write.kind === 'update') {
+          // El receptor del protocolo va a mandar `syncStatus(false)` (canal en
+          // solo lectura) pese a que el update se aplicó: el acuse de este
+          // camino lo manda el servidor desde acá, para que el cliente no crea
+          // que su comentario quedó sin guardar.
+          connection.send(new OutgoingMessage(documentName).writeSyncStatus(true).toUint8Array());
+        }
+        return;
+      }
+      log(
+        `collab: ${context.userId} intentó escribir en ${documentName} como ${context.role}: update descartado` +
+          (canComment(context.role) ? ' (solo puede comentar)' : ''),
+      );
     },
 
     /** Suelta la presencia del usuario cuando se va su última conexión. */

@@ -148,6 +148,8 @@ export type CreateInvitationInput = {
   boardTitle: string;
   email: string;
   role: BoardRole;
+  /** Dueño del tablero: invitarse a sí mismo no tiene sentido (409 `already_owner`). */
+  ownerId: string;
   invitedById: string;
   invitedByName: string;
   expiresInDays?: number | undefined;
@@ -155,11 +157,14 @@ export type CreateInvitationInput = {
 
 /**
  * Crea (o renueva) la invitación y manda el email. Si el email ya es miembro se
- * rechaza: el rol se cambia con `PATCH /members/:userId`.
+ * rechaza: el rol se cambia con `PATCH /members/:userId`. El email del propio
+ * dueño también se rechaza (`already_owner`, como en el alta directa): generaría
+ * una invitación basura que al aceptarse solo devuelve `alreadyMember`.
  */
 export async function createInvitation(input: CreateInvitationInput): Promise<InvitationSummary> {
   const existingMember = await prisma.user.findUnique({ where: { email: input.email }, select: { id: true } });
   if (existingMember) {
+    if (existingMember.id === input.ownerId) throw conflict('Ese usuario ya es el dueño del tablero', 'already_owner');
     const membership = await prisma.boardMember.findUnique({
       where: { boardId_userId: { boardId: input.boardId, userId: existingMember.id } },
       select: { id: true },

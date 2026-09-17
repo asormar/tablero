@@ -113,3 +113,21 @@ comentar) y uno de arranque limpio (`typecheck` sin `prisma generate`).
 - La ventana de presencia en tiempo real y la deduplicación de la notificación de
   vencidas cruzando medianoche (verificadas por código y tests, no en vivo).
 - Concurrencia: dos sockets escribiendo comentarios a la vez.
+
+## Resolución (arreglos posteriores)
+
+Aplicada por otro agente, sin commits en este paso; cada punto con su test.
+
+| # | Arreglo |
+| --- | --- |
+| 1 | **El comentarista comenta por el socket.** `beforeHandleMessage` filtra por **tipo de cambio** (`apps/api/src/collab/comment-writes.ts`): un update que solo toca `doc.getMap('comments')` se aplica ahí mismo y el resto de los updates se descarta. El update se aplica en el hook (no con `readOnly = false`: el flag es estado de la conexión y dos mensajes seguidos del cliente —los dos de `addComment`— se pisaban). Tests en `collab/comment-writes.test.ts` y `collab/server.test.ts`; pasos nuevos en `smoke:colaboracion` (comentarista comenta y no edita; el lector no comenta). |
+| 2 | **`postinstall` de la raíz** (`prisma generate`) y nota en el README. Comprobado en un checkout limpio: `pnpm install` + `pnpm -r typecheck` en verde (sin el cliente generado: 48 errores). |
+| 3 | **Comentarios huérfanos**: `elementId` se valida contra el documento; si el ancla no existe queda en `null` (chincheta libre, el comentario no se pierde). Contrato documentado en `lib/comments.ts` y en `ARCHITECTURE.md`. |
+| 4 | **`GET /api/invitations/:token` es público**: ruta movida a su propio plugin fuera del scope con sesión (registrada en `routes/index.ts`) y test contra el registro real (`routes/public-invitation.test.ts`). |
+| 5 | **Autor inexistente en la sincronización**: se ignora (y también una respuesta sin su hilo padre) en vez de tumbar la petición; test en `routes/comments.test.ts`. |
+| 6 | `meta.dueDate` guarda el vencimiento real (`today` queda solo en la `dedupeKey`); `elementType` de actividad acepta cualquier tipo del documento (ya no rechaza `sticky`); el cambio de rol/expulsión cierra (y cuenta) las conexiones del afectado **en todo el subárbol**; publicar responde 404 a cualquier no-dueño; el dueño no puede invitarse (409 `already_owner`); las menciones resuelven por cualquier palabra del nombre; `ARCHITECTURE.md` dice 4403 (no 4409). |
+
+Quedan sin tocar los hallazgos 11 (el 401 de la vista pública con contraseña
+confirma el slug), 14 (`assigneeId` sin documentar), 15 (`phase5.css` de 1121
+líneas) y 16 (los 400 enumeran valores válidos): no estaban en el alcance de esta
+ronda de arreglos.

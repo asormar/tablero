@@ -167,14 +167,20 @@ export async function sweepOverdueTaskNotifications(options: { limit?: number; n
     }
     if (!doc) continue;
 
-    const overdue: { elementId: string; itemId: string; text: string; assigneeId: string | null }[] = [];
+    const overdue: { elementId: string; itemId: string; text: string; dueDate: string | null; assigneeId: string | null }[] = [];
     for (const element of getOrderedElements(doc)) {
       if (element.type !== 'todo') continue;
       const items = Array.isArray(element.items) ? element.items : [];
       for (const flat of flattenTasks(element.id, items)) {
         if (flat.checked || flat.text.trim().length === 0) continue;
         if (bucketOf(flat, today) !== 'overdue') continue;
-        overdue.push({ elementId: element.id, itemId: flat.itemId, text: flat.text, assigneeId: flat.assigneeId ?? null });
+        overdue.push({
+          elementId: element.id,
+          itemId: flat.itemId,
+          text: flat.text,
+          dueDate: flat.dueDate,
+          assigneeId: flat.assigneeId ?? null,
+        });
       }
     }
     if (overdue.length === 0) continue;
@@ -195,7 +201,10 @@ export async function sweepOverdueTaskNotifications(options: { limit?: number; n
           kind: 'task-overdue',
           boardId: row.boardId,
           elementId: task.elementId,
-          meta: { itemId: task.itemId, text: task.text, dueDate: today, boardTitle: board.title },
+          // `dueDate` es el vencimiento **real** de la tarea (lo que muestra el
+          // aviso); el día de hoy solo vive en la `dedupeKey`, que es la que
+          // limita a un aviso por tarea y día.
+          meta: { itemId: task.itemId, text: task.text, dueDate: task.dueDate, boardTitle: board.title },
           dedupeKey: `task-overdue:${row.boardId}:${task.elementId}:${task.itemId}:${today}:${userId}`,
         });
         if (result.created) notifications += 1;

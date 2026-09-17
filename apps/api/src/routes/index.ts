@@ -22,7 +22,7 @@ import { exportRoutes } from './export.js';
 import { healthRoutes } from './health.js';
 import { linkPreviewRoutes } from './link-preview.js';
 import { mapsRoutes } from './maps.js';
-import { membersRoutes } from './members.js';
+import { invitationViewRoutes, membersRoutes } from './members.js';
 import { notificationsRoutes } from './notifications.js';
 import { publicViewRoutes, publishRoutes } from './public-boards.js';
 import { searchRoutes } from './search.js';
@@ -37,6 +37,8 @@ export async function registerRoutes(app: FastifyInstance): Promise<void> {
   await app.register(authRoutes, { prefix: '/api' });
   await app.register(captureRoutes, { prefix: '/api' });
   await app.register(publicViewRoutes, { prefix: '/api' });
+  // La vista de una invitación es pública: el token del enlace es la credencial.
+  await app.register(invitationViewRoutes, { prefix: '/api' });
 
   // Todo lo que se registre acá exige sesión (hook encapsulado en el scope).
   await app.register(

@@ -45,7 +45,7 @@ import * as Y from 'yjs';
 
 import { prisma } from '../db.js';
 import { emptyDocumentUpdate, reindexBoards } from './documents.js';
-import { hashPassword } from './users.js';
+import { createCaptureToken, hashPassword } from './users.js';
 
 export const SYSTEM_USER_EMAIL = 'system@tablero.local';
 export const SYSTEM_USER_NAME = 'Sistema';
@@ -897,7 +897,9 @@ async function ensureSystemUser(): Promise<string> {
   if (existing) return existing.id;
   const passwordHash = await hashPassword(randomBytes(32).toString('hex'));
   const user = await prisma.user.create({
-    data: { email: SYSTEM_USER_EMAIL, name: SYSTEM_USER_NAME, passwordHash },
+    // La cuenta es inaccesible (contraseña aleatoria sin guardar); el token de
+    // captura también es aleatorio y no se muestra en ningún lado.
+    data: { email: SYSTEM_USER_EMAIL, name: SYSTEM_USER_NAME, passwordHash, captureToken: createCaptureToken() },
     select: { id: true },
   });
   return user.id;

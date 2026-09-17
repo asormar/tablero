@@ -130,16 +130,39 @@ export function textsOf(doc: import('yjs').Doc): Map<string, string> {
   return texts;
 }
 
+/**
+ * Metadatos de una tarea en texto (`vence 2026-01-01, prioridad high`). Lo
+ * comparten el Markdown y el texto plano: si un formato pierde la fecha o la
+ * prioridad, los dos exportadores se separan.
+ */
+function todoExtras(item: Pick<TodoItem, 'dueDate' | 'priority'>): string {
+  const extras: string[] = [];
+  if (item.dueDate) extras.push(`vence ${item.dueDate}`);
+  if (item.priority && item.priority !== 'none') extras.push(`prioridad ${item.priority}`);
+  return extras.join(', ');
+}
+
 function todoLines(items: TodoItem[] | undefined, depth = 0): string[] {
   const lines: string[] = [];
   for (const item of items ?? []) {
     const check = item.checked ? '[x]' : '[ ]';
-    const extras: string[] = [];
-    if (item.dueDate) extras.push(`vence ${item.dueDate}`);
-    if (item.priority && item.priority !== 'none') extras.push(`prioridad ${item.priority}`);
-    const suffix = extras.length > 0 ? ` _(${extras.join(', ')})_` : '';
+    const extras = todoExtras(item);
+    const suffix = extras.length > 0 ? ` _(${extras})_` : '';
     lines.push(`${'  '.repeat(depth)}- ${check} ${item.text}${suffix}`);
     lines.push(...todoLines(item.children, depth + 1));
+  }
+  return lines;
+}
+
+/** Líneas de una tarea y sus subtareas en texto plano (`[x] texto (vence …)`). */
+function todoPlainLines(items: TodoItem[] | undefined, depth = 0): string[] {
+  const lines: string[] = [];
+  for (const item of items ?? []) {
+    const check = item.checked ? '[x]' : '[ ]';
+    const extras = todoExtras(item);
+    const suffix = extras.length > 0 ? ` (${extras})` : '';
+    lines.push(`${'    '.repeat(depth)}${check} ${item.text}${suffix}`);
+    lines.push(...todoPlainLines(item.children, depth + 1));
   }
   return lines;
 }
@@ -253,7 +276,11 @@ export function renderMarkdown(data: BoardExportData, options: { boardLinks?: Ma
   return `${lines.join('\n').replace(/\n{3,}/g, '\n\n').trim()}\n`;
 }
 
-/** Texto plano del tablero. */
+/**
+ * Texto plano del tablero. Lleva la misma información que el Markdown —en
+ * particular la fecha y la prioridad de cada tarea—, sin la sintaxis: antes se
+ * perdían y una copia "de respaldo" en .txt quedaba incompleta respecto del .md.
+ */
 export function renderPlainText(data: BoardExportData): string {
   const lines: string[] = [];
   lines.push(data.board.title.toUpperCase());
@@ -266,12 +293,9 @@ export function renderPlainText(data: BoardExportData): string {
         lines.push(text.length > 0 ? text : 'Encabezado', '');
         break;
       case 'todo': {
-        const todo = element as CanvasElement & { items?: { text: string; checked: boolean; children: { text: string; checked: boolean }[] }[]; title?: string };
+        const todo = element as CanvasElement & { items?: TodoItem[]; title?: string };
         if (todo.title) lines.push(todo.title);
-        for (const item of todo.items ?? []) {
-          lines.push(`${item.checked ? '[x]' : '[ ]'} ${item.text}`);
-          for (const child of item.children ?? []) lines.push(`    ${child.checked ? '[x]' : '[ ]'} ${child.text}`);
-        }
+        lines.push(...todoPlainLines(todo.items));
         lines.push('');
         break;
       }

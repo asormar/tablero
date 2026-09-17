@@ -15,17 +15,20 @@
  *      escribir por ninguno de los dos caminos (403 en la REST, updates
  *      descartados en el socket).
  *   3. Herencia: el lector del padre abre el subtablero.
- *   4. El dueño sube el rol a editor: el socket del lector se cierra con 4403
+ *   4. El rol **comentarista** (tercera cuenta): su comentario llega al
+ *      documento del servidor por el socket y su edición de una nota se
+ *      descarta; el lector tampoco puede comentar.
+ *   5. El dueño sube el rol a editor: el socket del lector se cierra con 4403
  *      (Forbidden, el único código propio del protocolo) y al reconectar ya
  *      puede escribir.
- *   5. Edición simultánea de las dos cuentas sobre el mismo documento.
- *   6. Comentario con `@mención` anclado a una tarjeta: la fila plana en la
+ *   6. Edición simultánea de las dos cuentas sobre el mismo documento.
+ *   7. Comentario con `@mención` anclado a una tarjeta: la fila plana en la
  *      tabla, el contador de la tarjeta y la notificación para el mencionado.
- *   7. Actividad por lotes (`entries`) y listado por cursor, más el contador de
+ *   8. Actividad por lotes (`entries`) y listado por cursor, más el contador de
  *      notificaciones no leídas (marcar leídas con `{}` = todas).
- *   8. Publicación: slug, contraseña, subtableros con slug compuesto, lectura
+ *   9. Publicación: slug, contraseña, subtableros con slug compuesto, lectura
  *      **sin sesión**, asset firmado y ningún dato privado en el payload.
- *   9. Presencia: quién está mirando el tablero (`users` y `watchers`).
+ *  10. Presencia: quién está mirando el tablero (`users` y `watchers`).
  */
 
 import assert from 'node:assert/strict';
@@ -62,6 +65,11 @@ const OWNER = {
 const READER = {
   email: process.env.SMOKE_READER_EMAIL ?? `humo-colab-lector-${STAMP}@tablero.test`,
   name: 'Beto Lector',
+  password: 'humo-colaboracion-2026',
+};
+const COMMENTER = {
+  email: process.env.SMOKE_COMMENTER_EMAIL ?? `humo-colab-comentarista-${STAMP}@tablero.test`,
+  name: 'Carola Comentarista',
   password: 'humo-colaboracion-2026',
 };
 
@@ -316,6 +324,81 @@ async function main(): Promise<void> {
   const ownerSaw = ownerDoc.getMap('lector').get('intento');
   record('el update del lector no llega al resto (descartado en el servidor)', ownerSaw === undefined, `clave=${String(ownerSaw)}`);
 
+  // El lector tampoco puede comentar: el mismo camino descarta el update.
+  const readerCommentId = addComment(
+    readerDoc,
+    {
+      elementId: null,
+      x: 0,
+      y: 0,
+      authorId: reader.userId,
+      authorName: READER.name,
+      body: 'Como lector no debería entrar',
+      mentions: [],
+    },
+    'smoke',
+  );
+  await sleep(1_200);
+  const readerComments = await api(`/api/boards/${boardId}/comments`, { cookie: owner.cookie });
+  record(
+    'el lector no puede comentar (update descartado en el servidor)',
+    !((readerComments.json.comments ?? []) as Json[]).some((row) => row.id === readerCommentId),
+    `${readerCommentId.slice(0, 10)}…`,
+  );
+
+  // --- 4b. El comentarista comenta por el socket y no edita -------------------
+  const commenter = await register(COMMENTER);
+  const invitedCommenter = await api(`/api/boards/${boardId}/invitations`, {
+    method: 'POST',
+    cookie: owner.cookie,
+    body: { email: COMMENTER.email, role: 'commenter' },
+  });
+  const commenterToken = String(((invitedCommenter.json.invitation ?? {}) as Json).token ?? '');
+  await api(`/api/invitations/${commenterToken}/accept`, {
+    method: 'POST',
+    cookie: commenter.cookie,
+  });
+
+  const commenterDoc = createBoardDoc();
+  const commenterProvider = createProvider(commenterDoc, boardId, commenter.cookie);
+  const commenterSynced = await waitFor('sync del comentarista', () => commenterProvider.synced, 15_000, 200);
+  const commenterCommentId = addComment(
+    commenterDoc,
+    {
+      elementId: noteId,
+      x: null,
+      y: null,
+      authorId: commenter.userId,
+      authorName: COMMENTER.name,
+      body: 'Comentario del comentarista',
+      mentions: [],
+    },
+    'smoke',
+  );
+  const commentApplied = await waitFor(
+    'comentario del comentarista',
+    async () => {
+      const listed = await api(`/api/boards/${boardId}/comments`, { cookie: owner.cookie });
+      return ((listed.json.comments ?? []) as Json[]).some((row) => row.id === commenterCommentId);
+    },
+    15_000,
+    300,
+  );
+  record(
+    'el comentarista puede comentar por el socket (rol `commenter`)',
+    commenterSynced && commentApplied,
+    `${commenterCommentId.slice(0, 10)}…`,
+  );
+
+  addElement(commenterDoc, 'note', { createdBy: commenter.userId, x: 10, y: 10, title: 'No debería entrar' }, 'smoke');
+  await sleep(1_500);
+  record(
+    'el comentarista no puede editar una nota (update descartado)',
+    elementCount(ownerDoc) === 2,
+    `${elementCount(ownerDoc)} elementos en la copia del dueño`,
+  );
+  closeProvider(commenterProvider);
+
   // --- 5. Presencia: quién está mirando -------------------------------------
   const presence = await api(`/api/boards/${boardId}/presence`, { cookie: owner.cookie });
   const present = (presence.json.users ?? []) as Json[];
@@ -402,9 +485,10 @@ async function main(): Promise<void> {
     `${rows.length} filas · ${JSON.stringify(rows.find((row) => row.id === commentId) ?? null).slice(0, 160)}`,
   );
 
+  // Dos abiertos en la tarjeta: el del comentarista (sección 4b) y este.
   const counter = await waitFor(
     'contador de la tarjeta',
-    () => elementCommentCount(readComments(probeDoc), noteId) === 1,
+    () => elementCommentCount(readComments(probeDoc), noteId) === 2,
     5_000,
     200,
   );

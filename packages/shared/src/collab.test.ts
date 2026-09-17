@@ -13,6 +13,7 @@ import {
   inviteMemberSchema,
   readNotificationsSchema,
   activityBatchSchema,
+  activityEntrySchema,
   MAX_ACTIVITY_BATCH,
   publishBoardSchema,
   commentThreads,
@@ -90,6 +91,17 @@ describe('esquemas de colaboración', () => {
     expect(readNotificationsSchema.safeParse({ all: true }).success).toBe(true);
     expect(readNotificationsSchema.safeParse({ ids: ['n1'] }).success).toBe(true);
     expect(readNotificationsSchema.safeParse({ ids: [] }).success).toBe(false);
+  });
+
+  it('`elementType` acepta cualquier tipo del documento (no una lista cerrada)', () => {
+    // Los documentos reales traen tipos fuera del vocabulario de la interfaz
+    // (`sticky` de una importación, por ejemplo): rechazarlos tiraba el lote.
+    const entry = activityEntrySchema.parse({ action: 'element.create', elementId: 'el_1', elementType: 'sticky' });
+    expect(entry.elementType).toBe('sticky');
+    expect(activityBatchSchema.safeParse({ entries: [{ action: 'element.move', elementType: 'comment-pin' }] }).success).toBe(true);
+    // Sigue habiendo límites: vacío o desmesurado no pasa.
+    expect(activityEntrySchema.safeParse({ action: 'element.create', elementType: '' }).success).toBe(false);
+    expect(activityEntrySchema.safeParse({ action: 'element.create', elementType: 'x'.repeat(65) }).success).toBe(false);
   });
 
   it('publicar acepta contraseña opcional y rechaza campos desconocidos', () => {

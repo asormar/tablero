@@ -187,6 +187,10 @@ solo cambia `parentBoardId` en Postgres.
   suscribe al `Y.Map` de cada elemento con `useSyncExternalStore`, así mover una
   tarjeta no vuelve a renderizar las otras 299. Durante un arrastre el
   desplazamiento se aplica directo al DOM (refs) y se commitea a Yjs al soltar.
+- **El cliente de Prisma se genera al instalar**: `pnpm install` corre el
+  `postinstall` de la raíz (`prisma generate`), así que un checkout limpio pasa
+  `pnpm -r typecheck` sin pasos manuales; si cambia el esquema, `pnpm db:generate`
+  vuelve a generarlo.
 
 ## Trampas conocidas
 
@@ -303,33 +307,65 @@ solo cambia `parentBoardId` en Postgres.
 - **El socket también autoriza**: `onAuthenticate` resuelve el rol, lo deja en
   el contexto de la conexión y marca `readOnly` a quien no puede editar;
   `onLoadDocument` vuelve a comprobar lectura (y cubre las conexiones directas
-  del propio servidor) y `beforeHandleMessage` deja registro de un intento de
-  escritura descartado. Un intento **no** cierra la conexión: el cliente del
-  lector puede tener cambios locales y cerrarle el socket lo dejaría
-  reconectando en bucle. El cierre con código propio (**4409**, reabrible) se
-  usa cuando el permiso *cambia*: expulsar o bajar de rol cierra las conexiones
-  de esa cuenta en ese tablero, y el cliente reconecta y vuelve a autenticarse.
-- **Comentarios**: el documento Yjs es la fuente de verdad (elemento
-  `comment-pin` con el hilo en el campo JSON `comments`, anclado a una tarjeta
-  por `anchorElementId` o suelto). El hook de persistencia los extrae a la tabla
-  `Comment` (upsert + borrado de los que ya no están) y `GET
-  /api/boards/:id/comments` sincroniza antes de listar. Las menciones (`@email`
-  o `@nombre`, resolviendo primer nombre incluido) crean la notificación con
-  clave `mention:<comentario>:<usuario>`, así que editar o resincronizar no
-  duplica; las respuestas avisan con `reply:<respuesta>:<autor>`. Resolver y
-  borrar se aplican **al documento** (vivo si hay servidor; persistido si no) y
-  a la tabla acto seguido.
+  del propio servidor). La escritura se filtra **por tipo de cambio** en
+  `beforeHandleMessage`: un `viewer` no escribe nada (el receptor del protocolo
+  descarta sync-step2 y update) y un `commenter` escribe **solo** lo que toca
+  `doc.getMap('comments')` (`apps/api/src/collab/comment-writes.ts` decide
+  mirando el tipo raíz de cada struct y de la delete set del update); cualquier
+  otro update se descarta y queda en el log. El update aceptado se aplica en el
+  hook (no se deja `readOnly = false` para que lo aplique el receptor: el flag es
+  estado de la conexión y dos mensajes seguidos del cliente lo pisaban) y el
+  servidor manda el acuse que el receptor, en modo lectura, manda como `false`.
+  Un lote mixto se descarta entero
+  (un update de Yjs no se aplica por partes; si el cliente arrastra cambios
+  rechazados, los structs posteriores quedan en `pendingStructs` —limitación de
+  Yjs con los huecos de reloj—). Un intento descartado **no** cierra
+  la conexión: el cliente puede tener cambios locales y cerrarle el socket lo
+  dejaría reconectando en bucle. El cierre con código propio (**4403**,
+  reabrible) se usa cuando el permiso *cambia*: expulsar o bajar de rol cierra
+  las conexiones de esa cuenta en ese tablero **y en todo su subárbol** (el rol
+  se hereda hacia los hijos; `connectionsClosed` cuenta las que se cerraron de
+  verdad), y el cliente reconecta y vuelve a autenticarse.
+- **Comentarios**: el documento Yjs es la fuente de verdad (`doc.getMap('comments')`,
+  un `Y.Map` plano por comentario; ver `packages/shared/src/comments.ts`). El
+  hook de persistencia los extrae a la tabla `Comment` (upsert + borrado de los
+  que ya no están) y `GET /api/boards/:id/comments` sincroniza antes de listar.
+  El anclaje se valida contra el documento: un comentario atado a una tarjeta
+  borrada queda como **chincheta libre** (`elementId: null`), no apuntando a
+  nada. Un comentario de un autor que ya no existe (o una respuesta sin su
+  hilo padre en el documento) se **ignora** en la sincronización en vez de
+  tumbar la petición (la tabla tiene FK a `User` y a la propia raíz). Las
+  menciones (`@email` o `@nombre`, resolviendo **cualquier palabra** del nombre)
+  crean la notificación con clave `mention:<comentario>:<usuario>`, así que
+  editar o resincronizar no duplica; las respuestas avisan con
+  `reply:<respuesta>:<autor>`. Resolver y borrar se aplican **al documento**
+  (vivo si hay servidor; persistido si no) y a la tabla acto seguido. El rol
+  comentarista puede crear, resolver y borrar comentarios por el socket (ver
+  arriba), pero no editar nada más.
+- **La vista de la invitación es pública**: `GET /api/invitations/:token` no
+  exige sesión —el token del enlace es la credencial— y va registrada fuera del
+  scope protegido; el email sale enmascarado salvo para quien tenga sesión con
+  ese mismo email (`emailMatches`). Aceptar (`POST …/accept`) sí exige sesión y
+  el mismo email.
 - **Actividad y notificaciones**: la actividad la reporta el cliente por lotes
   (`POST /api/boards/:id/activity`, tope 100 eventos, marcas del cliente
-  acotadas a 30 días atrás y 5 minutos de reloj adelantado) y el servidor
-  descarta los elementos que no existen en el documento; el actor sale siempre
-  de la sesión. Las notificaciones se deduplican por `dedupeKey`, se listan y se
-  marcan leídas (`POST /api/notifications/read` con ids o `all`), y el barrido
-  de tareas vencidas corre cada 15 minutos (y al abrir el panel, con throttle de
-  un minuto) avisando al asignado o, si no hay, a los miembros.
+  acotadas a 30 días atrás y 5 minutos de reloj adelantado), el servidor
+  descarta los elementos que no existen en el documento y el actor sale siempre
+  de la sesión. `elementType` es un **string libre** (el `type` de un elemento
+  lo define el documento, no una lista cerrada: cerrarlo contra los tipos que
+  conoce la interfaz rechazaba documentos reales). Las notificaciones se
+  deduplican por `dedupeKey`, se listan y se marcan leídas (`POST
+  /api/notifications/read` con ids o `all`), y el barrido de tareas vencidas
+  corre cada 15 minutos (y al abrir el panel, con throttle de un minuto)
+  avisando al asignado o, si no hay, a los miembros; el aviso guarda en
+  `meta.dueDate` el **vencimiento real** de la tarea (el día del barrido vive
+  solo en la `dedupeKey`).
 - **Publicación**: slug de 12 caracteres base58 generado al azar (nunca el
   título), contraseña opcional con argon2, `publishedAt`, ajuste de subtableros
-  y límite de intentos por slug+IP. La vista pública es **de solo lectura y sin
+  y límite de intentos por slug+IP. Las tres rutas de gestión son del dueño y
+  responden **404** a cualquier otro (ni 403 ni 404 según sea miembro o ajeno:
+  la misma política que el resto del API, que no revela la existencia del
+  tablero). La vista pública es **de solo lectura y sin
   socket**: `GET /api/public/boards/:slug` (+ `/document` con `?boardId=` para
   los descendientes) sirve una **copia saneada** del estado Yjs —sin elementos
   `comment-pin` ni `createdBy`/`deletedBy`— y metadatos sin emails ni ids de

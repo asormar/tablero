@@ -1,10 +1,13 @@
 /**
- * Ajustes (§7.7 del plan): `GET/PATCH /api/settings`.
+ * Ajustes (§7.7 del plan): `GET/PATCH /api/settings` y rotación del token de
+ * captura.
  *
  * Viven en `User.settings` (JSON) y se devuelven siempre completos, con los
  * valores por defecto aplicados, para que el cliente no tenga que adivinar.
  * El **token personal de captura** también se muestra acá (lo pide §7.8: «el
- * token se muestra en ajustes»).
+ * token se muestra en ajustes») y se puede **rotar** con
+ * `POST /api/settings/capture-token`: genera uno nuevo y el anterior queda
+ * inválido en el acto (el token viejo ya no resuelve a ninguna cuenta).
  */
 
 import type { FastifyInstance } from 'fastify';
@@ -14,6 +17,7 @@ import type { z } from 'zod';
 
 import { prisma } from '../db.js';
 import { currentUser } from '../lib/session.js';
+import { createCaptureToken } from '../lib/users.js';
 
 /** Esquema de cada ajuste, tomado del esquema compartido (una sola verdad). */
 const USER_SETTING_FIELDS: Record<keyof UserSettings, z.ZodTypeAny> = userSettingsSchema.shape;
@@ -67,5 +71,21 @@ export async function settingsRoutes(app: FastifyInstance): Promise<void> {
       select: { settings: true, captureToken: true },
     });
     return { settings: resolveSettings(updated.settings), captureToken: updated.captureToken };
+  });
+
+  /**
+   * Rotación del token de captura. Sin cuerpo: genera uno nuevo aleatorio y el
+   * anterior deja de existir (no hay período de gracia). Lo que estaba
+   * configurado con el token viejo (atajos, scripts) empieza a recibir 401
+   * `invalid_capture_token` y hay que actualizarlo.
+   */
+  app.post('/settings/capture-token', async (request) => {
+    const user = currentUser(request);
+    const updated = await prisma.user.update({
+      where: { id: user.id },
+      data: { captureToken: createCaptureToken() },
+      select: { captureToken: true },
+    });
+    return { captureToken: updated.captureToken };
   });
 }

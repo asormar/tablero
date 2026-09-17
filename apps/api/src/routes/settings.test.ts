@@ -11,12 +11,14 @@ import { HttpError } from '../lib/errors.js';
 
 const store = vi.hoisted(() => {
   let settings: unknown = {};
+  let captureToken = 'tok_captura_123';
   const prisma = {
     user: {
-      findUniqueOrThrow: async () => ({ settings, captureToken: 'tok_captura_123' }),
-      update: async ({ data }: { data: { settings: unknown } }) => {
-        settings = data.settings;
-        return { settings, captureToken: 'tok_captura_123' };
+      findUniqueOrThrow: async () => ({ settings, captureToken }),
+      update: async ({ data }: { data: { settings?: unknown; captureToken?: string } }) => {
+        if (data.settings !== undefined) settings = data.settings;
+        if (data.captureToken !== undefined) captureToken = data.captureToken;
+        return { settings, captureToken };
       },
     },
   };
@@ -25,6 +27,10 @@ const store = vi.hoisted(() => {
     getSettings: () => settings,
     setSettings: (value: unknown) => {
       settings = value;
+    },
+    getCaptureToken: () => captureToken,
+    setCaptureToken: (value: string) => {
+      captureToken = value;
     },
   };
 });
@@ -68,6 +74,7 @@ async function buildApp(): Promise<FastifyInstance> {
 
 beforeEach(() => {
   store.setSettings({});
+  store.setCaptureToken('tok_captura_123');
 });
 
 describe('GET /api/settings', () => {
@@ -135,6 +142,34 @@ describe('PATCH /api/settings', () => {
     const app = await buildApp();
     const response = await app.inject({ method: 'PATCH', url: '/api/settings', payload: {} });
     expect(response.statusCode).toBe(400);
+    await app.close();
+  });
+});
+
+describe('POST /api/settings/capture-token', () => {
+  it('rota el token: devuelve uno nuevo aleatorio y el anterior deja de valer', async () => {
+    const previous = store.getCaptureToken();
+    const app = await buildApp();
+    const response = await app.inject({ method: 'POST', url: '/api/settings/capture-token' });
+    expect(response.statusCode).toBe(200);
+
+    const rotated = String(response.json().captureToken ?? '');
+    // 32 bytes en base64url: 43 caracteres, sin `+` ni `/` ni padding.
+    expect(rotated).toMatch(/^[A-Za-z0-9_-]{43}$/);
+    expect(rotated).not.toBe(previous);
+    expect(store.getCaptureToken()).toBe(rotated);
+
+    // El valor que muestran los ajustes es el nuevo.
+    const settings = await app.inject({ method: 'GET', url: '/api/settings' });
+    expect(settings.json().captureToken).toBe(rotated);
+    await app.close();
+  });
+
+  it('dos rotaciones seguidas dan tokens distintos', async () => {
+    const app = await buildApp();
+    const first = String((await app.inject({ method: 'POST', url: '/api/settings/capture-token' })).json().captureToken);
+    const second = String((await app.inject({ method: 'POST', url: '/api/settings/capture-token' })).json().captureToken);
+    expect(first).not.toBe(second);
     await app.close();
   });
 });

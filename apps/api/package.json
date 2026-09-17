@@ -12,10 +12,12 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "seed": "tsx src/seed.ts",
+    "seed:templates": "tsx scripts/seed-templates.ts",
     "test": "vitest run",
     "test:watch": "vitest",
     "smoke:assets": "tsx scripts/smoke-assets.ts",
     "smoke:collab": "tsx scripts/smoke-collab.ts",
+    "smoke:productividad": "tsx scripts/smoke-productividad.ts",
     "smoke:upgrade": "node scripts/smoke-upgrade.mjs"
   },
   "dependencies": {

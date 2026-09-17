@@ -101,6 +101,10 @@ export class BoardSession {
   private readonly statusListeners = new Set<() => void>();
   private readonly undoListeners = new Set<() => void>();
   private readonly trashListeners = new Set<() => void>();
+  /** Cambios de contenido (texto o campos) de cualquier elemento. */
+  private readonly contentListeners = new Set<() => void>();
+  private contentVersion = 0;
+  private allCache: { layout: number; content: number; value: CanvasElement[] } | null = null;
   private trashVersion = 0;
   private trashCache: { version: number; value: CanvasElement[] } | null = null;
   private readonly fragmentWatches = new Map<string, { fragment: Y.XmlFragment; handler: () => void }>();
@@ -333,6 +337,37 @@ export class BoardSession {
     return fragment;
   }
 
+  /**
+   * Todos los elementos vivos del documento, en orden de apilado (incluye los
+   * hijos de columnas, que no están en el layout absoluto). Es la materia prima
+   * de la búsqueda del tablero y de la vista de lista; se cachea hasta el
+   * próximo cambio de layout o de contenido.
+   */
+  getAllElements(): CanvasElement[] {
+    if (
+      this.allCache &&
+      this.allCache.layout === this.layoutVersion &&
+      this.allCache.content === this.contentVersion
+    ) {
+      return this.allCache.value;
+    }
+    const value = getOrderedElements(this.doc);
+    this.allCache = { layout: this.layoutVersion, content: this.contentVersion, value };
+    return value;
+  }
+
+  /**
+   * Cambios de contenido de cualquier elemento (texto, campos JSON, papelera).
+   * La búsqueda dentro del tablero se suscribe acá para refrescar mientras se
+   * escribe.
+   */
+  subscribeContent(listener: () => void): () => void {
+    this.contentListeners.add(listener);
+    return () => {
+      this.contentListeners.delete(listener);
+    };
+  }
+
   // --- Conectores ------------------------------------------------------------
 
   /** Conectores del documento (cacheado hasta el próximo cambio). */
@@ -563,6 +598,8 @@ export class BoardSession {
     this.elementVersions.set(id, (this.elementVersions.get(id) ?? 0) + 1);
     this.elementCache.delete(id);
     this.textCache.delete(id);
+    this.contentVersion += 1;
+    for (const listener of this.contentListeners) listener();
     const listeners = this.elementListeners.get(id);
     if (!listeners) return;
     for (const listener of listeners) listener();

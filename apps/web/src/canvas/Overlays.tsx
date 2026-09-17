@@ -8,6 +8,7 @@ import { memo } from 'react';
 
 import { GRID_SIZE, type Guide, type Rect, type Viewport } from '@tablero/shared';
 
+import { useSettingsStore } from '@/settings/settingsStore';
 import { useUiStore } from '@/state/uiStore';
 
 function toScreenX(viewport: Viewport, x: number): number {
@@ -21,7 +22,8 @@ function toScreenY(viewport: Viewport, y: number): number {
 export const GuidesOverlay = memo(function GuidesOverlay(): JSX.Element | null {
   const guides = useUiStore((state) => state.guides);
   const viewport = useUiStore((state) => state.viewport);
-  if (guides.length === 0) return null;
+  const showGuides = useSettingsStore((state) => state.settings.showGuides);
+  if (!showGuides || guides.length === 0) return null;
 
   return (
     <svg className="overlay overlay--guides" aria-hidden="true">

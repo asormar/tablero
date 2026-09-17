@@ -2,9 +2,45 @@
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#2f6fc9" />
+    <meta name="description" content="Tableros visuales con tarjetas: notas, enlaces, archivos, tareas, mapas y dibujos." />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="Tablero" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <link rel="icon" href="/icons/icon-192.png" type="image/png" />
     <title>Tablero</title>
+    <!--
+      Tema y fondo del lienzo antes de pintar: evita el destello blanco cuando el
+      tema guardado es oscuro. Los ajustes viven en `localStorage`
+      (`tablero:settings:v1`), igual que en `src/settings/settingsStore.ts`.
+    -->
+    <script>
+      (function () {
+        try {
+          var raw = localStorage.getItem('tablero:settings:v1');
+          var settings = raw ? JSON.parse(raw) : null;
+          var preference = settings && settings.theme ? settings.theme : 'system';
+          var prefersDark =
+            window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+          var resolved = preference === 'system' ? (prefersDark ? 'dark' : 'light') : preference;
+          var root = document.documentElement;
+          root.setAttribute('data-theme', resolved);
+          root.setAttribute('data-theme-pref', preference);
+          root.setAttribute(
+            'data-canvas-bg',
+            settings && settings.canvasBackground ? settings.canvasBackground : 'dots',
+          );
+          root.style.colorScheme = resolved;
+          if (settings && settings.language) root.lang = settings.language;
+        } catch (error) {
+          /* sin almacenamiento: se arranca en claro */
+        }
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

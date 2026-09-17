@@ -16,7 +16,7 @@ comportarse y **en qué orden** construirla es el plan de producto y técnico
 | 1 | Base y lienzo: monorepo, Docker, autenticación, CRUD de tableros anidados, lienzo infinito con selección/arrastre/guías/virtualización, nota + encabezado + tarjeta de tablero, persistencia Yjs con Hocuspocus, deshacer/rehacer | **Completa y verificada** (ver *Verificación*) |
 | 2 | Contenido multimedia: subida de archivos, imagen, archivo, vídeo, audio, enlace, muestra de color, pegado inteligente | **Completa y verificada** (ver *Verificación*) |
 | 3 | Estructura y organización: columnas, tareas con fechas, conectores con etiquetas, tablas, documento largo, dibujo, mapa, «Sin ordenar», papelera, favoritos | **Completa**: elementos, columnas, conectores y mover entre tableros, más la segunda ronda de la web (bandeja «Sin ordenar», papelera de elementos y tableros, favoritos y recientes, vista global de tareas) y los hallazgos de la revisión de la fase 2 que tocaban la web. Ver *Verificación* |
-| 4 | Productividad: búsqueda global, paleta de comandos, plantillas, exportación/importación, historial, ajustes y tema oscuro, PWA y móvil | Pendiente |
+| 4 | Productividad: búsqueda global, paleta de comandos, plantillas, exportación/importación, historial, ajustes y tema oscuro, PWA y móvil | **Completa y verificada** (ver *Verificación de la fase 4*) |
 | 5 | Colaboración: compartir con roles, publicar, cursores en tiempo real, comentarios, notificaciones, actividad | Pendiente |
 | 6 | Extras: extensión de navegador, captura con token, pulido de rendimiento y accesibilidad, pruebas end-to-end | Pendiente |
 
@@ -234,3 +234,37 @@ Lo comprobado con ejecución real en el navegador y contra la API:
 
 Lo que sigue sin verificarse a mano (necesita gesto humano): cuentagotas,
 selector de color nativo y grabación con micrófono real.
+
+## Verificación de la fase 4
+
+- **Búsqueda y paleta, de punta a punta** (lo que faltaba cuando la web se
+  verificó sola, porque el API todavía no exponía los endpoints): con una
+  plantilla instanciada y reindexada (`{"boards":3,"elements":15,"skipped":0}`),
+  la paleta `Ctrl/Cmd+K` mostró los resultados del servidor agrupados por tablero
+  —«📋 REUNIONES Y DECISIONES» con tres `<mark>Reuniones</mark>`— y al elegir el
+  resultado **abrió el tablero anidado** (la URL pasó al tablero hijo; el
+  destello del elemento se limpia solo, así que a los 4 s ya no estaba).
+- **12 plantillas del sistema** sembradas con tarjetas reales (92 en total, con
+  kanban de columnas, tablas, mapas y subtableros): instanciar una devuelve el
+  tablero con sus hijos y remapea las tarjetas de tablero a las copias.
+- `pnpm -r typecheck` limpio; **256 tests** en `shared`, **164** en el API (80
+  nuevos) y **432** en la web (175 nuevos); build con el panel principal en
+  303 kB y los paneles de la fase 4 en chunks propios.
+- Smokes contra el API nuevo: **rest 26/26**, **collab 11/11**, **assets 24/24**,
+  **upgrade en verde** y el nuevo **`smoke:productividad` 38/38**.
+- Exportación comprobada de verdad: **PNG de 11 616×5 100 px** descargado y
+  mirado, Markdown y CSV importados y encontrables con la búsqueda del tablero, y
+  el ZIP del servidor validado con `zipfile` de Python (entradas, CRC y los 70
+  bytes del archivo de MinIO). El PNG se reescribió como render propio con Canvas
+  2D porque Chromium mancha el canvas al dibujar SVG con `foreignObject`.
+- PWA con service worker activo, shell sin conexión y Share Target, probados en un
+  móvil emulado de 375×667 con la barra abajo, vista de lista de 302 filas y
+  gestos de arrastre y pinza.
+- **Restaurar una versión cierra las conexiones del tablero** (código 4205, con
+  guardia de 8 s): sin esa guardia el cliente reconectaba con su estado viejo y la
+  fusión CRDT revivía lo restaurado. El mecanismo, el formato del ZIP y el
+  contrato del cliente están documentados en `ARCHITECTURE.md`.
+
+Pendiente de esta fase: la revisión independiente de fase-3 + fase-4 (las dos
+corridas de la revisión de la fase 3 murieron sin informe y la tercera la paré yo
+por la pausa pedida).

@@ -147,3 +147,24 @@ export async function headObject(key: string): Promise<ObjectHead | null> {
     throw error;
   }
 }
+
+export type ObjectStream = { body: Readable; size: number; contentType: string | null };
+
+/**
+ * Flujo de lectura de un objeto (exportaciones): el archivo no se carga entero
+ * en memoria, se lee por partes. `null` si el objeto ya no existe.
+ */
+export async function getObjectStream(key: string): Promise<ObjectStream | null> {
+  try {
+    const response = await s3.send(new GetObjectCommand({ Bucket: env.s3.bucket, Key: key }));
+    if (!response.Body) return null;
+    return {
+      body: response.Body as Readable,
+      size: response.ContentLength ?? 0,
+      contentType: response.ContentType ?? null,
+    };
+  } catch (error) {
+    if (isNotFound(error)) return null;
+    throw error;
+  }
+}

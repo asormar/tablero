@@ -119,6 +119,27 @@ export function useTrashedElements(): CanvasElement[] {
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
 }
 
+/**
+ * Todos los elementos del documento (con los hijos de columnas), en orden de
+ * apilado. Se usa para la búsqueda del tablero y la vista de lista.
+ */
+export function useSessionElements(): CanvasElement[] {
+  const session = useSession();
+  const subscribe = useCallback(
+    (onStoreChange: () => void) => {
+      const stopLayout = session.subscribeLayout(onStoreChange);
+      const stopContent = session.subscribeContent(onStoreChange);
+      return () => {
+        stopLayout();
+        stopContent();
+      };
+    },
+    [session],
+  );
+  const getSnapshot = useCallback(() => session.getAllElements(), [session]);
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+}
+
 const EMPTY_LAYOUT: ElementLayout[] = [];
 
 /**

@@ -16,7 +16,7 @@
 import type { IncomingMessage, Server as HttpServer } from 'node:http';
 
 import { Hocuspocus } from '@hocuspocus/server';
-import { canEdit, canView } from '@tablero/shared';
+import { canEdit, canView, elementCount } from '@tablero/shared';
 import { WebSocketServer } from 'ws';
 import * as Y from 'yjs';
 
@@ -25,8 +25,117 @@ import { env } from '../env.js';
 import { boardAccessFor } from '../lib/boards.js';
 import { syncSearchIndex } from '../lib/documents.js';
 import { SESSION_COOKIE, parseCookieHeader, resolveSession } from '../lib/session.js';
+import { pruneVersions, recordVersion } from '../lib/versions.js';
 
 export const COLLAB_PATH = '/collab';
+
+/**
+ * Instancia activa del servidor de colaboración (una por proceso).
+ *
+ * Las rutas la necesitan para dos cosas que solo se pueden hacer sobre el
+ * documento *vivo*: cerrar las conexiones de un tablero (restaurar una versión)
+ * y escribir en él sin un cliente conectado (captura rápida).
+ */
+let activeServer: Hocuspocus | null = null;
+
+export function getActiveCollabServer(): Hocuspocus | null {
+  return activeServer;
+}
+
+/** Código de cierre «Reset Connection» del protocolo (Hocuspocus 4205): el cliente reconecta. */
+const RESET_CONNECTION_CODE = 4205;
+const RESET_CONNECTION_REASON = 'Reset Connection';
+
+/**
+ * Ventana de guardia tras restaurar una versión: mientras está activa, las
+ * conexiones a ese tablero se cierran con «Reset Connection».
+ *
+ * Por qué: un cliente que todavía tiene el documento *anterior* en memoria lo
+ * reenvía al reconectar y la fusión CRDT volvería a meter el contenido que el
+ * usuario acaba de descartar. Con la guardia, esa reconexión no llega a
+ * sincronizar; el cliente reintenta (el código 4205 es reabrible) y, según su
+ * contrato, vuelve a cargar el documento para traer la versión restaurada.
+ */
+const RESTORE_GUARD_MS = 8_000;
+const restoreGuards = new Map<string, number>();
+
+/** Cierra la puerta mientras se restaura (la espera del guardado puede tardar). */
+export function beginBoardRestore(boardId: string): void {
+  restoreGuards.set(boardId, Date.now() + 30_000);
+}
+
+/** Deja la guardia activa un rato más, ya con el estado restaurado persistido. */
+export function finishBoardRestore(boardId: string): void {
+  restoreGuards.set(boardId, Date.now() + RESTORE_GUARD_MS);
+}
+
+function guardActive(boardId: string): boolean {
+  const until = restoreGuards.get(boardId);
+  if (until === undefined) return false;
+  if (until <= Date.now()) {
+    restoreGuards.delete(boardId);
+    return false;
+  }
+  return true;
+}
+
+/**
+ * Cierra las conexiones de un tablero y **espera a que se vacíe el guardado
+ * pendiente** antes de descargar el documento.
+ *
+ * Por qué la espera: Hocuspocus guarda con debounce; si cerráramos las
+ * conexiones y escribiéramos la versión restaurada enseguida, el guardado en
+ * vuelo (hasta `maxDebounce`, 10 s) reescribiría el estado viejo encima del
+ * restaurado. Con las conexiones cerradas y el debounce vaciado, se descarga el
+ * documento y la próxima conexión lo relee de Postgres.
+ */
+export async function closeBoardConnections(
+  boardId: string,
+): Promise<{ connections: number; unloaded: boolean; waitedMs: number }> {
+  const server = activeServer;
+  if (!server) return { connections: 0, unloaded: false, waitedMs: 0 };
+  const started = Date.now();
+  const connections = server.documents.get(boardId)?.getConnectionsCount() ?? 0;
+  server.closeConnections(boardId);
+
+  const deadline = started + server.configuration.maxDebounce + 2_000;
+  while (Date.now() < deadline) {
+    const pending = server.debouncer.isDebounced(`onStoreDocument-${boardId}`);
+    const document = server.documents.get(boardId);
+    if (!pending) {
+      if (!document) return { connections, unloaded: true, waitedMs: Date.now() - started };
+      if (document.getConnectionsCount() === 0) {
+        await server.unloadDocument(document);
+        return { connections, unloaded: !server.documents.has(boardId), waitedMs: Date.now() - started };
+      }
+      break;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+  return { connections, unloaded: !server.documents.has(boardId), waitedMs: Date.now() - started };
+}
+
+/**
+ * Transacción sobre el documento vivo (si hay servidor). Devuelve `false`
+ * cuando no hay servidor: el llamador decide el camino alternativo.
+ */
+export async function transactBoardDocument(
+  boardId: string,
+  fn: (doc: Y.Doc) => void,
+  context: unknown = {},
+): Promise<boolean> {
+  const server = activeServer;
+  if (!server) return false;
+  const connection = await server.openDirectConnection(boardId, context);
+  try {
+    await connection.transact((document) => {
+      fn(document as unknown as Y.Doc);
+    });
+  } finally {
+    await connection.disconnect();
+  }
+  return true;
+}
 
 export type CollabContext = {
   userId: string;
@@ -75,6 +184,23 @@ export function createCollabServer(options: { log?: (message: string) => void } 
     // El apagado lo maneja el servidor Fastify (onClose), no las señales del SO.
     stopOnSignals: false,
 
+    /**
+     * Guardia de restauración: mientras un tablero está recién restaurado, las
+     * conexiones se cierran con «Reset Connection» (código 4205, reabrible) para
+     * que ningún cliente reenvíe el documento anterior y lo reviva por fusión.
+     */
+    async onConnect(data) {
+      if (guardActive(data.documentName)) {
+        const error = new Error(
+          'El tablero se restauró a una versión anterior: reconectá para traer el estado restaurado',
+        ) as Error & { code?: number; reason?: string };
+        error.code = RESET_CONNECTION_CODE;
+        error.reason = RESET_CONNECTION_REASON;
+        log(`collab: conexión a ${data.documentName} rechazada (restauración en curso)`);
+        throw error;
+      }
+    },
+
     async onAuthenticate(data): Promise<CollabContext> {
       const cookieToken = parseCookieHeader(data.requestHeaders.cookie)[SESSION_COOKIE];
       const protocolToken = typeof data.token === 'string' && data.token.length >= 32 ? data.token : null;
@@ -119,8 +245,26 @@ export function createCollabServer(options: { log?: (message: string) => void } 
         // La persistencia ya ocurrió: un fallo de índice no debe propagarse.
         log(`collab: fallo al indexar ${documentName}: ${String(error)}`);
       }
+      try {
+        // Historial de versiones: una instantánea cada 10 minutos de actividad.
+        const snapshot = await recordVersion({
+          boardId: documentName,
+          state,
+          elementCount: elementCount(document),
+          origin: 'auto',
+        });
+        if (snapshot) {
+          const pruned = await pruneVersions(documentName);
+          log(`collab: ${documentName} → instantánea ${snapshot.id}${pruned > 0 ? ` (podadas ${pruned})` : ''}`);
+        }
+      } catch (error) {
+        // Igual que el índice: la persistencia no se cae por el historial.
+        log(`collab: fallo al guardar la instantánea de ${documentName}: ${String(error)}`);
+      }
     },
   });
+
+  activeServer = hocuspocus;
 
   const webSocketServer = new WebSocketServer({ noServer: true });
 
@@ -165,6 +309,7 @@ export function createCollabServer(options: { log?: (message: string) => void } 
     for (const client of webSocketServer.clients) client.close(1001, 'server shutting down');
     await new Promise<void>((resolve) => webSocketServer.close(() => resolve()));
     await hocuspocus.destroy();
+    if (activeServer === hocuspocus) activeServer = null;
   };
 
   return { hocuspocus, attach, destroy };

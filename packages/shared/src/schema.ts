@@ -193,6 +193,38 @@ export const exportQuerySchema = z.object({
   includeAssets: z.coerce.boolean().default(true),
 });
 
+/**
+ * Exportación de un tablero por el servidor (fase 4): los formatos que arma el
+ * cliente (PDF, PNG) no entran acá. `includeAssets` se valida explícitamente:
+ * `z.coerce.boolean()` convertiría el string "false" en `true`.
+ */
+export const boardExportQuerySchema = z.object({
+  format: z.enum(['markdown', 'text', 'json', 'zip']).default('markdown'),
+  includeAssets: z.enum(['0', '1', 'true', 'false']).default('true'),
+});
+
+/** Ajustes de usuario (§7.7): se guardan en `User.settings`. */
+export const userSettingsSchema = z.object({
+  theme: z.enum(['light', 'dark', 'system']).optional(),
+  language: z.enum(['es', 'en']).optional(),
+  canvasBackground: z.enum(['plain', 'dots', 'grid']).optional(),
+  showGuides: z.boolean().optional(),
+  snapToGrid: z.boolean().optional(),
+  showMinimap: z.boolean().optional(),
+});
+
+/** PATCH de ajustes: al menos un campo. */
+export const updateSettingsSchema = userSettingsSchema
+  .partial()
+  .refine((value) => Object.keys(value).length > 0, { message: 'Nada que actualizar' });
+
+/** Instanciar una plantilla (§7.1). */
+export const instantiateTemplateSchema = z.object({
+  parentBoardId: idSchema.nullish(),
+  title: z.string().trim().max(200).optional(),
+  includeChildren: z.boolean().optional(),
+});
+
 export type RegisterInput = z.infer<typeof registerSchema>;
 export type LoginInput = z.infer<typeof loginSchema>;
 export type CreateBoardInput = z.infer<typeof createBoardSchema>;
@@ -201,6 +233,10 @@ export type SearchQuery = z.infer<typeof searchQuerySchema>;
 export type CreateCommentInput = z.infer<typeof createCommentSchema>;
 export type ShareInput = z.infer<typeof shareSchema>;
 export type CaptureInput = z.infer<typeof captureSchema>;
+export type UserSettings = z.infer<typeof userSettingsSchema>;
+export type UpdateSettingsInput = z.infer<typeof updateSettingsSchema>;
+export type InstantiateTemplateInput = z.infer<typeof instantiateTemplateSchema>;
+export type BoardExportQuery = z.infer<typeof boardExportQuerySchema>;
 
 /** Error de validación homogéneo para las respuestas de la API. */
 export type ApiError = {

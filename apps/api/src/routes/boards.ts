@@ -10,16 +10,20 @@ import { createBoardSchema, idSchema, moveBoardSchema, updateBoardSchema } from 
 import { z } from 'zod';
 
 import { prisma } from '../db.js';
-import { BoardAccess, loadBoardAccess, type BoardRecord, type SummaryExtras } from '../lib/boards.js';
+import {
+  BoardAccess,
+  ensureUnsortedBoard,
+  loadBoardAccess,
+  type BoardRecord,
+  type SummaryExtras,
+} from '../lib/boards.js';
 import { emptyDocumentUpdate, encodeStateBase64, ensureBoardDocument, loadBoardDoc } from '../lib/documents.js';
 import { badRequest, conflict, forbidden, notFound } from '../lib/errors.js';
 import { currentUser } from '../lib/session.js';
+import { copyBoardSubtree, fetchTemplateSubtree } from '../lib/templates.js';
 import { elementCount } from '@tablero/shared';
 
 export const DEFAULT_BOARD_TITLE = 'Tablero sin título';
-/** Título de la bandeja de entrada de la cuenta (§4.3 del plan). */
-export const UNSORTED_BOARD_TITLE = 'Sin ordenar';
-const UNSORTED_BOARD_ICON = '📥';
 const DUPLICATE_SUFFIX = ' (copia)';
 
 const idParamsSchema = z.object({ id: idSchema });
@@ -141,51 +145,11 @@ export async function boardsRoutes(app: FastifyInstance): Promise<void> {
 
   /**
    * Bandeja de entrada de la cuenta (§4.3): devuelve el tablero «Sin ordenar»,
-   * creándolo si todavía no existe. Es único por cuenta y cuelga de la raíz (ya
-   * que solo el registro crea raíces).
+   * creándolo si todavía no existe (lógica compartida con la captura rápida).
    */
   app.get('/boards/unsorted', async (request) => {
     const user = currentUser(request);
-    let access = await loadBoardAccess(user.id);
-    let board = access.unsortedBoard();
-    let created = false;
-
-    if (board && board.trashedAt) {
-      // La bandeja no se pierde: si alguien la mandó a la papelera, al pedirla
-      // vuelve. (El REST ya rechaza mandarla a la papelera; esto es defensivo.)
-      await prisma.board.updateMany({
-        where: { id: { in: [board.id] }, trashedAt: { not: null } },
-        data: { trashedAt: null },
-      });
-      access = await loadBoardAccess(user.id);
-      board = access.unsortedBoard();
-    } else if (!board) {
-      const root = access.rootBoard();
-      if (!root) throw conflict('La cuenta no tiene tablero raíz', 'missing_root_board');
-      const result = await prisma.$transaction(async (tx) => {
-        // Carrera entre dos pestañas: la segunda reutiliza la bandeja ya creada.
-        const existing = await tx.board.findFirst({ where: { ownerId: user.id, isUnsorted: true } });
-        if (existing) return { board: existing, created: false };
-        const row = await tx.board.create({
-          data: {
-            ownerId: user.id,
-            parentBoardId: root.id,
-            title: UNSORTED_BOARD_TITLE,
-            icon: UNSORTED_BOARD_ICON,
-            isUnsorted: true,
-          },
-        });
-        await tx.boardDocument.create({
-          data: { boardId: row.id, yjsState: Buffer.from(emptyDocumentUpdate()) },
-        });
-        return { board: row, created: true };
-      });
-      created = result.created;
-      access = await loadBoardAccess(user.id);
-      board = access.get(result.board.id);
-    }
-
-    if (!board) throw notFound('No se pudo obtener el tablero «Sin ordenar»');
+    const { access, board, created } = await ensureUnsortedBoard(user.id);
     return { board: access.summary(board), created };
   });
 
@@ -209,7 +173,7 @@ export async function boardsRoutes(app: FastifyInstance): Promise<void> {
     }
 
     let title = input.title && input.title.length > 0 ? input.title : DEFAULT_BOARD_TITLE;
-    let documentState: Uint8Array | null = null;
+
     if (input.templateId) {
       const template = await prisma.template.findUnique({ where: { id: input.templateId } });
       if (!template) throw notFound('La plantilla no existe', 'template_not_found');
@@ -217,8 +181,26 @@ export async function boardsRoutes(app: FastifyInstance): Promise<void> {
         throw forbidden('No tenés acceso a esa plantilla', 'template_forbidden');
       }
       if (!input.title) title = template.name;
-      const templateDoc = await prisma.boardDocument.findUnique({ where: { boardId: template.boardId } });
-      documentState = templateDoc ? new Uint8Array(templateDoc.yjsState) : null;
+      const sources = await fetchTemplateSubtree(template.boardId);
+      if (sources.length === 0) throw notFound('La plantilla no tiene tablero', 'template_board_missing');
+      // Se copia el estado Yjs (no un tablero vacío) y se remapean las tarjetas
+      // de tablero para que apunten a las copias, no a los tableros del origen.
+      const copy = await copyBoardSubtree({
+        sources,
+        ownerId: user.id,
+        rootParentId: parentId,
+        rootTitle: title,
+        isTemplate: false,
+      });
+      const fresh = await loadBoardAccess(user.id);
+      const record = fresh.get(copy.root.id);
+      if (!record) throw notFound('No se pudo leer el tablero recién creado');
+      const children = copy.created
+        .filter((entry) => entry.sourceId !== sources[0]!.id)
+        .map((entry) => fresh.get(entry.board.id))
+        .filter((board): board is BoardRecord => board !== undefined);
+      reply.code(201);
+      return { board: fresh.summary(record), children: fresh.summaries(children) };
     }
 
     const board = await prisma.$transaction(async (tx) => {
@@ -232,7 +214,7 @@ export async function boardsRoutes(app: FastifyInstance): Promise<void> {
         },
       });
       await tx.boardDocument.create({
-        data: { boardId: created.id, yjsState: Buffer.from(documentState ?? emptyDocumentUpdate()) },
+        data: { boardId: created.id, yjsState: Buffer.from(emptyDocumentUpdate()) },
       });
       return created;
     });

@@ -11,6 +11,8 @@ import type { BoardSummary, BoardRole, EffectiveRole } from '@tablero/shared';
 import { buildBreadcrumbPath, canEdit, canMoveBoard, effectiveRole, subtreeIds } from '@tablero/shared';
 
 import { prisma } from '../db.js';
+import { forbidden, notFound, conflict } from './errors.js';
+import { emptyDocumentUpdate } from './documents.js';
 
 export type BoardRecord = {
   id: string;
@@ -225,4 +227,74 @@ export async function boardAccessFor(
 ): Promise<{ role: EffectiveRole | null; trashedAt: Date | null }> {
   const access = await loadBoardAccess(userId);
   return { role: access.roleOf(boardId), trashedAt: access.get(boardId)?.trashedAt ?? null };
+}
+
+/** Tablero con acceso verificado (404 si no existe o no hay rol). */
+export function accessOrThrow(access: BoardAccess, id: string): { record: BoardRecord; role: EffectiveRole } {
+  const record = access.get(id);
+  const role = access.roleOf(id);
+  if (!record || !role) throw notFound('El tablero no existe o no tenés acceso');
+  return { record, role };
+}
+
+/** Tablero con rol de editor verificado (403 si es lector o comentarista). */
+export function editorOrThrow(access: BoardAccess, id: string): { record: BoardRecord; role: EffectiveRole } {
+  const found = accessOrThrow(access, id);
+  if (!canEdit(found.role)) {
+    throw forbidden('Necesitás rol de editor en este tablero', 'forbidden_role');
+  }
+  return found;
+}
+
+export type UnsortedBoardResult = { access: BoardAccess; board: BoardRecord; created: boolean };
+
+/** Título e icono de la bandeja de entrada de la cuenta (§4.3 del plan). */
+export const UNSORTED_BOARD_TITLE = 'Sin ordenar';
+export const UNSORTED_BOARD_ICON = '📥';
+
+/**
+ * Bandeja de entrada «Sin ordenar» (§4.3): la devuelve, creándola si no existe.
+ * Es única por cuenta y cuelga de la raíz (solo el registro crea raíces). Si
+ * alguien la mandó a la papelera, al pedirla vuelve.
+ */
+export async function ensureUnsortedBoard(userId: string): Promise<UnsortedBoardResult> {
+  let access = await loadBoardAccess(userId);
+  let board = access.unsortedBoard();
+  let created = false;
+
+  if (board && board.trashedAt) {
+    await prisma.board.updateMany({
+      where: { id: { in: [board.id] }, trashedAt: { not: null } },
+      data: { trashedAt: null },
+    });
+    access = await loadBoardAccess(userId);
+    board = access.unsortedBoard();
+  } else if (!board) {
+    const root = access.rootBoard();
+    if (!root) throw conflict('La cuenta no tiene tablero raíz', 'missing_root_board');
+    const result = await prisma.$transaction(async (tx) => {
+      // Carrera entre dos pestañas: la segunda reutiliza la bandeja ya creada.
+      const existing = await tx.board.findFirst({ where: { ownerId: userId, isUnsorted: true } });
+      if (existing) return { board: existing, created: false };
+      const row = await tx.board.create({
+        data: {
+          ownerId: userId,
+          parentBoardId: root.id,
+          title: UNSORTED_BOARD_TITLE,
+          icon: UNSORTED_BOARD_ICON,
+          isUnsorted: true,
+        },
+      });
+      await tx.boardDocument.create({
+        data: { boardId: row.id, yjsState: Buffer.from(emptyDocumentUpdate()) },
+      });
+      return { board: row, created: true };
+    });
+    created = result.created;
+    access = await loadBoardAccess(userId);
+    board = access.get(result.board.id);
+  }
+
+  if (!board) throw notFound('No se pudo obtener el tablero «Sin ordenar»');
+  return { access, board, created };
 }

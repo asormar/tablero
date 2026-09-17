@@ -1,12 +1,70 @@
 import { fileURLToPath } from 'node:url';
 import react from '@vitejs/plugin-react';
+import { VitePWA, type VitePWAOptions } from 'vite-plugin-pwa';
 import { defineConfig } from 'vitest/config';
 
 const srcDir = fileURLToPath(new URL('./src', import.meta.url));
 const sharedDir = fileURLToPath(new URL('../../packages/shared/src', import.meta.url));
 
+/**
+ * Manifiesto de la PWA (punto 7 de la fase 4).
+ *
+ * El `share_target` no está en los tipos de Workbox, así que el objeto se arma
+ * sin tipo y se ajusta al declarar la opción del plugin. `action: '/?share=1'`
+ * porque la app es una SPA servida desde la raíz.
+ */
+const pwaManifest = {
+  name: 'Tablero — tableros visuales',
+  short_name: 'Tablero',
+  description:
+    'Tableros visuales con tarjetas: notas, enlaces, archivos, tareas, mapas y dibujos, con colaboración en tiempo real.',
+  lang: 'es',
+  start_url: '/',
+  scope: '/',
+  display: 'standalone',
+  orientation: 'any',
+  theme_color: '#2f6fc9',
+  background_color: '#f4f4f2',
+  categories: ['productivity', 'utilities'],
+  icons: [
+    { src: 'icons/icon-192.png', sizes: '192x192', type: 'image/png' },
+    { src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png' },
+    { src: 'icons/icon-maskable-512.png', sizes: '512x512', type: 'image/png', purpose: 'maskable' },
+  ],
+  share_target: {
+    action: '/?share=1',
+    method: 'GET',
+    enctype: 'application/x-www-form-urlencoded',
+    params: { title: 'title', text: 'text', url: 'url' },
+  },
+};
+
 export default defineConfig({
-  plugins: [react()],
+  plugins: [
+    react(),
+    VitePWA({
+      registerType: 'autoUpdate',
+      // El registro lo hace `src/pwa/register.ts` (sin `workbox-window`).
+      injectRegister: false,
+      includeAssets: ['icons/apple-touch-icon.png'],
+      manifest: pwaManifest as unknown as NonNullable<VitePWAOptions['manifest']>,
+      workbox: {
+        // Caché de la aplicación (precache del build). La API y la colaboración
+        // quedan afuera a propósito: son datos vivos y van siempre a la red.
+        globPatterns: ['**/*.{js,css,html,png,svg,woff,woff2}'],
+        navigateFallback: '/index.html',
+        navigateFallbackDenylist: [/^\/api\//, /^\/collab\//],
+        cleanupOutdatedCaches: true,
+        clientsClaim: true,
+        skipWaiting: true,
+      },
+      devOptions: {
+        // En desarrollo no se registra el service worker: el HMR quedaría
+        // sirviendo módulos cacheados.
+        enabled: false,
+      },
+    }),
+  ],
   resolve: {
     alias: {
       '@': srcDir,

@@ -37,6 +37,13 @@ async function csrfGuard(request: FastifyRequest): Promise<void> {
   if (!MUTATING_METHODS.has(request.method)) return;
   if (!request.url.startsWith('/api')) return;
 
+  // Captura con token personal (§7.8): los atajos de iOS/Android y los scripts
+  // llegan sin `Origin`. Una petición que trae `Authorization` o
+  // `X-Capture-Token` no puede ser un CSRF de navegador (esas cabeceras exigen
+  // preflight y el preflight lo corta CORS), y la ruta valida el token.
+  const tokenHeader = request.headers.authorization ?? request.headers['x-capture-token'];
+  if (typeof tokenHeader === 'string' && tokenHeader.length > 0) return;
+
   const origin = originOf(request.headers.origin);
   if (origin) {
     if (!env.allowedOrigins.has(origin)) {

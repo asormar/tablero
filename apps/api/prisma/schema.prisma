@@ -84,6 +84,7 @@ model Board {
   parent      Board?         @relation("BoardTree", fields: [parentBoardId], references: [id], onDelete: SetNull)
   children    Board[]        @relation("BoardTree")
   document    BoardDocument?
+  versions    BoardVersion[]
   shares      Share[]
   comments    Comment[]
   templates   Template[]
@@ -219,13 +220,18 @@ model Template {
   @@index([category])
 }
 
-/// Índice de búsqueda por elemento (texto plano). Preparado para migrar a
-/// `tsvector` + GIN cuando el volumen lo justifique; hoy se consulta con ILIKE.
+/// Índice de búsqueda por elemento (texto plano). La columna `tsv` la calcula
+/// Postgres (`to_tsvector('spanish', text)`, columna generada con índice GIN) y
+/// la API solo escribe `text`.
 model SearchIndex {
   boardId       String
   elementId     String
   elementType   String
   text          String
+  /// Texto normalizado (minúsculas, sin diacríticos) para el respaldo por
+  /// subcadena: `reunion` encuentra «Reunión». Lo escribe la API.
+  textNorm      String   @default("")
+  tsv           Unsupported("tsvector")?
   actualizadoEn DateTime @default(now()) @updatedAt
 
   board Board @relation(fields: [boardId], references: [id], onDelete: Cascade)
@@ -234,3 +240,23 @@ model SearchIndex {
   @@index([elementType])
   @@index([text])
 }
+
+/// Instantánea del documento Yjs de un tablero (§7.5 del plan): el historial de
+/// versiones. La crea el hook de persistencia con throttle (una cada 10 minutos
+/// de actividad) y la poda la retención acotada de `lib/versions.ts`.
+model BoardVersion {
+  id           String   @id @default(cuid())
+  boardId      String
+  yjsState     Bytes
+  /// Cantidad de elementos y peso del estado: alimentan la previsualización.
+  elementCount Int      @default(0)
+  sizeBytes    Int      @default(0)
+  /// Origen de la instantánea: `auto` (throttle), `manual` o `restore`.
+  origin       String   @default("auto")
+  createdAt    DateTime @default(now())
+
+  board Board @relation(fields: [boardId], references: [id], onDelete: Cascade)
+
+  @@index([boardId, createdAt])
+}
+

@@ -45,7 +45,7 @@
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme]) {
     --canvas-bg: #1b1b1e;
     --canvas-dot: #2c2c31;
     --surface: #26262a;
@@ -63,6 +63,31 @@
     --shadow-card-hover: 0 2px 8px rgba(0, 0, 0, 0.5);
     --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.55);
   }
+}
+
+/*
+ * Tema oscuro por interruptor (fase 4): `data-theme` lo fija el arranque
+ * (script de `index.html`) y los ajustes. Se repiten los tokens del bloque de
+ * arriba porque CSS no deja reutilizar un bloque de declaraciones; el resultado
+ * es el mismo conjunto de variables.
+ */
+:root[data-theme='dark'] {
+  --canvas-bg: #1b1b1e;
+  --canvas-dot: #2c2c31;
+  --surface: #26262a;
+  --surface-2: #2c2c31;
+  --surface-3: #33333a;
+  --text: #ececef;
+  --text-muted: #a9a9af;
+  --text-faint: #7d7d85;
+  --border: rgba(255, 255, 255, 0.12);
+  --border-strong: rgba(255, 255, 255, 0.22);
+  --accent: #77aeee;
+  --accent-soft: #1f2c40;
+  --danger: #f08c8c;
+  --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.4);
+  --shadow-card-hover: 0 2px 8px rgba(0, 0, 0, 0.5);
+  --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.55);
 }
 
 *,
@@ -555,6 +580,17 @@ kbd {
   inset: 0;
   pointer-events: none;
   background-image: radial-gradient(circle at 1px 1px, var(--canvas-dot) 1px, transparent 0);
+}
+
+/* Fondo del lienzo (fase 4): liso, puntos (por defecto) o cuadrícula. */
+:root[data-canvas-bg='plain'] .canvas__grid {
+  display: none;
+}
+
+:root[data-canvas-bg='grid'] .canvas__grid {
+  background-image:
+    linear-gradient(to right, var(--canvas-dot) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--canvas-dot) 1px, transparent 1px);
 }
 
 .canvas__world {

@@ -10,6 +10,7 @@
 import type { Guide, Point, Rect, Viewport } from '@tablero/shared';
 
 import { appliedAspectResize, appliedDrag, appliedWidthResize, type ResizeDirection, type ResizeResult } from '@/lib/dragMath';
+import { useSettingsStore } from '@/settings/settingsStore';
 import { useUiStore } from '@/state/uiStore';
 
 import { setNodeTransform, setNodeWidth } from './nodeRegistry';
@@ -89,11 +90,16 @@ export function startMoveDrag(params: MoveDragParams): PointerDrag {
     const rawDx = (pointer.x - startPointer.x) / viewport.scale;
     const rawDy = (pointer.y - startPointer.y) / viewport.scale;
     if (!moved && Math.abs(rawDx) < 0.5 && Math.abs(rawDy) < 0.5) return null;
+    // Guías y ajuste a rejilla salen de los ajustes (fase 4): apagados, el
+    // arrastre es libre y no se dibujan líneas.
+    const settings = useSettingsStore.getState().settings;
     const result = appliedDrag({
       rects: items.map((item) => item.rect),
       dx: rawDx,
       dy: rawDy,
       targets,
+      guides: settings.showGuides,
+      gridSnap: settings.snapToGrid,
     });
     return { dx: result.dx, dy: result.dy, guides: result.guides };
   };

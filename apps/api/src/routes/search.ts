@@ -1,98 +1,65 @@
 /**
- * GET /api/search — títulos de tableros + texto de elementos.
+ * Rutas de búsqueda.
  *
- * Los títulos salen de la tabla `Board` (relacional) y el resto de
- * `SearchIndex`, que se refresca al persistir cada documento Yjs. La consulta
- * es ILIKE (`contains` + `mode: 'insensitive'`); la columna queda lista para
- * migrar a `tsvector` + índice GIN sin cambiar el contrato de la ruta.
+ *   GET  /api/search?q=&type=&boardId=&limit=   → resultados agrupados por tablero
+ *   POST /api/search/reindex                    → reconstruye el índice
+ *
+ * El índice lo escribe el servidor (hook de persistencia de Hocuspocus); el
+ * cliente no indexa nada. `reindex` existe para rellenar lo que ya existía
+ * antes de la fase 4 y para reparar un índice desincronizado.
  */
 
 import type { FastifyInstance } from 'fastify';
-import { searchQuerySchema } from '@tablero/shared';
+import { idSchema, searchQuerySchema } from '@tablero/shared';
+import { z } from 'zod';
 
 import { prisma } from '../db.js';
-import { loadBoardAccess } from '../lib/boards.js';
-import { notFound } from '../lib/errors.js';
+import { loadBoardAccess, type BoardRecord } from '../lib/boards.js';
+import { reindexBoard } from '../lib/documents.js';
+import { forbidden, notFound } from '../lib/errors.js';
+import { searchAll } from '../lib/search.js';
 import { currentUser } from '../lib/session.js';
 
-export type SearchHit = {
-  boardId: string;
-  boardTitle: string;
-  elementId: string;
-  elementType: string;
-  snippet: string;
-};
-
-const SNIPPET_RADIUS = 70;
-
-function snippet(text: string, query: string): string {
-  const haystack = text.toLowerCase();
-  const needle = query.toLowerCase();
-  const index = haystack.indexOf(needle);
-  if (index < 0) return text.slice(0, SNIPPET_RADIUS * 2).trim();
-  const start = Math.max(0, index - SNIPPET_RADIUS);
-  const end = Math.min(text.length, index + needle.length + SNIPPET_RADIUS);
-  return `${start > 0 ? '…' : ''}${text.slice(start, end).trim()}${end < text.length ? '…' : ''}`;
-}
+const reindexSchema = z.object({ boardId: idSchema.optional() });
 
 export async function searchRoutes(app: FastifyInstance): Promise<void> {
   app.get('/search', async (request) => {
     const user = currentUser(request);
     const query = searchQuerySchema.parse(request.query ?? {});
+    const result = await searchAll(user.id, query.q, {
+      type: query.type,
+      boardId: query.boardId,
+      limit: query.limit,
+    });
+    return { query: query.q, limit: query.limit, ...result };
+  });
+
+  /**
+   * Reindexado completo desde el estado persistido de cada documento.
+   * Un reindexado parcial (`boardId`) exige rol de editor en ese tablero.
+   */
+  app.post('/search/reindex', { config: { rateLimit: { max: 30, timeWindow: '1 minute' } } }, async (request) => {
+    const user = currentUser(request);
+    const input = reindexSchema.parse(request.body ?? {});
     const access = await loadBoardAccess(user.id);
 
-    let scope = access.accessible();
-    if (query.boardId) {
-      if (!access.roleOf(query.boardId)) throw notFound('El tablero no existe o no tenés acceso');
-      scope = scope.filter((board) => board.id === query.boardId);
-    }
-    const scopeIds = scope.map((board) => board.id);
-    const titles = new Map(access.boards.map((board) => [board.id, board.title]));
-    const hits: SearchHit[] = [];
-
-    // 1) Títulos de tableros.
-    if (!query.type || query.type === 'board') {
-      const matches = await prisma.board.findMany({
-        where: { id: { in: scopeIds }, title: { contains: query.q, mode: 'insensitive' } },
-        select: { id: true, title: true },
-        take: query.limit,
-      });
-      for (const match of matches) {
-        hits.push({
-          boardId: match.id,
-          boardTitle: match.title,
-          elementId: match.id,
-          elementType: 'board',
-          snippet: match.title,
-        });
-      }
+    let boards: BoardRecord[];
+    if (input.boardId) {
+      const record = access.get(input.boardId);
+      if (!record) throw notFound('El tablero no existe o no tenés acceso');
+      if (!access.canEdit(record.id)) throw forbidden('Necesitás rol de editor en este tablero', 'forbidden_role');
+      boards = [record];
+    } else {
+      boards = access.accessible({ atLeastEditor: true });
     }
 
-    // 2) Texto de elementos indexado.
-    const indexQuery =
-      query.type && query.type !== 'board'
-        ? { boardId: { in: scopeIds }, elementType: query.type, text: { contains: query.q, mode: 'insensitive' as const } }
-        : query.type === 'board'
-          ? null
-          : { boardId: { in: scopeIds }, text: { contains: query.q, mode: 'insensitive' as const } };
-
-    if (indexQuery) {
-      const rows = await prisma.searchIndex.findMany({
-        where: indexQuery,
-        orderBy: { actualizadoEn: 'desc' },
-        take: query.limit,
-      });
-      for (const row of rows) {
-        hits.push({
-          boardId: row.boardId,
-          boardTitle: titles.get(row.boardId) ?? '',
-          elementId: row.elementId,
-          elementType: row.elementType,
-          snippet: snippet(row.text, query.q),
-        });
-      }
+    let indexed = 0;
+    let skipped = 0;
+    for (const board of boards) {
+      const elements = await reindexBoard(board.id);
+      if (elements === null) skipped += 1;
+      else indexed += elements;
     }
-
-    return { query: query.q, results: hits.slice(0, query.limit) };
+    return { ok: true, boards: boards.length, elements: indexed, skipped };
   });
 }

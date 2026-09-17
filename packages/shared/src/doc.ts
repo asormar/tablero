@@ -579,6 +579,31 @@ export function getTextFragment(doc: Y.Doc, id: string): Y.XmlFragment | null {
   return fragment instanceof Y.XmlFragment ? fragment : null;
 }
 
+/**
+ * Escribe texto plano en un `Y.XmlFragment`: un párrafo por línea, con la
+ * estructura que espera `y-prosemirror` (`paragraph` + `Y.XmlText`).
+ * Reemplaza el contenido previo. Los nodos se integran en el documento antes de
+ * rellenarlos: modificar un tipo de Yjs que todavía no forma parte del documento
+ * no es fiable (misma regla que el editor).
+ */
+export function writeTextParagraphs(fragment: Y.XmlFragment, text: string, origin?: unknown): void {
+  const lines = text.replace(/\r\n/g, '\n').split('\n');
+  const build = (): void => {
+    fragment.delete(0, fragment.length);
+    for (const line of lines) {
+      const paragraph = new Y.XmlElement('paragraph');
+      fragment.insert(fragment.length, [paragraph]);
+      if (line.length === 0) continue;
+      const node = new Y.XmlText();
+      paragraph.insert(paragraph.length, [node]);
+      node.insert(0, line);
+    }
+  };
+  const doc = fragment.doc;
+  if (origin === undefined || !doc) build();
+  else doc.transact(build, origin);
+}
+
 // --- Orden de apilado -------------------------------------------------------
 
 function reorder(doc: Y.Doc, ids: string[], mode: 'front' | 'back' | 'forward' | 'backward', origin: unknown): void {

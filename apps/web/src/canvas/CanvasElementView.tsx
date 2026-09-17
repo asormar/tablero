@@ -20,6 +20,7 @@ import { useSessionElement } from '@/collab/SessionContext';
 import { ElementContent } from '@/elements/ElementContent';
 import { countElementRender, isDevBuild } from '@/lib/renderStats';
 import { noteSurface } from '@/lib/smartPaste';
+import { useSettingsStore } from '@/settings/settingsStore';
 
 import { observeHeight, unobserveHeight } from './measure';
 import { registerNode } from './nodeRegistry';
@@ -48,6 +49,7 @@ function CanvasElementViewBase(props: CanvasElementViewProps): JSX.Element | nul
   if (isDevBuild) countElementRender();
   const { session, id, type } = props;
   const element = useSessionElement(id);
+  const theme = useSettingsStore((state) => state.resolvedTheme);
   const ref = useRef<HTMLDivElement | null>(null);
   const [hovered, setHovered] = useState(false);
 
@@ -84,7 +86,9 @@ function CanvasElementViewBase(props: CanvasElementViewProps): JSX.Element | nul
 
   const hasSurface = Boolean(element.hex) || (element.color !== undefined && element.color !== 'none');
   if (hasSurface) {
-    const surface = noteSurface(element.color, element.hex);
+    // El color de la tarjeta respeta el tema activo (fase 4): el token tiene
+    // variante clara y oscura.
+    const surface = noteSurface(element.color, element.hex, theme);
     style.background = surface.background;
     style.color = surface.color;
   }

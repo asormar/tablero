@@ -1,17 +1,39 @@
 /**
  * Barra superior: migas de pan, título editable en línea, deshacer/rehacer,
- * zoom, estado de sincronización y accesos a la ayuda y al panel lateral.
+ * zoom, estado de sincronización y accesos a la ayuda, al panel lateral y a las
+ * superficies de la fase 4 (búsqueda, historial, exportar/importar, plantillas,
+ * presentación, vista de lista, captura rápida y ajustes).
  */
 
 import { useEffect, useState } from 'react';
 
-import { Archive, Home, ListChecks, Maximize2, PanelRight, Redo2, Undo2 } from 'lucide-react';
+import {
+  Archive,
+  Download,
+  History,
+  Home,
+  LayoutGrid,
+  List,
+  ListChecks,
+  Maximize2,
+  MessageSquarePlus,
+  PanelRight,
+  Play,
+  Redo2,
+  Save,
+  Search,
+  Settings2,
+  Undo2,
+  Upload,
+} from 'lucide-react';
 
 import { renameBoard } from '@/app/boardService';
 import { fitToScreen, redoWithPrune, undoWithPrune } from '@/canvas/commands';
 import type { BoardSession } from '@/collab/BoardSession';
 import { useCanRedo, useCanUndo } from '@/collab/SessionContext';
+import { useT } from '@/i18n';
 import { useAppStore } from '@/state/appStore';
+import { usePanelsStore } from '@/state/panelsStore';
 import { useUiStore } from '@/state/uiStore';
 
 import { Breadcrumbs } from './Breadcrumbs';
@@ -31,6 +53,9 @@ export function TopBar({ session, boardId, onOpenBoard }: TopBarProps): JSX.Elem
   const panelTab = useUiStore((state) => state.panelTab);
   const canUndo = useCanUndo();
   const canRedo = useCanRedo();
+  const t = useT();
+  const paletteOpen = usePanelsStore((state) => state.paletteOpen);
+  const captureOpen = usePanelsStore((state) => state.captureOpen);
 
   useEffect(() => {
     setTitle(board?.title ?? '');
@@ -60,8 +85,8 @@ export function TopBar({ session, boardId, onOpenBoard }: TopBarProps): JSX.Elem
         <input
           className="topbar__title"
           value={title}
-          placeholder="Tablero sin título"
-          aria-label="Título del tablero"
+          placeholder={t('app.untitledBoard')}
+          aria-label={t('topbar.boardTitleAria')}
           onChange={(event) => setTitle(event.target.value)}
           onBlur={commitTitle}
           onKeyDown={(event) => {
@@ -78,11 +103,24 @@ export function TopBar({ session, boardId, onOpenBoard }: TopBarProps): JSX.Elem
       </div>
 
       <div className="topbar__right">
-        <div className="topbar__group" role="group" aria-label="Historial">
+        <button
+          type="button"
+          className={`topbar__search${paletteOpen ? ' is-active' : ''}`}
+          title={t('topbar.search')}
+          data-topbar-search
+          aria-keyshortcuts="Control+K"
+          onClick={() => usePanelsStore.getState().setPaletteOpen(true)}
+        >
+          <Search size={14} aria-hidden="true" />
+          <span className="topbar__search-text">{t('common.search')}</span>
+          <kbd className="topbar__search-kbd">Ctrl K</kbd>
+        </button>
+
+        <div className="topbar__group" role="group" aria-label={t('topbar.historyGroup')}>
           <button
             type="button"
             className="icon-button"
-            title="Deshacer (Ctrl+Z)"
+            title={t('topbar.undo')}
             disabled={!canUndo}
             onClick={() => undoWithPrune(session)}
           >
@@ -91,7 +129,7 @@ export function TopBar({ session, boardId, onOpenBoard }: TopBarProps): JSX.Elem
           <button
             type="button"
             className="icon-button"
-            title="Rehacer (Ctrl+Shift+Z)"
+            title={t('topbar.redo')}
             disabled={!canRedo}
             onClick={() => redoWithPrune(session)}
           >
@@ -102,7 +140,7 @@ export function TopBar({ session, boardId, onOpenBoard }: TopBarProps): JSX.Elem
         <button
           type="button"
           className="icon-button"
-          title="Ajustar a pantalla (Shift+1)"
+          title={t('topbar.fit')}
           onClick={() => fitToScreen(session)}
         >
           <Maximize2 size={15} />
@@ -111,10 +149,95 @@ export function TopBar({ session, boardId, onOpenBoard }: TopBarProps): JSX.Elem
         <ZoomControlCompact session={session} />
         <SyncIndicator />
 
+        <div className="topbar__group topbar__group--phase4" role="group" aria-label={t('topbar.menu')}>
+          <button
+            type="button"
+            className={`icon-button${captureOpen ? ' is-active' : ''}`}
+            title={t('toolbar.capture')}
+            data-topbar-capture
+            aria-pressed={captureOpen}
+            onClick={() => usePanelsStore.getState().setCaptureOpen(true)}
+          >
+            <MessageSquarePlus size={15} />
+          </button>
+          <button
+            type="button"
+            className="icon-button"
+            title={t('topbar.history')}
+            data-topbar-history
+            onClick={() => usePanelsStore.getState().setHistoryOpen(true)}
+          >
+            <History size={15} />
+          </button>
+          <button
+            type="button"
+            className="icon-button"
+            title={t('topbar.export')}
+            data-topbar-export
+            onClick={() => usePanelsStore.getState().setExportOpen(true)}
+          >
+            <Download size={15} />
+          </button>
+          <button
+            type="button"
+            className="icon-button"
+            title={t('topbar.import')}
+            data-topbar-import
+            onClick={() => usePanelsStore.getState().setImportOpen(true)}
+          >
+            <Upload size={15} />
+          </button>
+          <button
+            type="button"
+            className="icon-button"
+            title={t('templates.title')}
+            data-topbar-templates
+            onClick={() => usePanelsStore.getState().setTemplatesOpen(true)}
+          >
+            <LayoutGrid size={15} />
+          </button>
+          <button
+            type="button"
+            className="icon-button"
+            title={t('topbar.saveTemplate')}
+            data-topbar-save-template
+            onClick={() => usePanelsStore.getState().setSaveTemplateOpen(true)}
+          >
+            <Save size={15} />
+          </button>
+          <button
+            type="button"
+            className="icon-button"
+            title={t('topbar.present')}
+            data-topbar-present
+            onClick={() => usePanelsStore.getState().setPresentationOpen(true)}
+          >
+            <Play size={15} />
+          </button>
+          <button
+            type="button"
+            className="icon-button"
+            title={t('topbar.listView')}
+            data-topbar-list
+            onClick={() => usePanelsStore.getState().setListViewOpen(true)}
+          >
+            <List size={15} />
+          </button>
+          <button
+            type="button"
+            className="icon-button"
+            title={t('topbar.settings')}
+            data-topbar-settings
+            onClick={() => usePanelsStore.getState().setSettingsOpen(true)}
+          >
+            <Settings2 size={15} />
+          </button>
+        </div>
+
         <button
           type="button"
           className={`icon-button${panelOpen && panelTab === 'unsorted' ? ' is-active' : ''}`}
-          title="Sin ordenar"
+          title={t('topbar.unsorted')}
           aria-pressed={panelOpen && panelTab === 'unsorted'}
           onClick={() => useUiStore.getState().openPanel('unsorted')}
         >
@@ -124,7 +247,7 @@ export function TopBar({ session, boardId, onOpenBoard }: TopBarProps): JSX.Elem
         <button
           type="button"
           className={`icon-button${panelOpen && panelTab === 'trash' ? ' is-active' : ''}`}
-          title="Papelera"
+          title={t('topbar.trash')}
           aria-pressed={panelOpen && panelTab === 'trash'}
           onClick={() => useUiStore.getState().openPanel('trash')}
         >
@@ -134,7 +257,7 @@ export function TopBar({ session, boardId, onOpenBoard }: TopBarProps): JSX.Elem
         <button
           type="button"
           className="icon-button"
-          title="Tableros (favoritos y recientes)"
+          title={t('topbar.boards')}
           onClick={() => useUiStore.getState().setHomeOpen(true)}
         >
           <Home size={15} />
@@ -143,7 +266,7 @@ export function TopBar({ session, boardId, onOpenBoard }: TopBarProps): JSX.Elem
         <button
           type="button"
           className="icon-button"
-          title="Tareas (vista global)"
+          title={t('topbar.tasks')}
           onClick={() => useUiStore.getState().setTasksOpen(true)}
         >
           <ListChecks size={15} />
@@ -152,7 +275,7 @@ export function TopBar({ session, boardId, onOpenBoard }: TopBarProps): JSX.Elem
         <button
           type="button"
           className="icon-button"
-          title="Atajos de teclado (?)"
+          title={t('topbar.shortcuts')}
           onClick={() => useUiStore.getState().setHelpOpen(true)}
         >
           ?

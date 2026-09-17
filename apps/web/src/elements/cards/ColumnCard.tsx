@@ -29,6 +29,7 @@ import { columnCountLabel } from '@/lib/kanban';
 import { observeHeight, unobserveHeight } from '@/canvas/measure';
 import { registerNode } from '@/canvas/nodeRegistry';
 import { noteSurface } from '@/lib/smartPaste';
+import { useSettingsStore } from '@/settings/settingsStore';
 import { useUiStore } from '@/state/uiStore';
 
 /** Tarjeta dentro de una columna: misma tarjeta, sin posición absoluta. */
@@ -37,6 +38,7 @@ function ColumnChild({ session, id, simplified }: { session: BoardSession; id: s
   const node = useRef<HTMLDivElement | null>(null);
   const editingId = useUiStore((state) => state.editingId);
   const selected = useUiStore((state) => state.selection.includes(id));
+  const theme = useSettingsStore((state) => state.resolvedTheme);
   const [drag, setDrag] = useState<KanbanDrag | null>(null);
   // La clase de arrastre se pone recién cuando el gesto se movió: un clic (o el
   // doble clic que abre un documento) no puede quedar con `pointer-events: none`.
@@ -126,7 +128,7 @@ function ColumnChild({ session, id, simplified }: { session: BoardSession; id: s
   if (simplified) classes.push('is-zoomed-out');
 
   const surface = element.hex || (element.color !== undefined && element.color !== 'none')
-    ? noteSurface(element.color, element.hex)
+    ? noteSurface(element.color, element.hex, theme)
     : null;
 
   return (

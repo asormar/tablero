@@ -222,6 +222,68 @@ solo cambia `parentBoardId` en Postgres.
   probar un formulario. Hay que escribir con entrada real (CDP `Input.insertText`
   o `fill_input`).
 
+## Fase 4 — decisiones del API
+
+- **Índice de búsqueda**: lo escribe el servidor en el hook de persistencia de
+  Hocuspocus (`syncSearchIndex`), nunca el cliente. `SearchIndex` guarda el
+  texto tal cual (`text`), su versión normalizada sin diacríticos (`textNorm`,
+  para que `reunion` encuentre «Reunión») y el `tsvector` generado por Postgres
+  (`to_tsvector('spanish', text)` + índice GIN). La ruta combina los dos caminos
+  (`tsv @@ websearch_to_tsquery` para ranking y `ts_headline`, `LIKE` sobre
+  `textNorm` para subcadenas y acentos omitidos) y **no guarda la posición**: la
+  resuelve del documento Yjs persistido, sólo para los tableros que aparecen en
+  los resultados. `POST /api/search/reindex` rehace el índice desde los
+  documentos (parcial con `boardId`, exige edición).
+- **Historial de versiones**: una instantánea automática por tablero cada 10
+  minutos de actividad, creada en el mismo hook (`lib/versions.ts`); el throttle
+  se resuelve contra la base, así que vale con varias instancias y sobrevive a
+  reinicios. Retención: las últimas 50 + una por día hasta 30 días.
+  **Restaurar** (lo pidió el plan) no reescribe el documento vivo: se cierran
+  las conexiones, se espera a que el guardado con debounce se vacíe, se descarga
+  el documento, se escribe el estado de la instantánea y se guarda el estado
+  anterior como `pre-restore` (la restauración es reversible). Además queda una
+  **guardia de 8 s** en la que toda conexión a ese tablero se cierra con
+  «Reset Connection» (4205): sin ella, un cliente que todavía tiene el documento
+  viejo en memoria lo reenvía al reconectar y la fusión CRDT reviviría lo que el
+  usuario acaba de descartar. **Contrato del cliente**: al recibir ese cierre
+  (o al volver a abrir el tablero después de restaurar) tiene que **descartar su
+  documento local** y recargarlo del servidor; la guardia le da la ventana para
+  hacerlo.
+- **Exportación**: Markdown, texto plano, JSON y ZIP los arma el servidor
+  (`POST /api/boards/:id/export?format=…`, `GET /api/export/account`); PNG y PDF
+  los resuelve el navegador. El ZIP lleva `board.md`, `board.txt`, `board.json`
+  y los archivos reales en `assets/…` (leídos de MinIO en streaming, un archivo
+  por vez, con `zip.ts`, un escritor propio sin dependencias). El `board.json`
+  de cada tablero es `{ format: 'tablero.board', version: 1, board, document,
+  assets }`, donde `document.state` es **el estado Yjs en base64** (lo único que
+  restaura el texto enriquecido; la proyección `elements`/`texts` es para leer o
+  reconstruir sin Yjs) y `document.elements[].boardId` referencia ids de otros
+  `board.json` del mismo ZIP, para que quien importe los remapee. La cuenta
+  entera usa `{ format: 'tablero.account' }` con `boards/<nn>-<título>/…`.
+- **Plantillas**: las 12 del sistema las siembra `scripts/seed-templates.ts`
+  (`pnpm --filter @tablero/api seed:templates`) sobre un **usuario de sistema**
+  (con `Template.ownerId = null`, contraseña aleatoria que no se guarda: nadie
+  puede entrar a esa cuenta). Los subtableros de una plantilla cuelgan de verdad
+  (`parentBoardId`) del tablero de la plantilla, y al instanciar o guardar como
+  plantilla se copia el estado Yjs y **se remapean las tarjetas de tablero** a
+  las copias (`remapBoardReferences`); sin ese remapeo la copia apuntaría a los
+  tableros del origen.
+- **Captura rápida** (`POST /api/capture`): token personal (`Authorization:
+  Bearer`, `X-Capture-Token` o `token` en el cuerpo) o sesión. El guardia CSRF
+  deja pasar las peticiones mutantes con esas cabeceras aunque no traigan
+  `Origin` (un navegador no puede ponerlas sin preflight, y el preflight lo corta
+  CORS): es lo que permite capturar desde un atajo del móvil o un script. Crea la
+  nota en «Sin ordenar» (o en el tablero indicado con permiso de edición) sobre
+  el documento vivo de Hocuspocus si hay servidor, y si no sobre el estado
+  persistido; `image` y `file` devuelven 400 `capture_unsupported_type`.
+- **Ajustes y almacenamiento**: `GET/PATCH /api/settings` sobre `User.settings`
+  (siempre completos, con valores por defecto; un campo inválido guardado no
+  tumba a los demás) y el token de captura incluido en la respuesta.
+  `GET /api/storage` cuenta el espacio usado y los **huérfanos** (assets sin
+  ninguna referencia en los documentos del usuario, contando elementos en la
+  papelera del lienzo y portadas); `DELETE /api/storage/orphans` los recalcula en
+  el servidor, borra objetos y filas, y no se fía de ids que mande el cliente.
+
 ## Idioma
 
 La interfaz y los comentarios del código están en español (idioma por defecto

@@ -1,6 +1,13 @@
 /**
  * Documentos Yjs (`BoardDocument`): lectura/escritura de bytes y proyección a
  * texto plano para el índice de búsqueda.
+ *
+ * El índice (`SearchIndex`) guarda por elemento:
+ *   - `text`: el texto tal cual (lo que ve el usuario, lo usa `ts_headline`).
+ *   - `textNorm`: el mismo texto en minúsculas y sin diacríticos, para el
+ *     respaldo por subcadena (`reunion` encuentra «Reunión»).
+ *   - `tsv`: columna generada por Postgres (`to_tsvector('spanish', text)`).
+ * La API solo escribe `text` y `textNorm`.
  */
 
 import { createBoardDoc, elementPlainText, fragmentToPlainText, getOrderedElements, getTextFragment } from '@tablero/shared';
@@ -20,6 +27,13 @@ export function encodeStateBase64(state: Uint8Array): string {
 
 export function decodeStateBase64(base64: string): Uint8Array {
   return new Uint8Array(Buffer.from(base64, 'base64'));
+}
+
+/** `Y.Doc` a partir de bytes persistidos. */
+export function decodeState(state: Uint8Array): Y.Doc {
+  const doc = createBoardDoc();
+  Y.applyUpdate(doc, state);
+  return doc;
 }
 
 /**
@@ -45,12 +59,26 @@ export async function ensureBoardDocument(boardId: string): Promise<{ boardId: s
 export async function loadBoardDoc(boardId: string): Promise<Y.Doc | null> {
   const row = await prisma.boardDocument.findUnique({ where: { boardId } });
   if (!row) return null;
-  const doc = new Y.Doc();
-  Y.applyUpdate(doc, new Uint8Array(row.yjsState));
-  return doc;
+  return decodeState(new Uint8Array(row.yjsState));
 }
 
-export type SearchEntry = { elementId: string; elementType: string; text: string };
+/**
+ * Normaliza texto para la búsqueda por subcadena: minúsculas, sin diacríticos
+ * (`Reunión` → `reunion`) y con los espacios colapsados.
+ */
+export function normalizeSearchText(text: string): string {
+  return text
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+export type SearchEntry = { elementId: string; elementType: string; text: string; textNorm: string };
+
+/** Tope de texto indexado por elemento (una nota enorme no infla el índice). */
+export const SEARCH_TEXT_LIMIT = 8000;
 
 /**
  * Texto indexable de un elemento: campos planos, ítems de las listas de tareas
@@ -79,9 +107,9 @@ export function collectSearchEntries(doc: Y.Doc): SearchEntry[] {
     const text = [elementIndexText(element), richText.trim()]
       .filter((part) => part.length > 0)
       .join(' ')
-      .slice(0, 8000);
+      .slice(0, SEARCH_TEXT_LIMIT);
     if (text.length > 0) {
-      entries.push({ elementId: element.id, elementType: element.type, text });
+      entries.push({ elementId: element.id, elementType: element.type, text, textNorm: normalizeSearchText(text) });
     }
   }
   return entries;
@@ -105,10 +133,22 @@ export async function syncSearchIndex(boardId: string, doc: Y.Doc): Promise<numb
           elementId: entry.elementId,
           elementType: entry.elementType,
           text: entry.text,
+          textNorm: entry.textNorm,
         },
-        update: { elementType: entry.elementType, text: entry.text },
+        update: { elementType: entry.elementType, text: entry.text, textNorm: entry.textNorm },
       }),
     ),
   ]);
   return entries.length;
+}
+
+/**
+ * Reindexa un tablero desde su estado persistido en Postgres (sin abrir el
+ * documento en Hocuspocus). Devuelve la cantidad de elementos indexados, o
+ * `null` si el tablero no tiene documento.
+ */
+export async function reindexBoard(boardId: string): Promise<number | null> {
+  const doc = await loadBoardDoc(boardId);
+  if (!doc) return null;
+  return syncSearchIndex(boardId, doc);
 }

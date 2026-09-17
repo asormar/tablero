@@ -46,6 +46,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 
 import { prisma } from '../db.js';
 import { env } from '../env.js';
+import { deleteAssetObjects } from '../lib/assets.js';
 import { loadBoardAccess } from '../lib/boards.js';
 import { badRequest, HttpError, notFound } from '../lib/errors.js';
 import { emptyProcessing, processAv, processImage, type MediaProcessing } from '../lib/media.js';
@@ -380,15 +381,10 @@ export async function assetsRoutes(app: FastifyInstance): Promise<void> {
 
   app.delete('/assets/:id', async (request) => {
     const row = await requireOwnAsset(request);
-    const keys = [row.storageKey, ...(row.thumbnailKey ? [row.thumbnailKey] : [])];
-    for (const key of keys) {
-      try {
-        await deleteObject(key);
-      } catch (error) {
-        // El objeto huérfano no puede bloquear el borrado pedido por el usuario.
-        request.log.warn({ err: error, key }, 'No se pudo borrar el objeto de S3');
-      }
-    }
+    await deleteAssetObjects(row, (key, error) => {
+      // El objeto huérfano no puede bloquear el borrado pedido por el usuario.
+      request.log.warn({ err: error, key }, 'No se pudo borrar el objeto de S3');
+    });
     await prisma.asset.delete({ where: { id: row.id } });
     return { ok: true };
   });

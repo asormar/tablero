@@ -1,0 +1,73 @@
+/* ===========================================================================
+   Tablero — hoja de impresión (PDF desde el diálogo del navegador)
+
+   `printBoard()` encaja la vista y marca `<html data-print="board">`; con esa
+   marca se esconde toda la interfaz y el lienzo ocupa la página. Sin la marca
+   (por ejemplo, imprimir con Ctrl+P sin pasar por «Exportar»), no se aplica
+   nada: la app se imprime como se ve.
+   =========================================================================== */
+
+@media print {
+  html[data-print='board'] .topbar,
+  html[data-print='board'] .toolbar,
+  html[data-print='board'] .panel,
+  html[data-print='board'] .ctxbar,
+  html[data-print='board'] .zoom,
+  html[data-print='board'] .perf,
+  html[data-print='board'] .notice,
+  html[data-print='board'] .modal,
+  html[data-print='board'] .board-search,
+  html[data-print='board'] .list-view,
+  html[data-print='board'] .presentation,
+  html[data-print='board'] .overlay--guides,
+  html[data-print='board'] .overlay--marquee,
+  html[data-print='board'] .conn-draft,
+  html[data-print='board'] .drop-line {
+    display: none !important;
+  }
+
+  html[data-print='board'],
+  html[data-print='board'] body {
+    height: auto;
+    overflow: visible;
+    background: #ffffff;
+  }
+
+  html[data-print='board'] .workspace,
+  html[data-print='board'] .workspace__main,
+  html[data-print='board'] .workspace__canvas,
+  html[data-print='board'] .canvas {
+    display: block;
+    position: static;
+    width: auto;
+    height: auto;
+    min-height: 0;
+    overflow: visible;
+    background: #ffffff;
+  }
+
+  html[data-print='board'] .canvas__grid {
+    display: none;
+  }
+
+  html[data-print='board'] .canvas__world {
+    transform: none !important;
+    position: static;
+  }
+
+  html[data-print='board'] .el {
+    break-inside: avoid;
+    box-shadow: none;
+  }
+
+  html[data-print='board'] .el.is-selected,
+  html[data-print='board'] .el.is-dragging,
+  html[data-print='board'] .el.is-editing {
+    outline: none;
+  }
+
+  @page {
+    size: A4 landscape;
+    margin: 8mm;
+  }
+}

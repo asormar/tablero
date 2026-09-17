@@ -41,6 +41,7 @@ import { useAppStore } from '@/state/appStore';
 import { useUiStore } from '@/state/uiStore';
 
 import { canvasPoint, setCanvasRoot, worldFromClient } from './canvasRef';
+import { distanceBetween, midpointOf, pinchPair, pinchScaleFor } from './touchNav';
 import { ElementLayer } from './ElementLayer';
 import { CanvasGrid, ConnectorDraftOverlay, DropLineOverlay, GuidesOverlay, MarqueeOverlay } from './Overlays';
 import {
@@ -180,6 +181,61 @@ export function Canvas({ session, onOpenBoard }: CanvasProps): JSX.Element {
     };
     node.addEventListener('wheel', onWheel, { passive: false });
     return () => node.removeEventListener('wheel', onWheel);
+  }, []);
+
+  // --- Pinza táctil: dos dedos acercan y alejan ------------------------------
+  useEffect(() => {
+    const node = rootRef.current;
+    if (!node) return undefined;
+    const points = new Map<number, { x: number; y: number }>();
+    let previousDistance = 0;
+
+    const onDown = (event: PointerEvent): void => {
+      if (event.pointerType !== 'touch') return;
+      points.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      const pair = pinchPair([...points.values()]);
+      previousDistance = pair ? distanceBetween(pair[0], pair[1]) : 0;
+      // Un segundo dedo corta el gesto de un dedo (arrastre o lazo): a partir de
+      // acá manda la pinza.
+      if (pair && activeTrack.current) {
+        activeTrack.current();
+        activeTrack.current = null;
+      }
+    };
+
+    const onMove = (event: PointerEvent): void => {
+      if (event.pointerType !== 'touch') return;
+      if (!points.has(event.pointerId)) return;
+      points.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      const pair = pinchPair([...points.values()]);
+      if (!pair) return;
+      const next = distanceBetween(pair[0], pair[1]);
+      const factor = pinchScaleFor(previousDistance, next);
+      previousDistance = next;
+      if (factor === 1) return;
+      const ui = useUiStore.getState();
+      const middle = midpointOf(pair[0], pair[1]);
+      const anchor = canvasPoint(middle.x, middle.y);
+      ui.zoomAtPoint(anchor, ui.viewport.scale * factor);
+    };
+
+    const onUp = (event: PointerEvent): void => {
+      if (event.pointerType !== 'touch') return;
+      points.delete(event.pointerId);
+      const pair = pinchPair([...points.values()]);
+      previousDistance = pair ? distanceBetween(pair[0], pair[1]) : 0;
+    };
+
+    node.addEventListener('pointerdown', onDown);
+    node.addEventListener('pointermove', onMove);
+    node.addEventListener('pointerup', onUp);
+    node.addEventListener('pointercancel', onUp);
+    return () => {
+      node.removeEventListener('pointerdown', onDown);
+      node.removeEventListener('pointermove', onMove);
+      node.removeEventListener('pointerup', onUp);
+      node.removeEventListener('pointercancel', onUp);
+    };
   }, []);
 
   // --- Gestos ---------------------------------------------------------------
@@ -453,6 +509,12 @@ export function Canvas({ session, onOpenBoard }: CanvasProps): JSX.Element {
           return;
         }
         ui.setSelectedConnector(null);
+        // En pantallas táctiles un dedo en el vacío desplaza el lienzo (como en
+        // cualquier app de lienzo); el lazo queda para el ratón.
+        if (event.pointerType === 'touch') {
+          startPan(event);
+          return;
+        }
         startMarquee(startPoint, event.shiftKey);
         return;
       }

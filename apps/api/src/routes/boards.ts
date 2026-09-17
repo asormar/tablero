@@ -17,8 +17,9 @@ import {
   type BoardRecord,
   type SummaryExtras,
 } from '../lib/boards.js';
-import { emptyDocumentUpdate, encodeStateBase64, ensureBoardDocument, loadBoardDoc } from '../lib/documents.js';
-import { badRequest, conflict, forbidden, notFound } from '../lib/errors.js';
+import { requireBoardEditor, requireBoardView, resolveBoardAccessFrom } from '../lib/access.js';
+import { emptyDocumentUpdate, encodeStateBase64, ensureBoardDocument, loadBoardDoc, reindexBoards } from '../lib/documents.js';
+import { conflict, forbidden, notFound } from '../lib/errors.js';
 import { currentUser } from '../lib/session.js';
 import { copyBoardSubtree, fetchTemplateSubtree } from '../lib/templates.js';
 import { elementCount } from '@tablero/shared';
@@ -44,21 +45,6 @@ const updateBoardBodySchema = updateBoardSchema
   .innerType()
   .extend({ favorite: z.boolean().optional() })
   .refine((value) => Object.keys(value).length > 0, { message: 'Nada que actualizar' });
-
-function requireAccess(access: BoardAccess, id: string): { record: BoardRecord; role: EffectiveRole } {
-  const record = access.get(id);
-  const role = access.roleOf(id);
-  if (!record || !role) throw notFound('El tablero no existe o no tenés acceso');
-  return { record, role };
-}
-
-function requireEditor(access: BoardAccess, id: string): { record: BoardRecord; role: EffectiveRole } {
-  const found = requireAccess(access, id);
-  if (found.role !== 'owner' && found.role !== 'editor') {
-    throw forbidden('Necesitás rol de editor en este tablero', 'forbidden_role');
-  }
-  return found;
-}
 
 /** Subárbol en orden BFS (padres antes que hijos). */
 function orderedSubtree(access: BoardAccess, rootId: string): BoardRecord[] {
@@ -160,10 +146,9 @@ export async function boardsRoutes(app: FastifyInstance): Promise<void> {
 
     let parentId: string | null;
     if (input.parentBoardId) {
-      const parent = access.get(input.parentBoardId);
-      const role = access.roleOf(input.parentBoardId);
-      if (!parent || !role) throw notFound('El tablero padre no existe o no tenés acceso');
-      if (!access.canEdit(parent.id)) throw forbidden('Necesitás rol de editor en el tablero padre', 'forbidden_role');
+      const { board: parent } = requireBoardEditor(resolveBoardAccessFrom(access, input.parentBoardId), {
+        allowTrashed: true,
+      });
       if (parent.trashedAt) throw conflict('No se puede crear dentro de un tablero en la papelera', 'parent_trashed');
       parentId = parent.id;
     } else {
@@ -230,7 +215,7 @@ export async function boardsRoutes(app: FastifyInstance): Promise<void> {
     const user = currentUser(request);
     const { id } = idParamsSchema.parse(request.params);
     const access = await loadBoardAccess(user.id);
-    const { record } = requireAccess(access, id);
+    const { board: record } = requireBoardView(resolveBoardAccessFrom(access, id), { allowTrashed: true });
 
     const doc = await loadBoardDoc(id);
     const extras: SummaryExtras = { elementCount: doc ? elementCount(doc) : 0 };
@@ -242,7 +227,7 @@ export async function boardsRoutes(app: FastifyInstance): Promise<void> {
     const { id } = idParamsSchema.parse(request.params);
     const input = updateBoardBodySchema.parse(request.body ?? {});
     const access = await loadBoardAccess(user.id);
-    requireEditor(access, id);
+    requireBoardEditor(resolveBoardAccessFrom(access, id), { allowTrashed: true });
 
     // `settings` ya no está en updateBoardSchema: el modelo Board no tiene esa
     // columna y el esquema (`.strict()`) rechaza el campo con 400 en vez de
@@ -283,7 +268,7 @@ export async function boardsRoutes(app: FastifyInstance): Promise<void> {
     const user = currentUser(request);
     const { id } = idParamsSchema.parse(request.params);
     const access = await loadBoardAccess(user.id);
-    const { record } = requireEditor(access, id);
+    const { board: record } = requireBoardEditor(resolveBoardAccessFrom(access, id), { allowTrashed: true });
     if (record.parentBoardId === null && record.ownerId === user.id) {
       throw conflict('No se puede enviar a la papelera el tablero raíz', 'cannot_trash_root');
     }
@@ -328,7 +313,7 @@ export async function boardsRoutes(app: FastifyInstance): Promise<void> {
     const user = currentUser(request);
     const { id } = idParamsSchema.parse(request.params);
     const access = await loadBoardAccess(user.id);
-    const { record } = requireEditor(access, id);
+    const { board: record } = requireBoardEditor(resolveBoardAccessFrom(access, id), { allowTrashed: true });
     if (!record.trashedAt) {
       throw conflict('El tablero no está en la papelera', 'board_not_trashed');
     }
@@ -350,7 +335,7 @@ export async function boardsRoutes(app: FastifyInstance): Promise<void> {
     const user = currentUser(request);
     const { id } = idParamsSchema.parse(request.params);
     const access = await loadBoardAccess(user.id);
-    const { record } = requireEditor(access, id);
+    const { board: record } = requireBoardEditor(resolveBoardAccessFrom(access, id), { allowTrashed: true });
     if (!record.trashedAt) {
       throw conflict('Solo se puede borrar definitivamente lo que está en la papelera', 'board_not_trashed');
     }
@@ -366,7 +351,7 @@ export async function boardsRoutes(app: FastifyInstance): Promise<void> {
     const { id } = idParamsSchema.parse(request.params);
     const input = moveBoardSchema.parse(request.body ?? {});
     const access = await loadBoardAccess(user.id);
-    requireEditor(access, id);
+    requireBoardEditor(resolveBoardAccessFrom(access, id), { allowTrashed: true });
 
     const targetId = input.parentBoardId;
     // Las raíces solo se crean en el registro: aceptar `null` dejaría una
@@ -374,11 +359,8 @@ export async function boardsRoutes(app: FastifyInstance): Promise<void> {
     if (targetId === null) {
       throw conflict('Solo el registro crea el tablero raíz de una cuenta', 'cannot_create_second_root');
     }
-    if (!access.get(targetId) || !access.roleOf(targetId)) {
-      throw notFound('El tablero destino no existe o no tenés acceso');
-    }
-    if (!access.canEdit(targetId)) throw forbidden('Necesitás rol de editor en el destino', 'forbidden_role');
-    if (access.get(targetId)?.trashedAt) throw conflict('El destino está en la papelera', 'target_trashed');
+    const { board: target } = requireBoardEditor(resolveBoardAccessFrom(access, targetId), { allowTrashed: true });
+    if (target.trashedAt) throw conflict('El destino está en la papelera', 'target_trashed');
     if (!access.canMove(id, targetId)) {
       throw conflict('No se puede mover un tablero dentro de sí mismo o de un descendiente', 'cannot_move_into_descendant');
     }
@@ -395,7 +377,7 @@ export async function boardsRoutes(app: FastifyInstance): Promise<void> {
     const { id } = idParamsSchema.parse(request.params);
     const input = duplicateSchema.parse(request.body ?? {});
     const access = await loadBoardAccess(user.id);
-    const { record } = requireEditor(access, id);
+    const { board: record } = requireBoardEditor(resolveBoardAccessFrom(access, id), { allowTrashed: true });
 
     const sources = input.includeChildren === true
       ? orderedSubtree(access, id).filter((candidate) => access.canEdit(candidate.id))
@@ -438,6 +420,10 @@ export async function boardsRoutes(app: FastifyInstance): Promise<void> {
       }
     });
 
+    // El duplicado se indexa al momento (mismos bytes que el original): sin
+    // esto, la copia queda invisible para `GET /api/search` hasta un reindex.
+    await reindexBoards([...idMap.values()]);
+
     const fresh = await loadBoardAccess(user.id);
     const newRootId = idMap.get(id);
     const newRoot = newRootId ? fresh.get(newRootId) : undefined;
@@ -454,7 +440,7 @@ export async function boardsRoutes(app: FastifyInstance): Promise<void> {
     const user = currentUser(request);
     const { id } = idParamsSchema.parse(request.params);
     const access = await loadBoardAccess(user.id);
-    requireAccess(access, id);
+    requireBoardView(resolveBoardAccessFrom(access, id), { allowTrashed: true });
     return { breadcrumbs: access.breadcrumbs(id) };
   });
 
@@ -462,7 +448,7 @@ export async function boardsRoutes(app: FastifyInstance): Promise<void> {
     const user = currentUser(request);
     const { id } = idParamsSchema.parse(request.params);
     const access = await loadBoardAccess(user.id);
-    requireAccess(access, id);
+    requireBoardView(resolveBoardAccessFrom(access, id), { allowTrashed: true });
     return { boards: access.summaries(access.children(id)) };
   });
 
@@ -470,8 +456,7 @@ export async function boardsRoutes(app: FastifyInstance): Promise<void> {
     const user = currentUser(request);
     const { id } = idParamsSchema.parse(request.params);
     const access = await loadBoardAccess(user.id);
-    const { record } = requireAccess(access, id);
-    if (record.trashedAt) throw badRequest('El tablero está en la papelera', 'board_trashed');
+    requireBoardView(resolveBoardAccessFrom(access, id));
 
     const document = await ensureBoardDocument(id);
     return { state: encodeStateBase64(new Uint8Array(document.yjsState)), updatedAt: document.updatedAt.getTime() };

@@ -70,11 +70,33 @@ import {
   writePlainText,
 } from '@/lib/xmlFragment';
 import type { BoardSession } from '@/collab/BoardSession';
+import { reportBoardActivity } from '@/collab/activityBridge';
+import { capabilityRefusal } from '@/collab/roles';
 
 const DEFAULT_NOTE_HEIGHT = 120;
 
 function currentUserId(): string {
   return useAppStore.getState().user.id;
+}
+
+/**
+ * Guarda de escritura de la fase 5: sin permiso de edición la mutación no corre
+ * y se explica por qué. El aviso se repite como mucho cada 4 s para que un gesto
+ * insistente no llene la pantalla de mensajes.
+ */
+let lastRefusalAt = 0;
+
+export function allowWrite(session: BoardSession, capability: 'edit' | 'comment' = 'edit'): boolean {
+  if (session.can(capability)) return true;
+  const refusal = capabilityRefusal(session.getRole(), capability);
+  if (refusal) {
+    const now = Date.now();
+    if (now - lastRefusalAt > 4000) {
+      lastRefusalAt = now;
+      useAppStore.getState().setNotice(refusal);
+    }
+  }
+  return false;
 }
 
 export function sizeForType(type: ElementType): Size {
@@ -147,6 +169,7 @@ export function createElementAt(
   world: Point,
   options: CreateOptions = {},
 ): string {
+  if (!allowWrite(session)) return '';
   const size = options.size ?? sizeForType(type);
   const point = placementForNewElement({ existing: rectsOf(session), size, world });
   const createdBy = currentUserId();
@@ -180,6 +203,7 @@ export function createElementAt(
   const ui = useUiStore.getState();
   if (options.select !== false) ui.select([id]);
   if (options.edit) ui.setEditing(id);
+  reportBoardActivity(session, { action: 'element.create', elementId: id, elementType: type });
   return id;
 }
 
@@ -263,14 +287,20 @@ export function deleteSelection(session: BoardSession): void {
   const ui = useUiStore.getState();
   const ids = ui.selection;
   if (ids.length === 0) return;
+  if (!allowWrite(session)) return;
   trashElements(session.doc, ids, session.origin, { deletedBy: currentUserId() });
   ui.setEditing(null);
   ui.clearSelection();
+  for (const id of ids) {
+    const element = session.getElement(id);
+    reportBoardActivity(session, { action: 'element.delete', elementId: id, elementType: element?.type ?? null });
+  }
 }
 
 export function duplicateSelection(session: BoardSession, offset = { dx: 24, dy: 24 }): string[] {
   const ids = useUiStore.getState().selection;
   if (ids.length === 0) return [];
+  if (!allowWrite(session)) return [];
   const newIds = duplicateElements(session.doc, ids, offset, session.origin, {
     createdBy: currentUserId(),
     cloneText: (source, destination) => {
@@ -310,6 +340,7 @@ export function cutSelection(session: BoardSession): void {
 export function pasteInternalAt(session: BoardSession, world: Point): string[] {
   const clipboard = getInternalClipboard();
   if (!clipboard || clipboard.payload.elements.length === 0) return [];
+  if (!allowWrite(session)) return [];
   const payload = clipboard.payload;
   const elements = payload.elements;
 
@@ -346,6 +377,7 @@ export function pasteInternalAt(session: BoardSession, world: Point): string[] {
 
 /** Pega: primero el portapapeles interno, si no el del sistema. */
 export async function pasteAt(session: BoardSession, world: Point): Promise<string[]> {
+  if (!allowWrite(session)) return [];
   const ids = pasteInternalAt(session, world);
   if (ids.length > 0) return ids;
   const text = await readSystemText();
@@ -356,12 +388,16 @@ export async function pasteAt(session: BoardSession, world: Point): Promise<stri
 export function nudgeSelection(session: BoardSession, dx: number, dy: number): void {
   const items = selectionItems(session);
   if (items.length === 0) return;
+  if (!allowWrite(session)) return;
   const moves = nudgeMoves(
     items.map((item) => ({ id: item.id, x: item.x, y: item.y })),
     dx,
     dy,
   );
   moveElements(session.doc, moves, session.origin);
+  for (const move of moves) {
+    reportBoardActivity(session, { action: 'element.move', elementId: move.id });
+  }
 }
 
 export function alignSelection(session: BoardSession, action: AlignAction): void {
@@ -369,12 +405,14 @@ export function alignSelection(session: BoardSession, action: AlignAction): void
   const items = selectionItems(session).map((item) => ({ id: item.id, rect: rectOf(item, measuredHeights) }));
   const moves = alignmentMoves(items, action);
   if (moves.length === 0) return;
+  if (!allowWrite(session)) return;
   moveElements(session.doc, moves, session.origin);
 }
 
 export function setSelectionColor(session: BoardSession, token: ColorToken): void {
   const ids = useUiStore.getState().selection;
   if (ids.length === 0) return;
+  if (!allowWrite(session)) return;
   const patch: Record<string, unknown> = { color: token };
   // Una nota que venía de un color literal pasa a usar la paleta.
   for (const id of ids) {
@@ -382,6 +420,9 @@ export function setSelectionColor(session: BoardSession, token: ColorToken): voi
     if (element && element.type !== 'swatch' && 'hex' in element && element.hex) patch['hex'] = null;
   }
   patchElements(session.doc, ids, patch, session.origin);
+  for (const id of ids) {
+    reportBoardActivity(session, { action: 'element.edit', elementId: id });
+  }
 }
 
 export function bringSelectionToFront(session: BoardSession): void {
@@ -535,8 +576,10 @@ export function editElement(session: BoardSession, id: string): void {
   const element = session.getElement(id);
   if (!element) return;
   if (!isRichTextType(element.type)) return;
+  if (!allowWrite(session)) return;
   session.ensureTextFragment(id);
   useUiStore.getState().setEditing(id);
+  reportBoardActivity(session, { action: 'element.edit', elementId: id, elementType: element.type });
 }
 
 /** Quita de la selección los elementos que ya no existen (tras deshacer). */

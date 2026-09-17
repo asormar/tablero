@@ -12,15 +12,19 @@ import {
   createContext,
   useCallback,
   useContext,
+  useMemo,
   useSyncExternalStore,
 } from 'react';
 
-import type { CanvasElement, Connector } from '@tablero/shared';
+import { type CanvasElement, type Connector, type EffectiveRole } from '@tablero/shared';
 
+import { elementCommentCount, type CommentEntry } from '@/collab/comments';
+import type { RemotePresence } from '@/collab/presence';
+import { type Capability, can as canCapability } from '@/collab/roles';
 import type { TextBlock } from '@/lib/textBlocks';
 import type { ElementLayout } from '@/lib/layout';
 
-import type { BoardSession, SessionStatus } from './BoardSession';
+import type { BoardSession, PermissionSnapshot, SessionStatus } from './BoardSession';
 
 const SessionContext = createContext<BoardSession | null>(null);
 
@@ -153,4 +157,61 @@ export function useExternalSessionLayout(session: BoardSession | null): ElementL
   );
   const getSnapshot = useCallback(() => (session ? session.getLayout() : EMPTY_LAYOUT), [session]);
   return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+}
+
+// --- Colaboración (fase 5) --------------------------------------------------
+
+/** Foto del permiso: rol, solo lectura y motivo del rechazo del socket. */
+export function useSessionPermission(): PermissionSnapshot {
+  const session = useSession();
+  const subscribe = useCallback(
+    (onStoreChange: () => void) => session.subscribePermission(onStoreChange),
+    [session],
+  );
+  const getSnapshot = useCallback(() => session.getPermission(), [session]);
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+}
+
+/** Rol efectivo en el tablero (`null` si todavía se desconoce). */
+export function useSessionRole(): EffectiveRole | null {
+  return useSessionPermission().role;
+}
+
+/** ¿El rol habilita esta capacidad? */
+export function useCan(capability: Capability): boolean {
+  const session = useSession();
+  const permission = useSessionPermission();
+  // El permiso entra como dependencia para recalcular al cambiar de rol.
+  return useMemo(
+    () => canCapability(permission.role, capability),
+    [permission.role, capability, session],
+  );
+}
+
+/** Presencias ajenas: cursores, selección y quién está mirando. */
+export function useRemotePresence(): RemotePresence[] {
+  const session = useSession();
+  const subscribe = useCallback(
+    (onStoreChange: () => void) => session.subscribePresence(onStoreChange),
+    [session],
+  );
+  const getSnapshot = useCallback(() => session.getPresence(), [session]);
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+}
+
+/** Comentarios del documento (llegan por el mismo canal que el contenido). */
+export function useSessionComments(): CommentEntry[] {
+  const session = useSession();
+  const subscribe = useCallback(
+    (onStoreChange: () => void) => session.subscribeComments(onStoreChange),
+    [session],
+  );
+  const getSnapshot = useCallback(() => session.getComments(), [session]);
+  return useSyncExternalStore(subscribe, getSnapshot, getSnapshot);
+}
+
+/** Comentarios abiertos de una tarjeta (contador del icono). */
+export function useElementCommentCount(elementId: string): number {
+  const comments = useSessionComments();
+  return useMemo(() => elementCommentCount(comments, elementId), [comments, elementId]);
 }

@@ -16,7 +16,9 @@ import type { ElementType } from '@tablero/shared';
 import { ASPECT_RESIZABLE } from '@tablero/shared';
 
 import type { BoardSession } from '@/collab/BoardSession';
-import { useSessionElement } from '@/collab/SessionContext';
+import { CardCommentBadge } from '@/collab/CommentLayer';
+import { can as canCapability } from '@/collab/roles';
+import { useSessionElement, useSessionPermission } from '@/collab/SessionContext';
 import { ElementContent } from '@/elements/ElementContent';
 import { countElementRender, isDevBuild } from '@/lib/renderStats';
 import { noteSurface } from '@/lib/smartPaste';
@@ -50,6 +52,8 @@ function CanvasElementViewBase(props: CanvasElementViewProps): JSX.Element | nul
   const { session, id, type } = props;
   const element = useSessionElement(id);
   const theme = useSettingsStore((state) => state.resolvedTheme);
+  const permission = useSessionPermission();
+  const readOnly = !canCapability(permission.role, 'edit');
   const ref = useRef<HTMLDivElement | null>(null);
   const [hovered, setHovered] = useState(false);
 
@@ -78,6 +82,10 @@ function CanvasElementViewBase(props: CanvasElementViewProps): JSX.Element | nul
   if (props.dragging) classes.push('is-dragging');
   if (element.locked) classes.push('is-locked');
   if (props.simplified) classes.push('is-zoomed-out');
+  // Modo lectura (fase 5): el contenido de la tarjeta deja de recibir punteros,
+  // así ninguna zona interactiva (casillas, celdas, mapas, dibujo) puede
+  // escribir. La tarjeta se sigue pudiendo seleccionar para leerla.
+  if (readOnly) classes.push('is-readonly');
   // «Sin marco»: la imagen se muestra sola, sin tarjeta alrededor.
   if (element.type === 'image' && element.frameless) classes.push('is-frameless');
   // Animación de entrada solo en tarjetas recién creadas (no al virtualizar).
@@ -113,12 +121,13 @@ function CanvasElementViewBase(props: CanvasElementViewProps): JSX.Element | nul
           simplified={props.simplified}
         />
       </div>
+      {!props.simplified ? <CardCommentBadge elementId={id} /> : null}
       {element.locked ? (
         <span className="el__lock" title="Posición bloqueada">
           <Lock size={12} />
         </span>
       ) : null}
-      {!props.simplified && !element.locked && (hovered || props.selected) ? (
+      {!readOnly && !props.simplified && !element.locked && (hovered || props.selected) ? (
         <>
           {ANCHOR_SIDES.map((side) => (
             <span
@@ -130,7 +139,7 @@ function CanvasElementViewBase(props: CanvasElementViewProps): JSX.Element | nul
           ))}
         </>
       ) : null}
-      {props.showHandles && !element.locked ? (
+      {!readOnly && props.showHandles && !element.locked ? (
         <>
           <span className="el__handle el__handle--w" data-handle="w" />
           <span className="el__handle el__handle--e" data-handle="e" />

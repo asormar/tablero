@@ -27,7 +27,15 @@ import { Toolbar } from '@/chrome/Toolbar';
 import { TopBar } from '@/chrome/TopBar';
 import { ZoomControl } from '@/chrome/ZoomControl';
 import { BoardSession } from '@/collab/BoardSession';
-import { SessionProvider, useSessionLayout, useSessionStatus } from '@/collab/SessionContext';
+import { PresenceBridge } from '@/collab/PresenceBridge';
+import { readOnlyNotice } from '@/collab/roles';
+import { flushActivity } from '@/api/activity';
+import {
+  SessionProvider,
+  useSessionLayout,
+  useSessionPermission,
+  useSessionStatus,
+} from '@/collab/SessionContext';
 import { RELOAD_NOTICE_KEY } from '@/history/reloadNotice';
 import { usePaste } from '@/hooks/usePaste';
 import { usePhase4Shortcuts } from '@/hooks/usePhase4Shortcuts';
@@ -103,11 +111,40 @@ const LazyListView = lazy(async () => {
   return { default: module.ListView };
 });
 
+// Superficies de la fase 5 (colaboración): compartir, publicar, notificaciones,
+// actividad y el globo de comentarios.
+const LazyShareDialog = lazy(async () => {
+  const module = await import('@/chrome/ShareDialog');
+  return { default: module.ShareDialog };
+});
+const LazyPublishPanel = lazy(async () => {
+  const module = await import('@/chrome/PublishPanel');
+  return { default: module.PublishPanel };
+});
+const LazyNotificationsPanel = lazy(async () => {
+  const module = await import('@/chrome/NotificationsPanel');
+  return { default: module.NotificationsPanel };
+});
+const LazyActivityPanel = lazy(async () => {
+  const module = await import('@/chrome/ActivityPanel');
+  return { default: module.ActivityPanel };
+});
+const LazyCommentPopover = lazy(async () => {
+  const module = await import('@/chrome/CommentThread');
+  return { default: module.CommentPopover };
+});
+
 export function Workspace(): JSX.Element {
   const boardId = useAppStore((state) => state.currentBoardId);
   const booting = useAppStore((state) => state.booting);
   const [session, setSession] = useState<BoardSession | null>(null);
   const [sessionBoardId, setSessionBoardId] = useState<string | null>(null);
+  /**
+   * Sube cuando la sesión pide reconstruirse: el servidor restauró una versión
+   * del tablero (cierre 4205) y el documento hay que armarlo de nuevo desde el
+   * remoto — la copia local ya quedó descartada, así que no hay fusión.
+   */
+  const [sessionEpoch, setSessionEpoch] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -124,14 +161,43 @@ export function Workspace(): JSX.Element {
   useEffect(() => {
     if (!boardId) return;
     useUiStore.getState().resetWorkspace();
-    const next = new BoardSession({ boardId, connect: true });
+    const board = boardById(useAppStore.getState().boards, boardId);
+    const user = useAppStore.getState().user;
+    const next = new BoardSession({
+      boardId,
+      connect: true,
+      role: board?.role ?? null,
+      user: { id: user.id, name: user.name },
+    });
     setSession(next);
     setSessionBoardId(boardId);
+    // El servidor restauró una versión: la sesión descartó su copia local y hay
+    // que rearmar el documento desde el remoto. Se reconstruye la sesión entera
+    // (como al cambiar de tablero) para no fusionar nada viejo.
+    const stopReset = next.subscribeReset(() => setSessionEpoch((epoch) => epoch + 1));
     void next.init();
     return () => {
+      stopReset();
+      // Lo que quede sin reportar se envía al salir del tablero.
+      flushActivity(boardId);
       next.destroy();
     };
-  }, [boardId]);
+  }, [boardId, sessionEpoch]);
+
+  // El rol puede llegar después que la sesión (catálogo de la API, invitación
+  // aceptada, cambio de rol): se copia a la sesión, que es quien gobierna la
+  // interfaz.
+  const boardRole = useAppStore((state) => state.boards.find((item) => item.id === boardId)?.role ?? null);
+  const userName = useAppStore((state) => state.user.name);
+  const userId = useAppStore((state) => state.user.id);
+  useEffect(() => {
+    if (!session) return;
+    session.setRole(boardRole ?? null);
+  }, [session, boardRole]);
+  useEffect(() => {
+    if (!session) return;
+    session.setPresenceUser({ id: userId, name: userName });
+  }, [session, userId, userName]);
 
   const openBoard = useCallback((id: string) => {
     useAppStore.getState().setCurrentBoard(id);
@@ -189,6 +255,12 @@ function WorkspaceShell({
   const captureOpen = usePanelsStore((state) => state.captureOpen);
   const presentationOpen = usePanelsStore((state) => state.presentationOpen);
   const listViewOpen = usePanelsStore((state) => state.listViewOpen);
+  const shareOpen = usePanelsStore((state) => state.shareOpen);
+  const publishOpen = usePanelsStore((state) => state.publishOpen);
+  const notificationsOpen = usePanelsStore((state) => state.notificationsOpen);
+  const activityOpen = usePanelsStore((state) => state.activityOpen);
+  const permission = useSessionPermission();
+  const commentOpen = useUiStore((state) => state.commentTargetId !== null || state.commentPinDraft !== null);
 
   useEffect(() => {
     setSyncState(status.state);
@@ -217,6 +289,20 @@ function WorkspaceShell({
   return (
     <div className="workspace">
       <TopBar session={session} boardId={boardId} onOpenBoard={onOpenBoard} />
+      {permission.readOnly ? (
+        <div
+          className="readonly-banner"
+          role="status"
+          data-readonly-banner={permission.role ?? 'unknown'}
+          data-readonly-socket={permission.socketRejected ? 'rejected' : 'ok'}
+        >
+          <span className="readonly-banner__text">
+            {permission.reason
+              ? `${permission.reason}. El tablero queda en solo lectura.`
+              : readOnlyNotice(permission.role ?? 'viewer')}
+          </span>
+        </div>
+      ) : null}
       <div className="workspace__main">
         <Toolbar session={session} onOpenBoard={onOpenBoard} />
         <div className="workspace__canvas">
@@ -305,6 +391,34 @@ function WorkspaceShell({
       {presentationOpen ? (
         <Suspense fallback={null}>
           <LazyPresentationMode onOpenBoard={onOpenBoard} />
+        </Suspense>
+      ) : null}
+
+      {/* Fase 5 */}
+      <PresenceBridge session={session} />
+      {shareOpen ? (
+        <Suspense fallback={null}>
+          <LazyShareDialog boardId={boardId} />
+        </Suspense>
+      ) : null}
+      {publishOpen ? (
+        <Suspense fallback={null}>
+          <LazyPublishPanel boardId={boardId} />
+        </Suspense>
+      ) : null}
+      {notificationsOpen ? (
+        <Suspense fallback={null}>
+          <LazyNotificationsPanel />
+        </Suspense>
+      ) : null}
+      {activityOpen ? (
+        <Suspense fallback={null}>
+          <LazyActivityPanel boardId={boardId} />
+        </Suspense>
+      ) : null}
+      {commentOpen ? (
+        <Suspense fallback={null}>
+          <LazyCommentPopover session={session} boardId={boardId} />
         </Suspense>
       ) : null}
 

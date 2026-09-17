@@ -25,6 +25,14 @@ export type PanelsState = {
   captureOpen: boolean;
   presentationOpen: boolean;
   listViewOpen: boolean;
+  /** Fase 5: diálogo de compartir (miembros e invitaciones). */
+  shareOpen: boolean;
+  /** Fase 5: panel de publicar (slug, contraseña, subtableros). */
+  publishOpen: boolean;
+  /** Fase 5: panel de notificaciones (campana). */
+  notificationsOpen: boolean;
+  /** Fase 5: registro de actividad del tablero. */
+  activityOpen: boolean;
   /** Tarjeta que se acaba de abrir desde una búsqueda y hay que destacar. */
   flashElementId: string | null;
   /** Instante del último destello (para reiniciar la animación si se repite). */
@@ -41,6 +49,10 @@ export type PanelsState = {
   setCaptureOpen(open: boolean): void;
   setPresentationOpen(open: boolean): void;
   setListViewOpen(open: boolean): void;
+  setShareOpen(open: boolean): void;
+  setPublishOpen(open: boolean): void;
+  setNotificationsOpen(open: boolean): void;
+  setActivityOpen(open: boolean): void;
   flashElement(id: string): void;
   clearFlash(): void;
   /** Cierra cualquier superficie abierta; devuelve `true` si cerró algo. */
@@ -61,6 +73,10 @@ export const usePanelsStore = create<PanelsState>()((set, get) => ({
   captureOpen: false,
   presentationOpen: false,
   listViewOpen: false,
+  shareOpen: false,
+  publishOpen: false,
+  notificationsOpen: false,
+  activityOpen: false,
   flashElementId: null,
   flashToken: 0,
 
@@ -99,6 +115,18 @@ export const usePanelsStore = create<PanelsState>()((set, get) => ({
   setListViewOpen(open) {
     set({ listViewOpen: open });
   },
+  setShareOpen(open) {
+    set({ shareOpen: open });
+  },
+  setPublishOpen(open) {
+    set({ publishOpen: open });
+  },
+  setNotificationsOpen(open) {
+    set({ notificationsOpen: open });
+  },
+  setActivityOpen(open) {
+    set({ activityOpen: open });
+  },
   flashElement(id) {
     set({ flashElementId: id, flashToken: get().flashToken + 1 });
   },
@@ -112,6 +140,10 @@ export const usePanelsStore = create<PanelsState>()((set, get) => ({
       ['paletteOpen', state.paletteOpen],
       ['boardSearchOpen', state.boardSearchOpen],
       ['captureOpen', state.captureOpen],
+      ['shareOpen', state.shareOpen],
+      ['publishOpen', state.publishOpen],
+      ['notificationsOpen', state.notificationsOpen],
+      ['activityOpen', state.activityOpen],
       ['settingsOpen', state.settingsOpen],
       ['templatesOpen', state.templatesOpen],
       ['saveTemplateOpen', state.saveTemplateOpen],
@@ -139,11 +171,15 @@ export const usePanelsStore = create<PanelsState>()((set, get) => ({
       importOpen: false,
       captureOpen: false,
       listViewOpen: false,
+      shareOpen: false,
+      publishOpen: false,
+      notificationsOpen: false,
+      activityOpen: false,
     });
   },
 }));
 
-/** ¿Hay alguna superficie de la fase 4 abierta? */
+/** ¿Hay alguna superficie de la fase 4 o 5 abierta? */
 export function anyPanelOpen(state: PanelsState): boolean {
   return (
     state.paletteOpen ||
@@ -155,6 +191,10 @@ export function anyPanelOpen(state: PanelsState): boolean {
     state.exportOpen ||
     state.importOpen ||
     state.captureOpen ||
-    state.listViewOpen
+    state.listViewOpen ||
+    state.shareOpen ||
+    state.publishOpen ||
+    state.notificationsOpen ||
+    state.activityOpen
   );
 }

@@ -84,7 +84,7 @@ const db = vi.hoisted(() => {
         return rows.map((row) => ({ ...row }));
       },
     },
-    share: { findMany: async () => [] },
+    boardMember: { findMany: async () => [] },
     boardDocument: {
       findMany: async ({ where }: { where: { boardId: { in: string[] } } }) =>
         where.boardId.in

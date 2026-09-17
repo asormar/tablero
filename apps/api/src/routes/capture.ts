@@ -24,7 +24,8 @@ import { z } from 'zod';
 
 import { transactBoardDocument } from '../collab/server.js';
 import { prisma } from '../db.js';
-import { ensureUnsortedBoard, loadBoardAccess, accessOrThrow } from '../lib/boards.js';
+import { requireBoardEditor, resolveBoardAccessFrom } from '../lib/access.js';
+import { ensureUnsortedBoard, loadBoardAccess } from '../lib/boards.js';
 import { decodeState, loadBoardDoc, syncSearchIndex } from '../lib/documents.js';
 import { badRequest, forbidden, unauthorized } from '../lib/errors.js';
 import { readSessionToken, resolveSession, type AuthedUser } from '../lib/session.js';
@@ -123,8 +124,9 @@ export async function captureRoutes(app: FastifyInstance): Promise<void> {
     let boardTitle: string;
     if (input.boardId) {
       const access = await loadBoardAccess(user.id);
-      const { record } = accessOrThrow(access, input.boardId);
-      if (!access.canEdit(record.id)) throw forbidden('Necesitás rol de editor en el tablero destino', 'forbidden_role');
+      const { board: record } = requireBoardEditor(resolveBoardAccessFrom(access, input.boardId), {
+        allowTrashed: true,
+      });
       if (record.trashedAt) throw badRequest('El tablero está en la papelera', 'board_trashed');
       boardId = record.id;
       boardTitle = record.title;

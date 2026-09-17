@@ -8,8 +8,10 @@
 import { useEffect, useState } from 'react';
 
 import {
+  ActivitySquare,
   Archive,
   Download,
+  Globe,
   History,
   Home,
   LayoutGrid,
@@ -23,20 +25,26 @@ import {
   Save,
   Search,
   Settings2,
+  Share2,
   Undo2,
   Upload,
 } from 'lucide-react';
 
+import { reportBoardActivityById } from '@/collab/activityBridge';
 import { renameBoard } from '@/app/boardService';
 import { fitToScreen, redoWithPrune, undoWithPrune } from '@/canvas/commands';
 import type { BoardSession } from '@/collab/BoardSession';
-import { useCanRedo, useCanUndo } from '@/collab/SessionContext';
+import { PresenceWatchers } from '@/collab/RemoteCursors';
+import { ROLE_LABELS, capabilityRefusal } from '@/collab/roles';
+import { useCanRedo, useCanUndo, useSessionPermission } from '@/collab/SessionContext';
 import { useT } from '@/i18n';
 import { useAppStore } from '@/state/appStore';
 import { usePanelsStore } from '@/state/panelsStore';
 import { useUiStore } from '@/state/uiStore';
+import { useSettingsStore } from '@/settings/settingsStore';
 
 import { Breadcrumbs } from './Breadcrumbs';
+import { NotificationBell } from './NotificationsPanel';
 import { SyncIndicator } from './SyncIndicator';
 import { ZoomControlCompact } from './ZoomControl';
 
@@ -56,6 +64,11 @@ export function TopBar({ session, boardId, onOpenBoard }: TopBarProps): JSX.Elem
   const t = useT();
   const paletteOpen = usePanelsStore((state) => state.paletteOpen);
   const captureOpen = usePanelsStore((state) => state.captureOpen);
+  const shareOpen = usePanelsStore((state) => state.shareOpen);
+  const publishOpen = usePanelsStore((state) => state.publishOpen);
+  const activityOpen = usePanelsStore((state) => state.activityOpen);
+  const permission = useSessionPermission();
+  const theme = useSettingsStore((state) => state.resolvedTheme);
 
   useEffect(() => {
     setTitle(board?.title ?? '');
@@ -72,7 +85,16 @@ export function TopBar({ session, boardId, onOpenBoard }: TopBarProps): JSX.Elem
       return;
     }
     if (next === board?.title) return;
-    void renameBoard(boardId, next);
+    if (permission.readOnly) {
+      // Renombrar es escribir: con rol de lectura vuelve al valor del servidor y
+      // se explica por qué.
+      setTitle(board?.title ?? '');
+      useAppStore.getState().setNotice(capabilityRefusal(permission.role, 'edit') ?? 'El tablero está en solo lectura.');
+      return;
+    }
+    void renameBoard(boardId, next).then(() => {
+      reportBoardActivityById(boardId, { action: 'board.rename', meta: { title: next } });
+    });
   };
 
   return (
@@ -87,6 +109,8 @@ export function TopBar({ session, boardId, onOpenBoard }: TopBarProps): JSX.Elem
           value={title}
           placeholder={t('app.untitledBoard')}
           aria-label={t('topbar.boardTitleAria')}
+          readOnly={permission.readOnly}
+          data-topbar-readonly={permission.readOnly ? 'yes' : 'no'}
           onChange={(event) => setTitle(event.target.value)}
           onBlur={commitTitle}
           onKeyDown={(event) => {
@@ -147,6 +171,16 @@ export function TopBar({ session, boardId, onOpenBoard }: TopBarProps): JSX.Elem
         </button>
 
         <ZoomControlCompact session={session} />
+        <PresenceWatchers boardId={boardId} dark={theme === 'dark'} />
+        {permission.readOnly ? (
+          <span
+            className="topbar__role"
+            data-topbar-role={permission.role ?? 'unknown'}
+            title={capabilityRefusal(permission.role, 'edit') ?? 'Solo lectura'}
+          >
+            {permission.role ? ROLE_LABELS[permission.role] : 'Solo lectura'}
+          </span>
+        ) : null}
         <SyncIndicator />
 
         <div className="topbar__group topbar__group--phase4" role="group" aria-label={t('topbar.menu')}>
@@ -232,6 +266,57 @@ export function TopBar({ session, boardId, onOpenBoard }: TopBarProps): JSX.Elem
           >
             <Settings2 size={15} />
           </button>
+        </div>
+
+        <button
+          type="button"
+          className={`icon-button${panelOpen && panelTab === 'comments' ? ' is-active' : ''}`}
+          title="Comentarios del tablero"
+          data-topbar-comments
+          aria-pressed={panelOpen && panelTab === 'comments'}
+          onClick={() => useUiStore.getState().openPanel('comments')}
+        >
+          <MessageSquarePlus size={15} />
+        </button>
+
+        <div className="topbar__group topbar__group--phase5" role="group" aria-label="Colaboración">
+          <button
+            type="button"
+            className={`icon-button${shareOpen ? ' is-active' : ''}`}
+            title="Compartir el tablero"
+            data-topbar-share
+            aria-pressed={shareOpen}
+            onClick={() => usePanelsStore.getState().setShareOpen(true)}
+          >
+            <Share2 size={15} />
+          </button>
+          <button
+            type="button"
+            className={`icon-button${publishOpen ? ' is-active' : ''}`}
+            title={
+              permission.role === 'owner' || permission.role === null
+                ? 'Publicar el tablero'
+                : 'Solo el dueño puede publicar'
+            }
+            data-topbar-publish
+            data-publish-allowed={permission.role === 'owner' || permission.role === null ? 'yes' : 'no'}
+            aria-pressed={publishOpen}
+            disabled={permission.role !== null && permission.role !== 'owner'}
+            onClick={() => usePanelsStore.getState().setPublishOpen(true)}
+          >
+            <Globe size={15} />
+          </button>
+          <button
+            type="button"
+            className={`icon-button${activityOpen ? ' is-active' : ''}`}
+            title="Actividad del tablero"
+            data-topbar-activity
+            aria-pressed={activityOpen}
+            onClick={() => usePanelsStore.getState().setActivityOpen(true)}
+          >
+            <ActivitySquare size={15} />
+          </button>
+          <NotificationBell />
         </div>
 
         <button

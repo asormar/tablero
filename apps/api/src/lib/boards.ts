@@ -24,6 +24,10 @@ export type BoardRecord = {
   coverImageId: string | null;
   isTemplate: boolean;
   publishedSlug: string | null;
+  /** Publicación (fase 5): hash argon2 de la contraseña, si la hay. */
+  publishedPasswordHash: string | null;
+  publishedAt: Date | null;
+  publicIncludeSubBoards: boolean;
   trashedAt: Date | null;
   /** Momento en que se marcó como favorito (null = no lo es). */
   favoriteAt: Date | null;
@@ -43,6 +47,9 @@ const BOARD_SELECT = {
   coverImageId: true,
   isTemplate: true,
   publishedSlug: true,
+  publishedPasswordHash: true,
+  publishedAt: true,
+  publicIncludeSubBoards: true,
   trashedAt: true,
   favoriteAt: true,
   isUnsorted: true,
@@ -66,11 +73,11 @@ export class BoardAccess {
   private readonly direct = new Map<string, BoardRole>();
   private readonly childCounts = new Map<string, number>();
 
-  constructor(userId: string, boards: BoardRecord[], shares: { boardId: string; role: BoardRole }[]) {
+  constructor(userId: string, boards: BoardRecord[], memberships: { boardId: string; role: BoardRole }[]) {
     this.userId = userId;
     this.boards = boards;
     this.byIdMap = new Map(boards.map((board) => [board.id, board]));
-    for (const share of shares) this.direct.set(share.boardId, share.role);
+    for (const membership of memberships) this.direct.set(membership.boardId, membership.role);
 
     for (const board of boards) {
       if (board.trashedAt || !board.parentBoardId) continue;
@@ -79,7 +86,11 @@ export class BoardAccess {
     for (const board of boards) this.computeRole(board.id, new Set());
   }
 
-  /** Rol efectivo: propio si existe, heredado del ancestro más cercano si no. */
+  /**
+   * Rol efectivo: propio si existe, heredado del ancestro más cercano si no.
+   * Es la misma regla que documenta `lib/access.ts` (una sola autorización por
+   * tablero en el proyecto); acá se memoiza para resolver el árbol entero.
+   */
   private computeRole(id: string, visiting: Set<string>): EffectiveRole | null {
     const cached = this.roles.get(id);
     if (cached !== undefined) return cached;
@@ -210,40 +221,14 @@ export class BoardAccess {
 }
 
 export async function loadBoardAccess(userId: string): Promise<BoardAccess> {
-  const [boards, shares] = await Promise.all([
+  const [boards, memberships] = await Promise.all([
     prisma.board.findMany({
       select: BOARD_SELECT,
       orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
     }),
-    prisma.share.findMany({ where: { userId }, select: { boardId: true, role: true } }),
+    prisma.boardMember.findMany({ where: { userId }, select: { boardId: true, role: true } }),
   ]);
-  return new BoardAccess(userId, boards as BoardRecord[], shares);
-}
-
-/** Rol efectivo de un tablero y su estado de papelera (atajo para el handshake WS). */
-export async function boardAccessFor(
-  userId: string,
-  boardId: string,
-): Promise<{ role: EffectiveRole | null; trashedAt: Date | null }> {
-  const access = await loadBoardAccess(userId);
-  return { role: access.roleOf(boardId), trashedAt: access.get(boardId)?.trashedAt ?? null };
-}
-
-/** Tablero con acceso verificado (404 si no existe o no hay rol). */
-export function accessOrThrow(access: BoardAccess, id: string): { record: BoardRecord; role: EffectiveRole } {
-  const record = access.get(id);
-  const role = access.roleOf(id);
-  if (!record || !role) throw notFound('El tablero no existe o no tenés acceso');
-  return { record, role };
-}
-
-/** Tablero con rol de editor verificado (403 si es lector o comentarista). */
-export function editorOrThrow(access: BoardAccess, id: string): { record: BoardRecord; role: EffectiveRole } {
-  const found = accessOrThrow(access, id);
-  if (!canEdit(found.role)) {
-    throw forbidden('Necesitás rol de editor en este tablero', 'forbidden_role');
-  }
-  return found;
+  return new BoardAccess(userId, boards as BoardRecord[], memberships);
 }
 
 export type UnsortedBoardResult = { access: BoardAccess; board: BoardRecord; created: boolean };

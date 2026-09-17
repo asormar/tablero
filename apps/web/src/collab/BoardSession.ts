@@ -10,6 +10,10 @@
  *   `Y.Map` (más el `Y.XmlFragment` de su texto).
  * - Si el servidor no responde, la sesión sigue funcionando en local y el
  *   estado se publica como `offline`; el documento se persiste en localStorage.
+ * - Restaurar una versión reescribe el documento en el servidor y cierra las
+ *   conexiones del tablero (4205): el cliente descarta su copia local y
+ *   reconstruye desde el remoto. Fusionar reviviría lo restaurado, porque la
+ *   unión de CRDTs solo agrega.
  */
 
 import { HocuspocusProvider } from '@hocuspocus/provider';
@@ -19,7 +23,9 @@ import {
   type CanvasElement,
   type Connector,
   type ConnectorStore,
+  type EffectiveRole,
   type ElementMap,
+  type Point,
   type Rect,
   type Size,
   connectorsOf,
@@ -40,7 +46,24 @@ import { readConnector } from '@/lib/connectors';
 import { type ElementLayout, targetRects, topLevelLayoutOf } from '@/lib/layout';
 import { type TextBlock, textBlocksOf } from '@/lib/textBlocks';
 
-import { loadLocalDocument, startLocalPersistence } from './localPersistence';
+import {
+  type CommentDraft,
+  type CommentEntry,
+  addComment as addCommentToDoc,
+  commentsOf,
+  elementCommentCount,
+  readComments,
+  removeComment as removeCommentFromDoc,
+  resolveComment as resolveCommentInDoc,
+} from './comments';
+import { clearLocalDocument, loadLocalDocument, startLocalPersistence } from './localPersistence';
+import {
+  type RemotePresence,
+  cursorColorFor,
+  livePresence,
+  readRemotePresence,
+} from './presence';
+import { type Capability, can as canCapability, effectiveUiRole } from './roles';
 
 export type SyncState = 'connecting' | 'saved' | 'saving' | 'offline' | 'error';
 
@@ -59,9 +82,41 @@ export type BoardSessionOptions = {
   collabUrl?: string;
   /** Milisegundos entre reintentos de conexión cuando el servidor no está. */
   retryDelayMs?: number;
+  /** Rol del usuario en el tablero según la API (`BoardSummary.role`). */
+  role?: EffectiveRole | null;
+  /**
+   * Fuerza el solo lectura sin importar el rol: lo usa la vista pública
+   * (`/p/:slug`), que no tiene sesión ni socket.
+   */
+  readOnly?: boolean;
+  /** Identidad para la presencia: nombre y color del cursor ajeno. */
+  user?: { id: string; name: string } | null;
+  /** Carga el documento de otra fuente (vista pública: sin sesión). */
+  documentSource?: (boardId: string) => Promise<{ state: string; updatedAt: number | null } | null>;
+};
+
+/** Foto del permiso que la interfaz consume (`useSyncExternalStore`). */
+export type PermissionSnapshot = {
+  role: EffectiveRole | null;
+  readOnly: boolean;
+  socketRejected: boolean;
+  /** Motivo del rechazo (aviso en la barra), si lo hubo. */
+  reason: string | null;
 };
 
 export const DEFAULT_COLLAB_URL = 'ws://localhost:8787/collab';
+
+/**
+ * URL del servidor de colaboración. Se puede apuntar a otro servidor con
+ * `VITE_COLLAB_URL` (mismo criterio que `VITE_API_BASE_URL` en `api/client.ts`):
+ * sirve para probar el rechazo por permisos contra un servidor que cierre con
+ * código propio sin tocar el código.
+ */
+export function resolveCollabUrl(): string {
+  const configured = import.meta.env.VITE_COLLAB_URL as string | undefined;
+  if (configured && configured.length > 0) return configured;
+  return DEFAULT_COLLAB_URL;
+}
 
 /**
  * `@hocuspocus/provider` solo envía el mensaje de autenticación si `token` no
@@ -72,6 +127,30 @@ export const DEFAULT_COLLAB_URL = 'ws://localhost:8787/collab';
  * cualquier token de menos de 32 caracteres.
  */
 export const BROWSER_AUTH_TRIGGER = 'cookie-session';
+
+/**
+ * Espera antes de reconectar tras un cierre 4205 sin nada que descartar: la
+ * guardia de restauración del servidor rechaza las reconexiones durante unos
+ * segundos (8 s), así que reconectar en el acto solo encadena cierres.
+ */
+const RESET_RECONNECT_MS = 2_000;
+
+/**
+ * ¿El documento tiene contenido que el estado remoto no tenga? Es exactamente
+ * la actualización que este cliente le enviaría al servidor (la unión de CRDTs
+ * solo agrega) y, por lo tanto, lo que una restauración de versión tendría que
+ * descartar. Una actualización vacía ocupa dos bytes.
+ */
+export function hasLocalOnlyContent(doc: Y.Doc, remoteState: Uint8Array): boolean {
+  try {
+    const remoteVector = Y.encodeStateVectorFromUpdate(remoteState);
+    return Y.encodeStateAsUpdate(doc, remoteVector).byteLength > 2;
+  } catch {
+    // Sin poder calcularlo se asume que sí: descartar de más no revive nada;
+    // descartar de menos revive lo restaurado.
+    return true;
+  }
+}
 
 
 const POSITIONAL_KEYS = new Set(['x', 'y', 'width', 'height', 'parentId']);
@@ -109,6 +188,31 @@ export class BoardSession {
   private trashCache: { version: number; value: CanvasElement[] } | null = null;
   private readonly fragmentWatches = new Map<string, { fragment: Y.XmlFragment; handler: () => void }>();
 
+  // --- Colaboración (fase 5) -------------------------------------------------
+
+  private role: EffectiveRole | null;
+  private socketRejected = false;
+  private socketRejectReason: string | null = null;
+  private readonly forcedReadOnly: boolean;
+  private user: { id: string; name: string } | null;
+  private userColor: string | null;
+  private readonly roleListeners = new Set<() => void>();
+  /** Pedidos de reconstrucción de la sesión (el tablero se restauró). */
+  private readonly resetListeners = new Set<() => void>();
+  private roleSnapshot: PermissionSnapshot;
+  private readonly presenceListeners = new Set<() => void>();
+  private presenceSnapshot: RemotePresence[] = [];
+  private presenceVersion = -1;
+  private cursor: Point | null = null;
+  private cursorSentAt = 0;
+  private cursorTimer: ReturnType<typeof setTimeout> | null = null;
+  private readonly commentListeners = new Set<() => void>();
+  private commentVersion = 0;
+  private commentCache: { version: number; value: CommentEntry[] } | null = null;
+  private readonly awarenessHandler = (): void => {
+    this.refreshPresence();
+  };
+
   private layoutVersion = 0;
   private layoutCacheVersion = -1;
   private layoutCache: ElementLayout[] = [];
@@ -121,6 +225,8 @@ export class BoardSession {
   private statusSnapshot: SessionStatus = this.status;
   private destroyed = false;
   private retryTimer: ReturnType<typeof setTimeout> | null = null;
+  /** Reconexión diferida tras un cierre 4205 sin nada que descartar. */
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
   private saveTimer: ReturnType<typeof setTimeout> | null = null;
   private syncDeadline: ReturnType<typeof setTimeout> | null = null;
   private stopPersistence: (() => void) | null = null;
@@ -136,6 +242,12 @@ export class BoardSession {
       trackedOrigins: new Set([localOrigin]),
       captureTimeout: 400,
     });
+
+    this.role = options.role ?? null;
+    this.forcedReadOnly = options.readOnly === true;
+    this.user = options.user ?? null;
+    this.userColor = this.user ? cursorColorFor(this.user.id) : null;
+    this.roleSnapshot = this.computePermission();
 
     const local = loadLocalDocument(this.boardId);
     if (local) {
@@ -153,6 +265,7 @@ export class BoardSession {
     this.undoManager.on('stack-item-added', this.onUndoStackChange);
     this.undoManager.on('stack-item-popped', this.onUndoStackChange);
     this.undoManager.on('stack-cleared', this.onUndoStackChange);
+    this.observeComments();
 
     for (const id of this.elementStore.keys()) this.watchFragments(id);
     this.stopPersistence = startLocalPersistence(this.boardId, this.doc);
@@ -167,8 +280,14 @@ export class BoardSession {
    */
   async init(): Promise<void> {
     if (this.destroyed) return;
-    if (this.options.connect === false) {
+    if (this.options.connect === false && !this.forcedReadOnly) {
       this.setState('offline');
+      return;
+    }
+    if (this.forcedReadOnly) {
+      // Vista pública: solo REST, sin ping y sin socket.
+      await this.loadRemoteDocument();
+      if (!this.destroyed) this.setState(this.remoteLoaded ? 'saved' : 'offline');
       return;
     }
 
@@ -189,7 +308,9 @@ export class BoardSession {
   private async loadRemoteDocument(): Promise<void> {
     if (this.remoteLoaded) return;
     try {
-      const remote = await fetchBoardDocument(this.boardId);
+      const remote = this.options.documentSource
+        ? await this.options.documentSource(this.boardId)
+        : await fetchBoardDocument(this.boardId);
       if (!remote || this.destroyed) return;
       const bytes = Uint8Array.from(atob(remote.state), (char) => char.charCodeAt(0));
       // La unión de CRDTs es conmutativa: lo local y lo remoto se fusionan.
@@ -200,11 +321,122 @@ export class BoardSession {
     }
   }
 
+  /**
+   * Recarga el documento del servidor (vista pública: refresco cada 15 s).
+   * La unión de CRDTs hace que repetirlo sea inocuo.
+   */
+  async refreshDocument(): Promise<boolean> {
+    if (this.destroyed) return false;
+    const hadDocument = this.remoteLoaded;
+    this.remoteLoaded = false;
+    await this.loadRemoteDocument();
+    return this.remoteLoaded || hadDocument;
+  }
+
+  /**
+   * Descarta el documento local del tablero: corta la persistencia (así nada
+   * lo vuelve a escribir) y borra la copia guardada en el navegador.
+   *
+   * Es el paso obligatorio antes de reconstruir el estado desde el servidor
+   * tras restaurar una versión. La unión de CRDTs solo agrega: si la copia
+   * local sobrevive, revive el contenido que la restauración había quitado y
+   * el proveedor lo vuelve a subir al servidor.
+   */
+  discardLocalDocument(): void {
+    this.stopPersistence?.();
+    this.stopPersistence = null;
+    clearLocalDocument(this.boardId);
+  }
+
+  /**
+   * La sesión pide que su dueño la reconstruya desde el remoto: el servidor
+   * restauró una versión (cierre 4205) y el estado local quedó obsoleto. El
+   * dueño destruye esta sesión y crea otra; con la copia local ya descartada,
+   * el documento nuevo se arma solo con lo que devuelve el servidor.
+   */
+  subscribeReset(listener: () => void): () => void {
+    this.resetListeners.add(listener);
+    return () => {
+      this.resetListeners.delete(listener);
+    };
+  }
+
+  private requestReset(): void {
+    for (const listener of this.resetListeners) listener();
+  }
+
+  /**
+   * Recuperación tras un cierre 4205 (el servidor restauró una versión y cerró
+   * las conexiones del tablero).
+   *
+   * Si el documento aporta contenido que el estado restaurado ya no tiene (una
+   * copia local vieja, cambios sin sincronizar), se descarta la copia local y
+   * se pide reconstruir la sesión desde el remoto: fusionarlo lo reviviría y el
+   * proveedor lo volvería a subir. Si no aporta nada —por ejemplo una sesión
+   * recién reconstruida a la que la guardia todavía le rechaza reconexiones—
+   * no hay nada que descartar: se rearma la copia local con el estado actual y
+   * se reconecta cuando la guardia afloje.
+   */
+  private async recoverFromRestore(): Promise<void> {
+    const stale = await this.contributesContent();
+    if (this.destroyed) return;
+    if (!stale) {
+      this.rearmLocalPersistence();
+      this.scheduleReconnect();
+      return;
+    }
+    this.discardLocalDocument();
+    this.requestReset();
+  }
+
+  /**
+   * ¿El documento aporta algo que el estado del servidor no tenga? Se compara
+   * contra el documento remoto actual, que ya es el estado restaurado.
+   */
+  private async contributesContent(): Promise<boolean> {
+    try {
+      const remote = this.options.documentSource
+        ? await this.options.documentSource(this.boardId)
+        : await fetchBoardDocument(this.boardId);
+      if (!remote) return true;
+      const bytes = Uint8Array.from(atob(remote.state), (char) => char.charCodeAt(0));
+      return hasLocalOnlyContent(this.doc, bytes);
+    } catch {
+      // Sin poder comparar se descarta (lado seguro).
+      return true;
+    }
+  }
+
+  /** Rearma la copia local con el estado actual, que ya es el del servidor. */
+  private rearmLocalPersistence(): void {
+    this.discardLocalDocument();
+    if (this.destroyed) return;
+    this.stopPersistence = startLocalPersistence(this.boardId, this.doc);
+  }
+
+  /** Reconecta más tarde: la guardia de restauración rechaza por unos segundos. */
+  private scheduleReconnect(delayMs = RESET_RECONNECT_MS): void {
+    if (this.destroyed) return;
+    if (this.reconnectTimer !== null) clearTimeout(this.reconnectTimer);
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      if (this.destroyed) return;
+      // El proveedor reintenta solo; un fallo de conexión no debe escapar.
+      void this.provider?.connect().catch(() => undefined);
+    }, delayMs);
+  }
+
   private startProvider(): void {
     if (this.destroyed || this.provider) return;
+    // La vista pública es de solo lectura y sin socket: no hay sesión que
+    // autenticar y el refresco llega por REST cada 15 s.
+    if (this.forcedReadOnly) {
+      this.setState('offline');
+      return;
+    }
     try {
       const provider = new HocuspocusProvider({
-        url: this.options.collabUrl ?? DEFAULT_COLLAB_URL,
+        url: this.options.collabUrl ?? resolveCollabUrl(),
         name: this.boardId,
         document: this.doc,
         connect: true,
@@ -213,7 +445,12 @@ export class BoardSession {
         // en el propio handshake del WebSocket (no hay opción `withCredentials`
         // en este proveedor: no hace falta).
         onConnect: () => {
+          this.publishPresence();
           this.setState(this.status.unsynced ? 'saving' : 'connecting');
+        },
+        onAuthenticated: () => {
+          // El servidor reconoció la sesión: si antes había rechazado, se limpia.
+          this.clearSocketRejection();
         },
         onSynced: () => {
           this.clearSyncDeadline();
@@ -232,11 +469,18 @@ export class BoardSession {
         onDisconnect: () => {
           this.setState('offline');
         },
-        onAuthenticationFailed: () => {
-          this.setState('error');
+        onClose: ({ event }) => {
+          this.handleSocketClose(event.code, event.reason);
+        },
+        onAuthenticationFailed: ({ reason }) => {
+          this.handleSocketRejection(reason || 'El servidor rechazó la conexión de colaboración');
+        },
+        onStateless: ({ payload }) => {
+          this.handleStateless(payload);
         },
       });
       this.provider = provider;
+      this.attachAwareness(provider);
       // Si el servidor no completa el handshake (sin sesión, sin permisos, sin
       // servidor), la app se queda en local: el indicador no puede quedarse en
       // "conectando" para siempre.
@@ -270,9 +514,14 @@ export class BoardSession {
     if (this.destroyed) return;
     this.destroyed = true;
     if (this.retryTimer !== null) clearTimeout(this.retryTimer);
+    if (this.reconnectTimer !== null) clearTimeout(this.reconnectTimer);
     if (this.saveTimer !== null) clearTimeout(this.saveTimer);
+    if (this.cursorTimer !== null) clearTimeout(this.cursorTimer);
+    this.clearPresence();
+    this.detachAwareness();
     this.clearSyncDeadline();
     this.retryTimer = null;
+    this.reconnectTimer = null;
     this.saveTimer = null;
     this.stopPersistence?.();
     this.stopPersistence = null;
@@ -297,6 +546,11 @@ export class BoardSession {
     this.connectorListeners.clear();
     this.statusListeners.clear();
     this.undoListeners.clear();
+    this.trashListeners.clear();
+    this.contentListeners.clear();
+    this.presenceListeners.clear();
+    this.roleListeners.clear();
+    this.commentListeners.clear();
   }
 
   get destroyed_(): boolean {
@@ -507,6 +761,339 @@ export class BoardSession {
     const value = getTrashedElements(this.doc);
     this.trashCache = { version: this.trashVersion, value };
     return value;
+  }
+
+  // --- Permisos (fase 5) -----------------------------------------------------
+
+  private computePermission(): PermissionSnapshot {
+    const role = effectiveUiRole({
+      role: this.role,
+      socketRejected: this.socketRejected,
+      forcedReadOnly: this.forcedReadOnly,
+    });
+    return {
+      role,
+      readOnly: this.forcedReadOnly || !canCapability(role, 'edit'),
+      socketRejected: this.socketRejected,
+      reason: this.socketRejectReason,
+    };
+  }
+
+  private publishPermission(): void {
+    const next = this.computePermission();
+    const current = this.roleSnapshot;
+    if (
+      current.role === next.role &&
+      current.readOnly === next.readOnly &&
+      current.socketRejected === next.socketRejected &&
+      current.reason === next.reason
+    ) {
+      return;
+    }
+    this.roleSnapshot = next;
+    for (const listener of this.roleListeners) listener();
+  }
+
+  /** Foto del permiso: rol efectivo, solo lectura y motivo del rechazo. */
+  getPermission(): PermissionSnapshot {
+    return this.roleSnapshot;
+  }
+
+  getRole(): EffectiveRole | null {
+    return this.roleSnapshot.role;
+  }
+
+  get isReadOnly(): boolean {
+    return this.roleSnapshot.readOnly;
+  }
+
+  /** ¿El rol habilita esta capacidad de la interfaz? */
+  can(capability: Capability): boolean {
+    return canCapability(this.roleSnapshot.role, capability);
+  }
+
+  get socketWasRejected(): boolean {
+    return this.socketRejected;
+  }
+
+  subscribePermission(listener: () => void): () => void {
+    this.roleListeners.add(listener);
+    return () => {
+      this.roleListeners.delete(listener);
+    };
+  }
+
+  /** Actualiza el rol cuando la API lo dice (por ejemplo al abrir el tablero). */
+  setRole(role: EffectiveRole | null): void {
+    if (this.role === role) return;
+    this.role = role;
+    this.publishPermission();
+  }
+
+  /**
+   * El servidor rechazó la conexión de colaboración (sin permiso, sesión
+   * vencida o tablero cerrado). **Nunca** deja la pantalla en blanco: el
+   * documento que llegó por REST sigue visible y la interfaz pasa a solo lectura
+   * con el aviso del motivo.
+   */
+  private handleSocketRejection(reason: string): void {
+    this.socketRejected = true;
+    this.socketRejectReason = reason;
+    if (this.role === null) this.role = 'viewer';
+    this.publishPermission();
+    this.setState('error');
+  }
+
+  private clearSocketRejection(): void {
+    if (!this.socketRejected) return;
+    this.socketRejected = false;
+    this.socketRejectReason = null;
+    this.publishPermission();
+  }
+
+  /**
+   * Cierres con código del servidor. `Reset Connection` (4205) es la guardia de
+   * restauración: el servidor reescribió el documento del tablero, así que el
+   * estado local de este cliente quedó obsoleto (no es un rechazo de permiso).
+   * `Unauthorized` (4401) y `Forbidden` (4403) — y cualquier cierre propio
+   * ≥ 4400 — pasan a solo lectura con aviso.
+   */
+  private handleSocketClose(code: number, reason: string): void {
+    if (code === 4205) {
+      this.remoteLoaded = false;
+      // El servidor restauró una versión: reconectar con el documento viejo en
+      // memoria (o dejar que el proveedor lo haga solo) reviviría lo restaurado.
+      // El proveedor para y la decisión —descartar la copia local y reconstruir
+      // la sesión, o solo reconectar— se toma comparando con el remoto.
+      this.provider?.disconnect();
+      void this.recoverFromRestore();
+      return;
+    }
+    if (code >= 4400 && code < 4500) {
+      this.handleSocketRejection(reason || 'El servidor cerró la conexión de colaboración');
+    }
+  }
+
+  /**
+   * Mensajes sin documento. La API puede anunciar el rol de la conexión; si no
+   * lo hace, el rol sigue viniendo de la REST y del rechazo del socket.
+   */
+  private handleStateless(payload: string): void {
+    if (!payload) return;
+    try {
+      const parsed = JSON.parse(payload) as unknown;
+      if (!parsed || typeof parsed !== 'object') return;
+      const record = parsed as Record<string, unknown>;
+      if (record['type'] === 'role' || 'role' in record) {
+        const role = typeof record['role'] === 'string' ? record['role'] : null;
+        if (role === 'owner' || role === 'editor' || role === 'commenter' || role === 'viewer') {
+          this.setRole(role);
+        }
+      }
+    } catch {
+      // Un mensaje que no es JSON no cambia nada.
+    }
+  }
+
+  // --- Presencia y cursores (fase 5) -----------------------------------------
+
+  private attachAwareness(provider: HocuspocusProvider): void {
+    const awareness = provider?.awareness;
+    if (!awareness) return;
+    awareness.on('change', this.awarenessHandler);
+    this.publishPresence();
+  }
+
+  private detachAwareness(): void {
+    const awareness = this.provider?.awareness;
+    if (!awareness) return;
+    awareness.off('change', this.awarenessHandler);
+  }
+
+  /** Estado local de presencia: quién soy, dónde está mi puntero y qué miro. */
+  private publishPresence(): void {
+    const awareness = this.provider?.awareness;
+    if (!awareness) return;
+    const state: Record<string, unknown> = {
+      user: this.user
+        ? { id: this.user.id, name: this.user.name, color: this.userColor }
+        : { id: 'anon', name: 'Alguien', color: null },
+      cursor: this.cursor,
+      selection: this.selectionSnapshot(),
+      editingId: this.editingSnapshot(),
+      boardId: this.boardId,
+      at: Date.now(),
+    };
+    // `setLocalState` reemplaza el estado entero: es lo que queremos, porque
+    // todas las claves las mantenemos nosotros.
+    awareness.setLocalState(state);
+  }
+
+  /** Selección actual: la escribe la capa de interfaz (evita acoplar el store). */
+  private selectionSnapshot: () => string[] = () => [];
+  private editingSnapshot: () => string | null = () => null;
+
+  /** Enlaza la sesión con el estado efímero de la interfaz. */
+  bindUiState(read: { selection: () => string[]; editingId: () => string | null }): void {
+    this.selectionSnapshot = read.selection;
+    this.editingSnapshot = read.editingId;
+  }
+
+  /**
+   * Publica la posición del puntero (en coordenadas de mundo). Va con un
+   * pequeño throttle: el cursor ajeno no necesita 120 Hz.
+   */
+  setPresenceCursor(point: Point | null): void {
+    this.cursor = point;
+    if (!this.provider?.awareness) return;
+    const now = Date.now();
+    if (now - this.cursorSentAt < 40) {
+      if (this.cursorTimer !== null) return;
+      this.cursorTimer = setTimeout(() => {
+        this.cursorTimer = null;
+        this.publishPresence();
+      }, 40);
+      return;
+    }
+    this.cursorSentAt = now;
+    this.publishPresence();
+  }
+
+  /** Publica selección y edición (lo llama la capa de interfaz al cambiar). */
+  refreshPresenceState(): void {
+    if (!this.provider?.awareness) return;
+    this.publishPresence();
+  }
+
+  /**
+   * Fija (o cambia) la identidad con la que se publica la presencia. La sesión
+   * se crea antes de que la API confirme el usuario, así que esto llega después.
+   */
+  setPresenceUser(user: { id: string; name: string } | null): void {
+    if (!user) return;
+    if (this.user && this.user.id === user.id && this.user.name === user.name) return;
+    this.user = user;
+    this.userColor = cursorColorFor(user.id);
+    this.publishPresence();
+  }
+
+  /** Avisa a los demás que este cliente se va (sin esperar al timeout). */
+  clearPresence(): void {
+    const awareness = this.provider?.awareness;
+    if (!awareness) return;
+    this.cursor = null;
+    try {
+      awareness.setLocalState(null);
+    } catch {
+      // sin awareness no hay nada que limpiar
+    }
+  }
+
+  private refreshPresence(): void {
+    const provider = this.provider;
+    const awareness = provider?.awareness;
+    const states = awareness ? awareness.getStates() : new Map<number, unknown>();
+    const next = livePresence(readRemotePresence(states, this.doc.clientID));
+    const changed =
+      this.presenceVersion === -1 ||
+      next.length !== this.presenceSnapshot.length ||
+      next.some((entry, index) => {
+        const previous = this.presenceSnapshot[index];
+        if (!previous) return true;
+        return (
+          previous.clientId !== entry.clientId ||
+          previous.userId !== entry.userId ||
+          previous.name !== entry.name ||
+          previous.cursor?.x !== entry.cursor?.x ||
+          previous.cursor?.y !== entry.cursor?.y ||
+          previous.editingId !== entry.editingId ||
+          previous.selection.length !== entry.selection.length ||
+          previous.selection.some((id, at) => entry.selection[at] !== id)
+        );
+      });
+    this.presenceVersion += 1;
+    if (!changed) return;
+    this.presenceSnapshot = next;
+    for (const listener of this.presenceListeners) listener();
+  }
+
+  /** Presencias ajenas (sin este cliente). */
+  getPresence(): RemotePresence[] {
+    return this.presenceSnapshot;
+  }
+
+  subscribePresence(listener: () => void): () => void {
+    this.presenceListeners.add(listener);
+    return () => {
+      this.presenceListeners.delete(listener);
+    };
+  }
+
+  // --- Comentarios (fase 5) --------------------------------------------------
+
+  private observeComments(): void {
+    const store = commentsOf(this.doc);
+    store.observeDeep(() => {
+      this.commentVersion += 1;
+      this.commentCache = null;
+      for (const listener of this.commentListeners) listener();
+    });
+  }
+
+  /** Comentarios del documento (vivos: llegan por el mismo canal que el resto). */
+  getComments(): CommentEntry[] {
+    if (this.commentCache && this.commentCache.version === this.commentVersion) return this.commentCache.value;
+    const value = readComments(this.doc);
+    this.commentCache = { version: this.commentVersion, value };
+    return value;
+  }
+
+  subscribeComments(listener: () => void): () => void {
+    this.commentListeners.add(listener);
+    return () => {
+      this.commentListeners.delete(listener);
+    };
+  }
+
+  /** Comentarios abiertos anclados a una tarjeta (contador del icono). */
+  commentCountFor(elementId: string): number {
+    return elementCommentCount(this.getComments(), elementId);
+  }
+
+  /** Identidad del autor para los comentarios y la actividad. */
+  get author(): { id: string; name: string } {
+    return this.user ?? { id: 'local-user', name: 'Local' };
+  }
+
+  /** Añade un comentario al documento (raíz o respuesta) y devuelve su id. */
+  addComment(draft: Omit<CommentDraft, 'authorId' | 'authorName'>): string | null {
+    if (!this.can('comment')) return null;
+    const id = addCommentToDoc(
+      this.doc,
+      { ...draft, authorId: this.author.id, authorName: this.author.name },
+      localOrigin,
+    );
+    this.bumpComments();
+    return id;
+  }
+
+  setCommentResolved(id: string, resolved: boolean): void {
+    if (!this.can('comment')) return;
+    resolveCommentInDoc(this.doc, id, resolved, this.author.id, localOrigin);
+    this.bumpComments();
+  }
+
+  removeComment(id: string): string[] {
+    if (!this.can('comment')) return [];
+    const removed = removeCommentFromDoc(this.doc, id, localOrigin);
+    this.bumpComments();
+    return removed;
+  }
+
+  private bumpComments(): void {
+    this.commentVersion += 1;
+    this.commentCache = null;
+    for (const listener of this.commentListeners) listener();
   }
 
   // --- Deshacer / rehacer ----------------------------------------------------

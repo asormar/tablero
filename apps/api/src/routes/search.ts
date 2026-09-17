@@ -14,6 +14,7 @@ import { idSchema, searchQuerySchema } from '@tablero/shared';
 import { z } from 'zod';
 
 import { prisma } from '../db.js';
+import { requireBoardEditor, resolveBoardAccessFrom } from '../lib/access.js';
 import { loadBoardAccess, type BoardRecord } from '../lib/boards.js';
 import { reindexBoard } from '../lib/documents.js';
 import { forbidden, notFound } from '../lib/errors.js';
@@ -45,9 +46,9 @@ export async function searchRoutes(app: FastifyInstance): Promise<void> {
 
     let boards: BoardRecord[];
     if (input.boardId) {
-      const record = access.get(input.boardId);
-      if (!record) throw notFound('El tablero no existe o no tenés acceso');
-      if (!access.canEdit(record.id)) throw forbidden('Necesitás rol de editor en este tablero', 'forbidden_role');
+      const { board: record } = requireBoardEditor(resolveBoardAccessFrom(access, input.boardId), {
+        allowTrashed: true,
+      });
       boards = [record];
     } else {
       boards = access.accessible({ atLeastEditor: true });

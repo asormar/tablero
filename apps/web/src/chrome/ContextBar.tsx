@@ -39,7 +39,8 @@ import {
   toggleSelectionLock,
 } from '@/canvas/commands';
 import type { BoardSession } from '@/collab/BoardSession';
-import { useSessionLayout } from '@/collab/SessionContext';
+import { can as canCapability } from '@/collab/roles';
+import { useSessionLayout, useSessionPermission } from '@/collab/SessionContext';
 import { availableAlignActions } from '@/lib/align';
 import { rectOf } from '@/lib/layout';
 import { useUiStore } from '@/state/uiStore';
@@ -65,8 +66,12 @@ export function ContextBar({ session }: { session: BoardSession }): JSX.Element 
   const measured = useUiStore((state) => state.measuredHeights);
   const interaction = useUiStore((state) => state.interaction);
   const layout = useSessionLayout();
+  const permission = useSessionPermission();
   const [colorsOpen, setColorsOpen] = useState(false);
   const [alignOpen, setAlignOpen] = useState(false);
+  // La barra flotante solo tiene acciones de escritura: con rol de lectura no
+  // se muestra (los gestos ya están bloqueados en el lienzo).
+  const editable = canCapability(permission.role, 'edit');
 
   const colorsRef = useOutsideClose<HTMLDivElement>(colorsOpen, () => setColorsOpen(false));
   const alignRef = useOutsideClose<HTMLDivElement>(alignOpen, () => setAlignOpen(false));
@@ -88,6 +93,7 @@ export function ContextBar({ session }: { session: BoardSession }): JSX.Element 
   const colorValue = element?.color;
 
   if (items.length === 0 || !bounds || interaction !== 'idle') return null;
+  if (!editable) return null;
 
   const screenX = (bounds.x + bounds.width / 2 - viewport.x) * viewport.scale;
   const screenY = (bounds.y - viewport.y) * viewport.scale;

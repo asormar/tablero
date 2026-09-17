@@ -44,7 +44,7 @@ import { randomBytes } from 'node:crypto';
 import * as Y from 'yjs';
 
 import { prisma } from '../db.js';
-import { emptyDocumentUpdate } from './documents.js';
+import { emptyDocumentUpdate, reindexBoards } from './documents.js';
 import { hashPassword } from './users.js';
 
 export const SYSTEM_USER_EMAIL = 'system@tablero.local';
@@ -846,7 +846,7 @@ export async function copyBoardSubtree(input: {
   if (input.sources.length === 0) throw new Error('No hay tableros que copiar');
   const rootSource = input.sources[0]!;
 
-  return prisma.$transaction(async (tx) => {
+  const copied = await prisma.$transaction(async (tx) => {
     const idMap = new Map<string, string>();
     const created: CopiedBoard[] = [];
     for (const source of input.sources) {
@@ -879,6 +879,14 @@ export async function copyBoardSubtree(input: {
     }
     return { root: created[0]!.board, created };
   });
+
+  // Indexado **fuera** de la transacción: cada tablero copiado (también los
+  // subtableros) entra al índice de búsqueda con el contenido de su documento.
+  // Sin esto, instanciar una plantilla dejaba el tablero nuevo invisible para
+  // `GET /api/search` hasta un reindexado manual.
+  await reindexBoards(copied.created.map((entry) => entry.board.id));
+
+  return copied;
 }
 
 export type SeedResult = { created: string[]; skipped: string[]; systemUserId: string };

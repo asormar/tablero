@@ -16,6 +16,7 @@ import * as Y from 'yjs';
 import {
   DEFAULT_SIZES,
   type CanvasElement,
+  type CommentMessage,
   type ElementType,
   type TodoItem,
 } from './elements.js';
@@ -197,6 +198,10 @@ export function readElement(map: ElementMap): CanvasElement | null {
     case 'comment-pin': {
       const resolved = asBoolean(map.get('resolved'));
       if (resolved !== undefined) target.resolved = resolved;
+      const anchorElementId = asString(map.get('anchorElementId'));
+      if (anchorElementId !== undefined) target.anchorElementId = anchorElementId;
+      const comments = map.get('comments');
+      if (Array.isArray(comments)) target.comments = comments as CommentMessage[];
       break;
     }
     default:
@@ -557,6 +562,15 @@ export function emptyTrash(doc: Y.Doc, origin: unknown): string[] {
   if (ids.length > 0) removeElements(doc, ids, origin);
   return ids;
 }
+
+// --- Comentarios ------------------------------------------------------------
+//
+// Los comentarios ya **no** son elementos `comment-pin`: viven en
+// `doc.getMap('comments')` como `Y.Map` planos (ver `comments.ts`). Este
+// módulo solo conserva la lectura de documentos viejos (un `comment-pin` de la
+// fase anterior sigue leyéndose como elemento, con su contador), pero las
+// mutaciones nuevas pasan por los ayudantes de `comments.ts`.
+
 
 /** Fragmento de texto enriquecido de un elemento, creándolo si no existe. */
 export function ensureTextFragment(doc: Y.Doc, id: string, origin?: unknown): Y.XmlFragment | null {

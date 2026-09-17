@@ -18,6 +18,7 @@ import {
   Lock,
   LockOpen,
   Maximize2,
+  MessageSquarePlus,
   Repeat,
   Scissors,
   StickyNote,
@@ -44,6 +45,8 @@ import {
   toggleSelectionLock,
 } from '@/canvas/commands';
 import type { BoardSession } from '@/collab/BoardSession';
+import { can as canCapability, capabilityRefusal } from '@/collab/roles';
+import { useSessionPermission } from '@/collab/SessionContext';
 import { getInternalClipboard } from '@/lib/clipboard';
 import { convertElement, convertTargets } from '@/lib/convert';
 import { useAppStore } from '@/state/appStore';
@@ -56,6 +59,8 @@ export function ContextMenu({ session }: { session: BoardSession }): JSX.Element
   const menu = useUiStore((state) => state.contextMenu);
   const close = (): void => useUiStore.getState().setContextMenu(null);
   const ref = useOutsideClose<HTMLDivElement>(menu !== null, close);
+  const permission = useSessionPermission();
+  const editable = canCapability(permission.role, 'edit');
 
   const targetId = menu?.targetId ?? null;
   const element = targetId ? session.getElement(targetId) : null;
@@ -63,6 +68,36 @@ export function ContextMenu({ session }: { session: BoardSession }): JSX.Element
   const hasClipboard = getInternalClipboard() !== null;
 
   if (!menu) return null;
+  // Con rol de lectura el menú solo tendría acciones deshabilitadas: se explica
+  // por qué (y se deja comentar si el rol lo permite).
+  if (!editable) {
+    const canComment = canCapability(permission.role, 'comment');
+    return (
+      <div
+        ref={ref}
+        className="ctxmenu ctxmenu--readonly"
+        style={{ left: menu.x, top: menu.y }}
+        data-context-menu="readonly"
+        role="menu"
+      >
+        <p className="ctxmenu__note">
+          {capabilityRefusal(permission.role, 'edit') ?? 'Este tablero está en solo lectura.'}
+        </p>
+        {canComment && targetId ? (
+          <button
+            type="button"
+            className="menu__item"
+            role="menuitem"
+            data-context-comment
+            onClick={() => run(() => useUiStore.getState().openCommentThread(targetId))}
+          >
+            <MessageSquarePlus size={15} />
+            <span>Comentar esta tarjeta</span>
+          </button>
+        ) : null}
+      </div>
+    );
+  }
 
   const world = worldFromClient(menu.x, menu.y);
   const top = Math.min(menu.y, Math.max(8, window.innerHeight - 320));
@@ -83,6 +118,17 @@ export function ContextMenu({ session }: { session: BoardSession }): JSX.Element
     >
       {element ? (
         <>
+          <button
+            type="button"
+            className="menu__item"
+            role="menuitem"
+            data-context-comment
+            onClick={() => run(() => useUiStore.getState().openCommentThread(element.id))}
+          >
+            <MessageSquarePlus size={15} />
+            <span>Comentar</span>
+          </button>
+          <span className="menu__sep" />
           <button type="button" className="menu__item" role="menuitem" onClick={() => run(() => copySelection(session))}>
             <Copy size={15} />
             <span>Copiar</span>

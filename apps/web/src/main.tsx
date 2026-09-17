@@ -11,6 +11,8 @@ import './styles/phase2.css';
 import './styles/phase3.css';
 // Productividad de la fase 4 (búsqueda, plantillas, import/export, ajustes…).
 import './styles/phase4.css';
+// Colaboración de la fase 5 (compartir, publicar, comentarios, notificaciones…).
+import './styles/phase5.css';
 // Hoja de impresión de PDF (solo se aplica al imprimir).
 import './styles/print.css';
 

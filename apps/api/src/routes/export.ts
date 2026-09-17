@@ -18,6 +18,7 @@ import * as Y from 'yjs';
 import { z } from 'zod';
 
 import { prisma } from '../db.js';
+import { requireBoardView, resolveBoardAccessFrom } from '../lib/access.js';
 import { loadBoardAccess, type BoardAccess, type BoardRecord } from '../lib/boards.js';
 import { encodeStateBase64, loadBoardDoc } from '../lib/documents.js';
 import {
@@ -113,12 +114,7 @@ export async function exportRoutes(app: FastifyInstance): Promise<void> {
     const { id } = idParamsSchema.parse(request.params);
     const query = boardExportQuerySchema.parse(request.query ?? {});
     const access = await loadBoardAccess(user.id);
-    const record = access.get(id);
-    if (!record || !access.roleOf(id)) throw notFound('El tablero no existe o no tenés acceso');
-    if (record.trashedAt) {
-      reply.code(400);
-      return { error: 'El tablero está en la papelera', code: 'board_trashed' };
-    }
+    const { board: record } = requireBoardView(resolveBoardAccessFrom(access, id));
 
     const baseName = safeZipName(record.title, 'tablero');
     const format = FORMATS[query.format];

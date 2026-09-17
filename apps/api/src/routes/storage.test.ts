@@ -55,7 +55,7 @@ const db = vi.hoisted(() => {
         },
       ],
     },
-    share: { findMany: async () => [] },
+    boardMember: { findMany: async () => [] },
     boardDocument: {
       findMany: async ({ where }: { where: { boardId: { in: string[] } } }) =>
         [...documents.entries()]

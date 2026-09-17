@@ -86,6 +86,11 @@ export function HistoryPanel(): JSX.Element | null {
     try {
       const ok = await restoreBoardVersion(boardId, version.id);
       if (!ok) throw new Error('El servidor rechazó la restauración');
+      // La copia local del tablero no puede sobrevivir a la restauración: al
+      // recargar, el documento se arma desde el remoto y no se fusiona nada. Si
+      // sobreviviera, la unión de CRDTs revive lo que la restauración quitó y el
+      // proveedor lo vuelve a subir al servidor.
+      session.discardLocalDocument();
       try {
         sessionStorage.setItem(RELOAD_NOTICE_KEY, t('history.restored'));
       } catch {

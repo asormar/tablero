@@ -10,7 +10,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import Fastify, { type FastifyInstance } from 'fastify';
 import { ZodError } from 'zod';
-import { formatZodError } from '@tablero/shared';
+import { addElement, createBoardDoc, ensureTextFragment, formatZodError, writeTextParagraphs } from '@tablero/shared';
+import * as Y from 'yjs';
 
 import { HttpError } from '../lib/errors.js';
 
@@ -36,6 +37,7 @@ const db = vi.hoisted(() => {
 
   const boards = new Map<string, Row>();
   const documents = new Map<string, Buffer>();
+  const searchRows = new Map<string, { boardId: string; elementId: string; elementType: string; text: string; textNorm: string }>();
   let counter = 0;
 
   const seed = (overrides: Partial<Row> & { title: string }): Row => {
@@ -64,6 +66,7 @@ const db = vi.hoisted(() => {
   const reset = (): void => {
     boards.clear();
     documents.clear();
+    searchRows.clear();
     counter = 0;
   };
 
@@ -140,7 +143,7 @@ const db = vi.hoisted(() => {
         return { count };
       },
     },
-    share: { findMany: async () => [] },
+    boardMember: { findMany: async () => [] },
     boardDocument: {
       create: async ({ data }: { data: { boardId: string; yjsState: Buffer } }) => {
         documents.set(data.boardId, data.yjsState);
@@ -156,6 +159,31 @@ const db = vi.hoisted(() => {
         return { boardId: where.boardId, yjsState: documents.get(where.boardId)!, updatedAt: new Date() };
       },
     },
+    searchIndex: {
+      deleteMany: async ({ where }: { where: { boardId: string; elementId?: { notIn: string[] } } }) => {
+        for (const [key, row] of [...searchRows]) {
+          if (row.boardId !== where.boardId) continue;
+          if (where.elementId?.notIn && where.elementId.notIn.includes(row.elementId)) continue;
+          searchRows.delete(key);
+        }
+        return { count: 0 };
+      },
+      upsert: async ({
+        where,
+        create,
+        update,
+      }: {
+        where: { boardId_elementId: { boardId: string; elementId: string } };
+        create: { boardId: string; elementId: string; elementType: string; text: string; textNorm: string };
+        update: { elementType: string; text: string; textNorm: string };
+      }) => {
+        const { boardId, elementId } = where.boardId_elementId;
+        const previous = searchRows.get(`${boardId}:${elementId}`);
+        const row = { ...create, ...(previous ? update : {}) };
+        searchRows.set(`${boardId}:${elementId}`, row);
+        return { ...row };
+      },
+    },
     template: { findUnique: async () => null },
     asset: { findUnique: async () => null },
     $transaction: async (arg: unknown) =>
@@ -164,7 +192,7 @@ const db = vi.hoisted(() => {
         : Promise.all(arg as Promise<unknown>[]),
   };
 
-  return { boards, documents, prisma, seed, reset };
+  return { boards, documents, searchRows, prisma, seed, reset };
 });
 
 vi.mock('../db.js', () => ({ prisma: db.prisma }));
@@ -329,6 +357,32 @@ describe('POST /boards/:id/duplicate', () => {
     expect(body.children).toHaveLength(1);
     expect(body.children[0]?.parentBoardId).toBe(body.board.id);
     expect(db.boards.get(body.children[0]!.id)?.parentBoardId).toBe(body.board.id);
+    await app.close();
+  });
+
+  it('indexa la copia al instante: la búsqueda encuentra el contenido nuevo sin reindex manual', async () => {
+    // El origen tiene una nota con texto: la copia se lleva los mismos bytes.
+    const doc = createBoardDoc();
+    const noteId = addElement(doc, 'note', { createdBy: 'user_ana', x: 0, y: 0, width: 300 }, 'test');
+    const fragment = ensureTextFragment(doc, noteId, 'test');
+    if (fragment) writeTextParagraphs(fragment, 'Contenido de la copia', 'test');
+    db.documents.set('proyecto', Buffer.from(Y.encodeStateAsUpdate(doc)));
+    db.searchRows.clear();
+
+    const app = await buildApp();
+    const response = await app.inject({
+      method: 'POST',
+      url: '/api/boards/proyecto/duplicate',
+      payload: { includeChildren: false },
+    });
+    expect(response.statusCode).toBe(201);
+    const copy = response.json().board as { id: string };
+
+    // Sin llamar a `POST /api/search/reindex`: la copia ya está en el índice
+    // (el texto que lee `GET /api/search` vive en `SearchIndex`).
+    const rows = [...db.searchRows.values()].filter((row) => row.boardId === copy.id);
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.some((row) => row.text.includes('Contenido de la copia'))).toBe(true);
     await app.close();
   });
 });

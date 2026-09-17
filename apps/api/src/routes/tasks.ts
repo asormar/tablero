@@ -9,8 +9,8 @@
 import type { FastifyInstance } from 'fastify';
 import { tasksQuerySchema } from '@tablero/shared';
 
+import { requireBoardView, resolveBoardAccessFrom } from '../lib/access.js';
 import { loadBoardAccess } from '../lib/boards.js';
-import { notFound } from '../lib/errors.js';
 import { currentUser } from '../lib/session.js';
 import { collectTasks, tasksResponseSchema } from '../lib/tasks.js';
 
@@ -22,7 +22,9 @@ export async function tasksRoutes(app: FastifyInstance): Promise<void> {
 
     let boards = access.accessible();
     if (query.boardId) {
-      if (!access.roleOf(query.boardId)) throw notFound('El tablero no existe o no tenés acceso');
+      // Un tablero inaccesible no es «cero tareas»: es un 404, igual que en el
+      // resto de la API.
+      requireBoardView(resolveBoardAccessFrom(access, query.boardId), { allowTrashed: true });
       boards = boards.filter((board) => board.id === query.boardId);
     }
 

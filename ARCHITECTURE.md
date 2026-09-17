@@ -284,6 +284,68 @@ solo cambia `parentBoardId` en Postgres.
   papelera del lienzo y portadas); `DELETE /api/storage/orphans` los recalcula en
   el servidor, borra objetos y filas, y no se fía de ids que mande el cliente.
 
+## Fase 5 — decisiones del API
+
+- **Una sola autorización por tablero**: `resolveBoardAccess(userId, boardId)`
+  (`apps/api/src/lib/access.ts`) devuelve `owner | editor | commenter | viewer |
+  none`. La usan todas las rutas por tablero (a través de
+  `requireBoardView/Editor/Commenter/Owner`) y el servidor de colaboración. La
+  herencia sube por la cadena de ancestros: gana la primera fila explícita de
+  `BoardMember`; el dueño del tablero es `owner` y un ancestro propio se hereda
+  como `editor` (heredar propiedad equivale a poder editar). El árbol completo
+  lo siguen resolviendo `loadBoardAccess`/`BoardAccess` con la misma regla
+  memoizada, así que listar, migas de pan y conteos no cambian de forma.
+- **`Share` se retira**: lo reemplaza `BoardMember` (rol por tablero). Las
+  invitaciones van aparte (`Invitation`: email, rol, token, `expiresAt`,
+  `acceptedAt`) y solo el dueño gestiona; aceptar exige sesión con el mismo
+  email. El email lo manda un transporte enchufable (`lib/email.ts`) que en
+  desarrollo escribe en el log.
+- **El socket también autoriza**: `onAuthenticate` resuelve el rol, lo deja en
+  el contexto de la conexión y marca `readOnly` a quien no puede editar;
+  `onLoadDocument` vuelve a comprobar lectura (y cubre las conexiones directas
+  del propio servidor) y `beforeHandleMessage` deja registro de un intento de
+  escritura descartado. Un intento **no** cierra la conexión: el cliente del
+  lector puede tener cambios locales y cerrarle el socket lo dejaría
+  reconectando en bucle. El cierre con código propio (**4409**, reabrible) se
+  usa cuando el permiso *cambia*: expulsar o bajar de rol cierra las conexiones
+  de esa cuenta en ese tablero, y el cliente reconecta y vuelve a autenticarse.
+- **Comentarios**: el documento Yjs es la fuente de verdad (elemento
+  `comment-pin` con el hilo en el campo JSON `comments`, anclado a una tarjeta
+  por `anchorElementId` o suelto). El hook de persistencia los extrae a la tabla
+  `Comment` (upsert + borrado de los que ya no están) y `GET
+  /api/boards/:id/comments` sincroniza antes de listar. Las menciones (`@email`
+  o `@nombre`, resolviendo primer nombre incluido) crean la notificación con
+  clave `mention:<comentario>:<usuario>`, así que editar o resincronizar no
+  duplica; las respuestas avisan con `reply:<respuesta>:<autor>`. Resolver y
+  borrar se aplican **al documento** (vivo si hay servidor; persistido si no) y
+  a la tabla acto seguido.
+- **Actividad y notificaciones**: la actividad la reporta el cliente por lotes
+  (`POST /api/boards/:id/activity`, tope 100 eventos, marcas del cliente
+  acotadas a 30 días atrás y 5 minutos de reloj adelantado) y el servidor
+  descarta los elementos que no existen en el documento; el actor sale siempre
+  de la sesión. Las notificaciones se deduplican por `dedupeKey`, se listan y se
+  marcan leídas (`POST /api/notifications/read` con ids o `all`), y el barrido
+  de tareas vencidas corre cada 15 minutos (y al abrir el panel, con throttle de
+  un minuto) avisando al asignado o, si no hay, a los miembros.
+- **Publicación**: slug de 12 caracteres base58 generado al azar (nunca el
+  título), contraseña opcional con argon2, `publishedAt`, ajuste de subtableros
+  y límite de intentos por slug+IP. La vista pública es **de solo lectura y sin
+  socket**: `GET /api/public/boards/:slug` (+ `/document` con `?boardId=` para
+  los descendientes) sirve una **copia saneada** del estado Yjs —sin elementos
+  `comment-pin` ni `createdBy`/`deletedBy`— y metadatos sin emails ni ids de
+  miembros. Los assets **no** se sirven con la URL firmada de S3 (la clave
+  `assets/<ownerId>/…` lleva el id del dueño): el payload trae un enlace firmado
+  con HMAC propio (15 min) y el API entrega los bytes en streaming. Todo lo
+  público manda `x-robots-tag: noindex`.
+- **Presencia**: registro en memoria del proceso (nombre, rol, última señal,
+  conexiones), alimentado por el socket y por las rutas REST, que caduca a los
+  60 s. `GET /api/boards/:id/presence` devuelve además el **color del cursor**,
+  derivado del id con `cursorColor` (ocho tokens de la paleta, compartido con la
+  web en `@tablero/shared`).
+- Los nombres de columna `publishedSlug` / `publishedPasswordHash` se conservan
+  (ya existían desde la fase 3 y los usa `BoardSummary`); la fase 5 agrega
+  `publishedAt` y `publicIncludeSubBoards`.
+
 ## Idioma
 
 La interfaz y los comentarios del código están en español (idioma por defecto

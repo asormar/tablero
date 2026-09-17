@@ -15,7 +15,7 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 
 import { HocuspocusProvider, HocuspocusProviderWebsocket } from '@hocuspocus/provider';
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import WebSocket from 'ws';
 import * as Y from 'yjs';
 
@@ -30,19 +30,26 @@ const db = vi.hoisted(() => {
     coverImageId: string | null;
     isTemplate: boolean;
     publishedSlug: string | null;
+    publishedPasswordHash: string | null;
+    publishedAt: Date | null;
+    publicIncludeSubBoards: boolean;
     trashedAt: Date | null;
+    favoriteAt: Date | null;
+    isUnsorted: boolean;
     createdAt: Date;
     updatedAt: Date;
   };
 
   const boards = new Map<string, Row>();
   const documents = new Map<string, { boardId: string; yjsState: Buffer; updatedAt: Date }>();
+  const members = new Map<string, { boardId: string; userId: string; role: 'viewer' | 'commenter' | 'editor' }>();
+  const sessions = new Map<string, { id: string; email: string; name: string }>();
 
-  const addBoard = (id: string, options: { trashedAt?: Date | null } = {}): Row => {
+  const addBoard = (id: string, options: { trashedAt?: Date | null; ownerId?: string } = {}): Row => {
     const now = new Date();
     const row: Row = {
       id,
-      ownerId: 'user_ana',
+      ownerId: options.ownerId ?? 'user_ana',
       parentBoardId: 'root',
       title: id,
       icon: null,
@@ -50,17 +57,35 @@ const db = vi.hoisted(() => {
       coverImageId: null,
       isTemplate: false,
       publishedSlug: null,
+      publishedPasswordHash: null,
+      publishedAt: null,
+      publicIncludeSubBoards: false,
       trashedAt: options.trashedAt ?? null,
       createdAt: now,
       updatedAt: now,
+      favoriteAt: null,
+      isUnsorted: false,
     };
     boards.set(id, row);
     return row;
   };
 
+  const addMember = (boardId: string, userId: string, role: 'viewer' | 'commenter' | 'editor'): void => {
+    members.set(`${boardId}:${userId}`, { boardId, userId, role });
+  };
+
+  const addSession = (token: string, user: { id: string; email: string; name: string }): void => {
+    sessions.set(token, user);
+  };
+
   const prisma = {
     board: { findMany: async () => [...boards.values()] },
-    share: { findMany: async () => [] },
+    boardMember: {
+      findMany: async ({ where }: { where: { userId: string } }) =>
+        [...members.values()]
+          .filter((member) => member.userId === where.userId)
+          .map((member) => ({ boardId: member.boardId, role: member.role })),
+    },
     boardDocument: {
       create: async ({ data }: { data: { boardId: string; yjsState: Buffer } }) => {
         const row = { boardId: data.boardId, yjsState: data.yjsState, updatedAt: new Date() };
@@ -92,10 +117,27 @@ const db = vi.hoisted(() => {
       Array.isArray(arg) ? Promise.all(arg) : (arg as (tx: unknown) => Promise<unknown>)(prisma),
   };
 
-  return { boards, documents, prisma, addBoard, reset: () => { boards.clear(); documents.clear(); } };
+  return {
+    boards,
+    documents,
+    members,
+    sessions,
+    prisma,
+    addBoard,
+    addMember,
+    addSession,
+    reset: () => {
+      boards.clear();
+      documents.clear();
+      members.clear();
+      sessions.clear();
+    },
+  };
 });
 
-const SESSION_TOKEN = 'token-de-prueba-de-colaboracion';
+const SESSION_TOKEN = 'token-de-prueba-de-colaboracion-aaaaaaaa';
+const VIEWER_TOKEN = 'token-de-prueba-de-lector-bbbbbbbbbbbb';
+const EDITOR_TOKEN = 'token-de-prueba-de-editor-cccccccccccc';
 
 vi.mock('../db.js', () => ({ prisma: db.prisma }));
 
@@ -103,24 +145,19 @@ vi.mock('../lib/session.js', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../lib/session.js')>();
   return {
     ...actual,
-    resolveSession: async (token: string) =>
-      token === SESSION_TOKEN
-        ? {
-            user: {
-              id: 'user_ana',
-              email: 'ana@tablero.test',
-              name: 'Ana',
-              avatarUrl: null,
-              settings: {},
-              createdAt: new Date(),
-            },
-            expiresAt: new Date(Date.now() + 60 * 60 * 1000),
-          }
-        : null,
+    resolveSession: async (token: string) => {
+      const user = db.sessions.get(token);
+      if (!user) return null;
+      return {
+        user: { ...user, avatarUrl: null, settings: {}, createdAt: new Date() },
+        expiresAt: new Date(Date.now() + 60 * 60 * 1000),
+      };
+    },
   };
 });
 
-const { COLLAB_PATH, createCollabServer } = await import('./server.js');
+const { COLLAB_PATH, createCollabServer, closeBoardConnectionsWithCode, FORBIDDEN_CODE } = await import('./server.js');
+const { boardPresence, resetPresence } = await import('../lib/presence.js');
 
 const ALLOWED_ORIGIN = process.env.APP_ORIGIN ?? 'http://localhost:5173';
 
@@ -144,8 +181,25 @@ afterAll(async () => {
   await new Promise<void>((resolve) => httpServer.close(() => resolve()));
 });
 
+const ANA = { id: 'user_ana', email: 'ana@tablero.test', name: 'Ana' };
+const BETO = { id: 'user_beto', email: 'beto@tablero.test', name: 'Beto' };
+const CARO = { id: 'user_caro', email: 'caro@tablero.test', name: 'Caro' };
+
+/** Las sesiones viven en el doble de `resolveSession` (una por token). */
+function seedSessions(): void {
+  db.addSession(SESSION_TOKEN, ANA);
+  db.addSession(VIEWER_TOKEN, BETO);
+  db.addSession(EDITOR_TOKEN, CARO);
+}
+
+beforeEach(() => {
+  seedSessions();
+  resetPresence();
+});
+
 afterEach(() => {
   db.reset();
+  seedSessions();
 });
 
 type HandshakeResult = { opened: boolean; status?: number; error?: string };
@@ -167,11 +221,11 @@ function rawHandshake(headers: Record<string, string>): Promise<HandshakeResult>
 }
 
 /** Provider real: cookie en el handshake y token que dispara la autenticación. */
-function createProvider(boardId: string): { provider: HocuspocusProvider; close: () => void } {
+function createProvider(boardId: string, sessionToken: string = SESSION_TOKEN): { provider: HocuspocusProvider; close: () => void } {
   class CookieWebSocket extends WebSocket {
     constructor(address: string, protocols?: string | string[]) {
       super(address, protocols, {
-        headers: { Cookie: `tablero_session=${SESSION_TOKEN}`, Origin: ALLOWED_ORIGIN },
+        headers: { Cookie: `tablero_session=${sessionToken}`, Origin: ALLOWED_ORIGIN },
       });
     }
   }
@@ -279,5 +333,104 @@ describe('autenticación por WebSocket', () => {
     expect(provider.synced).toBe(false);
 
     close();
+  });
+});
+
+describe('permisos por rol en el socket', () => {
+  it('un lector se conecta en solo lectura y el servidor descarta sus updates', async () => {
+    db.addBoard('board_compartido');
+    db.addMember('board_compartido', 'user_beto', 'viewer');
+
+    const { provider, close } = createProvider('board_compartido', VIEWER_TOKEN);
+    const synced = await waitFor(() => provider.synced);
+    expect(synced).toBe(true);
+    // El servidor autentica el canal como solo lectura (scope del protocolo).
+    expect(provider.authorizedScope).toBe('readonly');
+
+    // El lector escribe en su copia local; el servidor no debe aplicarlo.
+    provider.document.getMap('lector').set('intento', 'escribir');
+    await new Promise((resolve) => setTimeout(resolve, 1_500));
+
+    const serverDocument = collab.hocuspocus.documents.get('board_compartido');
+    expect(serverDocument).toBeDefined();
+    expect(serverDocument!.getMap('lector').get('intento')).toBeUndefined();
+    close();
+  });
+
+  it('un editor escribe y el documento del servidor lo recibe', async () => {
+    db.addBoard('board_editable');
+    db.addMember('board_editable', 'user_caro', 'editor');
+
+    const { provider, close } = createProvider('board_editable', EDITOR_TOKEN);
+    const synced = await waitFor(() => provider.synced);
+    expect(synced).toBe(true);
+    expect(provider.authorizedScope).toBe('read-write'); // el servidor lo autoriza a escribir
+
+    provider.document.getMap('editor').set('cambio', 'sí');
+    const applied = await waitFor(() => {
+      const serverDocument = collab.hocuspocus.documents.get('board_editable');
+      return serverDocument?.getMap('editor').get('cambio') === 'sí';
+    });
+    expect(applied).toBe(true);
+    close();
+  });
+
+  it('el dueño del tablero escribe (rol owner)', async () => {
+    db.addBoard('board_propio');
+    const { provider, close } = createProvider('board_propio');
+    const synced = await waitFor(() => provider.synced);
+    expect(synced).toBe(true);
+    provider.document.getMap('dueño').set('ok', true);
+    const applied = await waitFor(() => collab.hocuspocus.documents.get('board_propio')?.getMap('dueño').get('ok') === true);
+    expect(applied).toBe(true);
+    close();
+  });
+
+  it('un lector ve el tablero compartido (la lectura también se autoriza)', async () => {
+    db.addBoard('board_lectura');
+    db.addMember('board_lectura', 'user_beto', 'commenter');
+    const { provider, close } = createProvider('board_lectura', VIEWER_TOKEN);
+    const synced = await waitFor(() => provider.synced);
+    expect(synced).toBe(true);
+    close();
+  });
+
+  it('expulsar a un miembro cierra su conexión con 4403 (Forbidden), reabrible', async () => {
+    db.addBoard('board_expulsion');
+    db.addMember('board_expulsion', 'user_caro', 'editor');
+
+    const { provider, close } = createProvider('board_expulsion', EDITOR_TOKEN);
+    await waitFor(() => provider.synced);
+
+    const closes: { code: number; reason: string }[] = [];
+    provider.on('close', ({ event }: { event: { code: number; reason: string } }) => {
+      closes.push({ code: event.code, reason: event.reason });
+    });
+
+    const closed = closeBoardConnectionsWithCode('board_expulsion', { userIds: ['user_caro'] });
+    expect(closed).toBe(1);
+
+    const observed = await waitFor(() => closes.length > 0);
+    expect(observed).toBe(true);
+    expect(closes[0]).toMatchObject({ code: FORBIDDEN_CODE });
+    close();
+  });
+
+  it('registra la presencia de quien se conecta y la suelta al desconectar', async () => {
+    db.addBoard('board_presencia');
+    db.addMember('board_presencia', 'user_beto', 'viewer');
+
+    const { provider, close } = createProvider('board_presencia', VIEWER_TOKEN);
+    await waitFor(() => provider.synced);
+
+    const seen = boardPresence('board_presencia');
+    expect(seen.map((user) => user.userId)).toContain('user_beto');
+    expect(seen.find((user) => user.userId === 'user_beto')?.connected).toBe(true);
+    // Nombre en el estado: el indicador no necesita otra consulta.
+    expect(seen.find((user) => user.userId === 'user_beto')?.name).toBe('Beto');
+
+    close();
+    const released = await waitFor(() => boardPresence('board_presencia').every((user) => !user.connected), 5_000, 100);
+    expect(released).toBe(true);
   });
 });

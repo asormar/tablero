@@ -15,7 +15,8 @@ import { instantiateTemplateSchema, templateSchema } from '@tablero/shared';
 import { z } from 'zod';
 
 import { prisma } from '../db.js';
-import { accessOrThrow, editorOrThrow, loadBoardAccess } from '../lib/boards.js';
+import { requireBoardEditor, resolveBoardAccessFrom } from '../lib/access.js';
+import { loadBoardAccess } from '../lib/boards.js';
 import { conflict, forbidden, notFound } from '../lib/errors.js';
 import { currentUser } from '../lib/session.js';
 import { copyBoardSubtree, fetchTemplateSubtree, templateElementCounts } from '../lib/templates.js';
@@ -73,10 +74,9 @@ export async function templatesRoutes(app: FastifyInstance): Promise<void> {
 
     let parentId: string | null = null;
     if (input.parentBoardId) {
-      const { record } = accessOrThrow(access, input.parentBoardId);
-      if (!access.canEdit(record.id)) {
-        throw forbidden('Necesitás rol de editor en el tablero destino', 'forbidden_role');
-      }
+      const { board: record } = requireBoardEditor(resolveBoardAccessFrom(access, input.parentBoardId), {
+        allowTrashed: true,
+      });
       if (record.trashedAt) throw conflict('El destino está en la papelera', 'parent_trashed');
       parentId = record.id;
     } else {
@@ -117,7 +117,7 @@ export async function templatesRoutes(app: FastifyInstance): Promise<void> {
     const { id } = idParamsSchema.parse(request.params);
     const input = fromBoardSchema.parse(request.body ?? {});
     const access = await loadBoardAccess(user.id);
-    const { record } = editorOrThrow(access, id);
+    const { board: record } = requireBoardEditor(resolveBoardAccessFrom(access, id), { allowTrashed: true });
 
     const sources = await fetchTemplateSubtree(id);
     const includeChildren = input.includeChildren !== false;

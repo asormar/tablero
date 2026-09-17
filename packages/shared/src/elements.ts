@@ -179,7 +179,31 @@ export type SwatchElement = BaseElement & { type: 'swatch'; hex: string; name?: 
 export type SketchElement = BaseElement & { type: 'sketch'; strokes: SketchStroke[]; background?: 'transparent' | 'white' };
 export type TableElement = BaseElement & { type: 'table'; table: TableData };
 export type MapElement = BaseElement & { type: 'map'; map: MapData };
-export type CommentPinElement = BaseElement & { type: 'comment-pin'; resolved?: boolean };
+/** Un mensaje del hilo de una chincheta: raíz o respuesta. */
+export type CommentMessage = {
+  id: string;
+  authorId: string;
+  authorName: string;
+  body: string;
+  createdAt: number;
+  /** Marca de resolución del hilo (el hilo se resuelve entero, no por mensaje). */
+  resolvedAt?: number | null;
+};
+
+/**
+ * Chincheta de comentario: el hilo vive en el propio documento (`comments`),
+ * anclado a una tarjeta (`anchorElementId`) o suelto en el lienzo. El servidor
+ * lo extrae a la tabla `Comment` en el hook de persistencia; el documento sigue
+ * siendo la fuente de verdad.
+ */
+export type CommentPinElement = BaseElement & {
+  type: 'comment-pin';
+  resolved?: boolean;
+  /** Elemento del lienzo al que está anclado el hilo (null = chincheta suelta). */
+  anchorElementId?: string | null;
+  /** Hilo completo: el primer mensaje es el comentario raíz. */
+  comments?: CommentMessage[];
+};
 export type TodoExtras = { items?: TodoItem[]; hideCompleted?: boolean; title?: string };
 export type LineElement = BaseElement & { type: 'line'; points: number[] };
 

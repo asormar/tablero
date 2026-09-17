@@ -32,6 +32,7 @@ type BoardRow = {
 const db = vi.hoisted(() => {
   const boards = new Map<string, BoardRow>();
   const documents = new Map<string, Buffer>();
+  const searchRows = new Map<string, { boardId: string; elementId: string; elementType: string; text: string; textNorm: string }>();
   const templates = new Map<string, { id: string; ownerId: string | null; boardId: string; category: string; name: string; description: string | null; createdAt: Date }>();
   let counter = 0;
 
@@ -71,7 +72,7 @@ const db = vi.hoisted(() => {
         return { ...row };
       },
     },
-    share: { findMany: async () => [] },
+    boardMember: { findMany: async () => [] },
     boardDocument: {
       findMany: async ({ where }: { where: { boardId: { in: string[] } } }) =>
         where.boardId.in
@@ -109,6 +110,31 @@ const db = vi.hoisted(() => {
         return { ...row };
       },
     },
+    searchIndex: {
+      deleteMany: async ({ where }: { where: { boardId: string; elementId?: { notIn: string[] } } }) => {
+        for (const [key, row] of [...searchRows]) {
+          if (row.boardId !== where.boardId) continue;
+          if (where.elementId?.notIn && where.elementId.notIn.includes(row.elementId)) continue;
+          searchRows.delete(key);
+        }
+        return { count: 0 };
+      },
+      upsert: async ({
+        where,
+        create,
+        update,
+      }: {
+        where: { boardId_elementId: { boardId: string; elementId: string } };
+        create: { boardId: string; elementId: string; elementType: string; text: string; textNorm: string };
+        update: { elementType: string; text: string; textNorm: string };
+      }) => {
+        const { boardId, elementId } = where.boardId_elementId;
+        const previous = searchRows.get(`${boardId}:${elementId}`);
+        const row = { ...create, ...(previous ? update : {}) };
+        searchRows.set(`${boardId}:${elementId}`, row);
+        return { ...row };
+      },
+    },
     $transaction: async (arg: unknown) =>
       Array.isArray(arg) ? Promise.all(arg) : (arg as (tx: unknown) => Promise<unknown>)(prisma),
   };
@@ -117,10 +143,12 @@ const db = vi.hoisted(() => {
     prisma,
     boards,
     documents,
+    searchRows,
     templates,
     reset: () => {
       boards.clear();
       documents.clear();
+      searchRows.clear();
       templates.clear();
       counter = 0;
     },
@@ -260,6 +288,23 @@ describe('POST /api/templates/:id/instantiate', () => {
     const newRootId = String(response.json().board.id);
     expect(db.boards.get(newRootId)?.title).toBe('Mi proyecto');
     expect(db.boards.get(newRootId)?.parentBoardId).toBe('root');
+    await app.close();
+  });
+
+  it('indexa el contenido al instante: la búsqueda lo encuentra sin reindex manual', async () => {
+    const app = await buildApp();
+    const response = await app.inject({ method: 'POST', url: '/api/templates/tpl_sistema/instantiate', payload: {} });
+    expect(response.statusCode).toBe(201);
+    const newRootId = String(response.json().board.id);
+    const childId = String((response.json().children as { id: string }[])[0]!.id);
+
+    // Sin llamar a `POST /api/search/reindex`: el hook de la copia ya indexó el
+    // documento (el texto que la búsqueda global lee vive en `SearchIndex`).
+    const rootRows = [...db.searchRows.values()].filter((row) => row.boardId === newRootId);
+    const childRows = [...db.searchRows.values()].filter((row) => row.boardId === childId);
+    expect(rootRows.some((row) => row.text.includes('Por hacer: definir el alcance'))).toBe(true);
+    expect(childRows.some((row) => row.text.includes('Decisiones abiertas'))).toBe(true);
+    expect(rootRows.length + childRows.length).toBeGreaterThanOrEqual(2);
     await app.close();
   });
 });

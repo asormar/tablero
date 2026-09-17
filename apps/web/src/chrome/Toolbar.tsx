@@ -21,6 +21,7 @@ import {
   Link2,
   ListChecks,
   Map as MapIcon,
+  MessageSquarePlus,
   Mic,
   Palette,
   Paperclip,
@@ -42,6 +43,8 @@ import { SWATCH_DEFAULT_HEX, createLinkCardAt, createSwatchAt } from '@/canvas/c
 import { HEADING_MIME, TOOL_MIME, createToolAt } from '@/canvas/toolDrop';
 import { attachFilesToBoard } from '@/canvas/uploadController';
 import type { BoardSession } from '@/collab/BoardSession';
+import { can as canCapability, capabilityRefusal } from '@/collab/roles';
+import { useSessionPermission } from '@/collab/SessionContext';
 import { DEFAULT_SIZES } from '@tablero/shared';
 import { pickFiles } from '@/lib/filePicker';
 import { isDevBuild } from '@/lib/renderStats';
@@ -95,6 +98,10 @@ export function Toolbar({ session }: ToolbarProps): JSX.Element {
   const setPendingTool = useUiStore((state) => state.setPendingTool);
   const setRecorderOpen = useUiStore((state) => state.setRecorderOpen);
   const currentBoardId = useAppStore((state) => state.currentBoardId);
+  const permission = useSessionPermission();
+  const canCreate = canCapability(permission.role, 'edit');
+  const commentPinMode = useUiStore((state) => state.commentPinMode);
+  const canComment = canCapability(permission.role, 'comment');
 
   const dragProps = (type: ElementType, extra?: Record<string, string>) => ({
     draggable: true,
@@ -189,7 +196,34 @@ export function Toolbar({ session }: ToolbarProps): JSX.Element {
   };
 
   return (
-    <aside className="toolbar" aria-label="Herramientas">
+    <aside
+      className={`toolbar${canCreate ? '' : ' toolbar--readonly'}`}
+      aria-label="Herramientas"
+      data-toolbar-editable={canCreate ? 'yes' : 'no'}
+    >
+      {!canCreate ? (
+        // Rol de lectura: no hay barra de creación. Se explica por qué y, si el
+        // rol permite comentar, queda el botón de la chincheta.
+        <div className="toolbar__readonly" data-toolbar-readonly role="note">
+          <span className="toolbar__readonly-text">
+            {capabilityRefusal(permission.role, 'edit') ?? 'Este tablero está en solo lectura.'}
+          </span>
+          {canComment ? (
+            <button
+              type="button"
+              className={`toolbar__tool${commentPinMode ? ' is-active' : ''}`}
+              title="Colocar un comentario en el lienzo"
+              data-toolbar-comment-pin
+              aria-pressed={commentPinMode}
+              onClick={() => useUiStore.getState().setCommentPinMode(!commentPinMode)}
+            >
+              <MessageSquarePlus size={18} />
+              <span className="toolbar__label">Comentar</span>
+            </button>
+          ) : null}
+        </div>
+      ) : (
+        <>
       <div className="toolbar__group">
         <button
           type="button"
@@ -255,6 +289,17 @@ export function Toolbar({ session }: ToolbarProps): JSX.Element {
 
       <div className="toolbar__group toolbar__group--structure" aria-label="Estructura">
         {STRUCTURE_TOOLS.map(renderContentTool)}
+        <button
+          type="button"
+          className={`toolbar__tool${commentPinMode ? ' is-active' : ''}`}
+          title="Colocar un comentario suelto en el lienzo"
+          data-toolbar-comment-pin
+          aria-pressed={commentPinMode}
+          onClick={() => useUiStore.getState().setCommentPinMode(!commentPinMode)}
+        >
+          <MessageSquarePlus size={18} />
+          <span className="toolbar__label">Comentar</span>
+        </button>
       </div>
 
       {isDevBuild ? (
@@ -270,6 +315,8 @@ export function Toolbar({ session }: ToolbarProps): JSX.Element {
           </button>
         </div>
       ) : null}
+        </>
+      )}
     </aside>
   );
 }

@@ -31,6 +31,11 @@ import { startConnectorDrag } from '@/canvas/connectorDrag';
 import { ConnectorLayer } from '@/canvas/ConnectorLayer';
 import { highlightColumn, kanbanTargetAt, type KanbanTarget } from '@/canvas/kanbanDrag';
 import type { BoardSession } from '@/collab/BoardSession';
+import { reportBoardActivity } from '@/collab/activityBridge';
+import { CommentPinLayer } from '@/collab/CommentLayer';
+import { RemoteCursorsOverlay, RemoteSelectionLayer } from '@/collab/RemoteCursors';
+import { useSessionPermission } from '@/collab/SessionContext';
+import { can as canCapability } from '@/collab/roles';
 import { createNoteAt, editElement, idsInRect, resizeSelectionWidth } from '@/canvas/commands';
 import { HEADING_MIME, TOOL_MIME, createToolAt, createToolInColumn, hasFiles, isToolDrag } from '@/canvas/toolDrop';
 import { attachFilesToBoard } from '@/canvas/uploadController';
@@ -121,13 +126,22 @@ function trackPointer(
 export type CanvasProps = {
   session: BoardSession;
   onOpenBoard(boardId: string): void;
+  /** Vista pública: sin edición, sin selección de arrastre y sin menú. */
+  readOnly?: boolean;
 };
 
-export function Canvas({ session, onOpenBoard }: CanvasProps): JSX.Element {
+export function Canvas({ session, onOpenBoard, readOnly = false }: CanvasProps): JSX.Element {
   const rootRef = useRef<HTMLDivElement | null>(null);
   const activeTrack = useRef<(() => void) | null>(null);
   const viewport = useUiStore((state) => state.viewport);
   const interaction = useUiStore((state) => state.interaction);
+  const permission = useSessionPermission();
+  // El modo lectura de la fase 5: la vista pública nunca edita y un rol lector o
+  // comentarista tampoco. La comprobación vive acá (no solo en los botones) para
+  // que ningún gesto del lienzo escape.
+  const editable = !readOnly && canCapability(permission.role, 'edit');
+  const canComment = !readOnly && canCapability(permission.role, 'comment');
+  const commentPinMode = useUiStore((state) => state.commentPinMode);
 
   // --- Montaje: referencia global + tamaño para virtualizar ------------------
   useEffect(() => {
@@ -389,6 +403,9 @@ export function Canvas({ session, onOpenBoard }: CanvasProps): JSX.Element {
             return;
           }
           moveElements(session.doc, moves, session.origin);
+          for (const move of moves) {
+            reportBoardActivity(session, { action: 'element.move', elementId: move.id });
+          }
         },
       });
       activeTrack.current = trackPointer(
@@ -477,11 +494,18 @@ export function Canvas({ session, onOpenBoard }: CanvasProps): JSX.Element {
         return;
       }
 
+      // Chincheta libre: el siguiente clic en el lienzo la coloca (y abre el
+      // globo para escribir el comentario).
+      if (ui.commentPinMode && event.button === 0 && event.pointerType !== 'touch') {
+        ui.setCommentPinDraft(worldFromClient(event.clientX, event.clientY));
+        return;
+      }
+
       const elementEl = target.closest('[data-element-id]') as HTMLElement | null;
 
       // Anclas de conector: arrastrar desde el borde de una tarjeta.
       const anchorEl = target.closest('[data-anchor]') as HTMLElement | null;
-      if (anchorEl && elementEl) {
+      if (editable && anchorEl && elementEl) {
         const id = elementEl.dataset.elementId;
         const side = anchorEl.dataset.anchor;
         if (id && (side === 'left' || side === 'right' || side === 'top' || side === 'bottom')) {
@@ -491,7 +515,7 @@ export function Canvas({ session, onOpenBoard }: CanvasProps): JSX.Element {
       }
 
       const handleEl = target.closest('[data-handle]');
-      if (handleEl && elementEl) {
+      if (editable && handleEl && elementEl) {
         const id = elementEl.dataset.elementId;
         const direction = handleEl.getAttribute('data-handle');
         if (id && (direction === 'w' || direction === 'e' || direction === 'se')) {
@@ -503,7 +527,7 @@ export function Canvas({ session, onOpenBoard }: CanvasProps): JSX.Element {
       if (!elementEl) {
         // Clic sobre una flecha: se selecciona el conector, no se abre lazo.
         const connector = connectorAtPoint(session, screenToWorld(ui.viewport, startPoint), 6);
-        if (connector) {
+        if (connector && editable) {
           ui.setSelectedConnector(connector.id);
           ui.clearSelection();
           return;
@@ -511,8 +535,14 @@ export function Canvas({ session, onOpenBoard }: CanvasProps): JSX.Element {
         ui.setSelectedConnector(null);
         // En pantallas táctiles un dedo en el vacío desplaza el lienzo (como en
         // cualquier app de lienzo); el lazo queda para el ratón.
-        if (event.pointerType === 'touch') {
-          startPan(event);
+        if (event.pointerType === 'touch' || readOnly) {
+          if (event.pointerType === 'touch') startPan(event);
+          else ui.clearSelection();
+          return;
+        }
+        // Con solo lectura no hay lazo: el clic en vacío deselecciona.
+        if (!editable) {
+          ui.clearSelection();
           return;
         }
         startMarquee(startPoint, event.shiftKey);
@@ -531,12 +561,14 @@ export function Canvas({ session, onOpenBoard }: CanvasProps): JSX.Element {
       // Zonas interactivas (rejilla de la tabla, lienzo del dibujo, mapa, filas
       // de tareas): seleccionan la tarjeta pero no la arrastran.
       if (target.closest('[data-interactive]')) return;
+      // Sin permiso de escritura no hay arrastre: la selección es solo lectura.
+      if (!editable) return;
 
       const element = session.getElement(id);
       if (!element || element.locked) return;
       startMove(id, { x: event.clientX, y: event.clientY });
     },
-    [session, startConnector, startMarquee, startMove, startPan, startResize],
+    [session, startConnector, startMarquee, startMove, startPan, startResize, editable, readOnly],
   );
 
   const handleDoubleClick = useCallback(
@@ -560,7 +592,9 @@ export function Canvas({ session, onOpenBoard }: CanvasProps): JSX.Element {
       const id = elementEl?.getAttribute('data-element-id') ?? null;
 
       if (!id) {
-        // Doble clic en vacío: nota nueva en el punto y a escribir.
+        // Doble clic en vacío: nota nueva en el punto y a escribir. Con solo
+        // lectura (o rol lector) no se crea nada.
+        if (!editable) return;
         createNoteAt(session, worldFromClient(event.clientX, event.clientY));
         return;
       }
@@ -576,9 +610,11 @@ export function Canvas({ session, onOpenBoard }: CanvasProps): JSX.Element {
         useUiStore.getState().openDocument(id);
         return;
       }
+      // Editar el texto de una tarjeta es escritura: con solo lectura no pasa.
+      if (!editable) return;
       editElement(session, id);
     },
-    [onOpenBoard, session],
+    [onOpenBoard, session, editable],
   );
 
   const handleContextMenu = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
@@ -610,6 +646,8 @@ export function Canvas({ session, onOpenBoard }: CanvasProps): JSX.Element {
   const handleDrop = useCallback(
     (event: React.DragEvent<HTMLDivElement>) => {
       setFileDragOver(false);
+      // Con solo lectura no se acepta ningún soltado (ni archivos ni herramientas).
+      if (!editable) return;
       const world = worldFromClient(event.clientX, event.clientY);
       const column = kanbanTargetAt(event.clientX, event.clientY, new Set());
 
@@ -637,7 +675,7 @@ export function Canvas({ session, onOpenBoard }: CanvasProps): JSX.Element {
       void createToolAt(session, type, world, headingSize, parentBoardId);
       useUiStore.getState().setPendingTool(null);
     },
-    [session],
+    [session, editable],
   );
 
   const pendingTool = useUiStore((state) => state.pendingTool);
@@ -650,9 +688,12 @@ export function Canvas({ session, onOpenBoard }: CanvasProps): JSX.Element {
         interaction === 'idle' ? '' : `is-${interaction}`,
         pendingTool ? 'is-dropping' : '',
         fileDragOver ? 'is-file-over' : '',
+        editable ? '' : 'is-readonly',
       ]
         .filter(Boolean)
         .join(' ')}
+      data-canvas-editable={editable ? 'yes' : 'no'}
+      data-canvas-comment-mode={canComment && commentPinMode ? 'pin' : 'off'}
       onPointerDown={handlePointerDown}
       onDoubleClick={handleDoubleClick}
       onContextMenu={handleContextMenu}
@@ -667,7 +708,10 @@ export function Canvas({ session, onOpenBoard }: CanvasProps): JSX.Element {
       >
         <ConnectorLayer session={session} />
         <ElementLayer session={session} />
+        <RemoteSelectionLayer />
+        <CommentPinLayer session={session} />
       </div>
+      <RemoteCursorsOverlay dark={document.documentElement.dataset.theme === 'dark'} />
       <GuidesOverlay />
       <MarqueeOverlay />
       <DropLineOverlay />

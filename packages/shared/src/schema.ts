@@ -129,40 +129,12 @@ export const tasksQuerySchema = z.object({
   limit: z.coerce.number().int().min(1).max(500).default(200),
 });
 
-export const createCommentSchema = z.object({
-  boardId: idSchema,
-  elementId: idSchema.optional(),
-  x: z.number().finite().optional(),
-  y: z.number().finite().optional(),
-  body: z.string().trim().min(1).max(4000),
-  parentId: idSchema.optional(),
-  mentions: z.array(idSchema).max(50).optional(),
-});
-
-export const updateCommentSchema = z
-  .object({
-    body: z.string().trim().min(1).max(4000).optional(),
-    resolved: z.boolean().optional(),
-  })
-  .refine((value) => Object.keys(value).length > 0);
-
 export const shareSchema = z.object({
   email: emailSchema.optional(),
   userId: idSchema.optional(),
   role: z.enum(BOARD_ROLES),
   /** `true` para permitir sobrescribir el rol heredado de un tablero padre. */
   override: z.boolean().optional(),
-});
-
-export const publishSchema = z.object({
-  published: z.boolean(),
-  slug: z
-    .string()
-    .trim()
-    .regex(/^[a-z0-9-]{3,48}$/)
-    .optional(),
-  password: z.string().min(4).max(100).nullish(),
-  includeChildren: z.boolean().optional(),
 });
 
 export const captureSchema = z.object({
@@ -230,7 +202,6 @@ export type LoginInput = z.infer<typeof loginSchema>;
 export type CreateBoardInput = z.infer<typeof createBoardSchema>;
 export type UpdateBoardInput = z.infer<typeof updateBoardSchema>;
 export type SearchQuery = z.infer<typeof searchQuerySchema>;
-export type CreateCommentInput = z.infer<typeof createCommentSchema>;
 export type ShareInput = z.infer<typeof shareSchema>;
 export type CaptureInput = z.infer<typeof captureSchema>;
 export type UserSettings = z.infer<typeof userSettingsSchema>;

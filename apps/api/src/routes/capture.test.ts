@@ -107,7 +107,7 @@ const db = vi.hoisted(() => {
         return { count };
       },
     },
-    share: { findMany: async () => [] },
+    boardMember: { findMany: async () => [] },
     boardDocument: {
       create: async ({ data }: { data: { boardId: string; yjsState: Buffer } }) => {
         documents.set(data.boardId, data.yjsState);

@@ -16,6 +16,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "smoke:assets": "tsx scripts/smoke-assets.ts",
+    "smoke:colaboracion": "tsx scripts/smoke-colaboracion.ts",
     "smoke:collab": "tsx scripts/smoke-collab.ts",
     "smoke:productividad": "tsx scripts/smoke-productividad.ts",
     "smoke:upgrade": "node scripts/smoke-upgrade.mjs"

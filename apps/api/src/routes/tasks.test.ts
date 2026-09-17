@@ -56,7 +56,7 @@ const db = vi.hoisted(() => {
 
   const prisma = {
     board: { findMany: async () => boards.map((row) => ({ ...row })) },
-    share: { findMany: async () => [] },
+    boardMember: { findMany: async () => [] },
   };
 
   return { boards, seed, reset: () => (boards.length = 0), prisma };

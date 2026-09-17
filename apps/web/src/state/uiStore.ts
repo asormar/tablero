@@ -25,9 +25,11 @@ export type SelectionMode = 'replace' | 'add' | 'toggle';
 export type InteractionKind = 'idle' | 'move' | 'resize' | 'pan' | 'marquee' | 'place';
 export type ContextMenuState = { x: number; y: number; targetId: string | null } | null;
 /** Pestaña del panel lateral derecho. */
-export type PanelTab = 'unsorted' | 'trash';
+export type PanelTab = 'unsorted' | 'trash' | 'comments';
 /** Salto pendiente a un elemento de otro tablero (lo pide la vista de tareas). */
 export type FocusRequest = { boardId: string; elementId: string };
+/** Chincheta de comentario que se está colocando en el lienzo. */
+export type CommentPinDraft = { x: number; y: number };
 
 export type UiState = {
   /** Tamaño en pantalla del área del lienzo (para virtualizar y encajar). */
@@ -77,6 +79,14 @@ export type UiState = {
   documentId: string | null;
   /** Buscador de tableros de «Mover a…» abierto. */
   moveToOpen: boolean;
+  /** Fase 5: tarjeta cuyo hilo de comentarios está abierto. */
+  commentTargetId: string | null;
+  /** Fase 5: hilo (comentario raíz) abierto en la tarjeta. */
+  commentThreadId: string | null;
+  /** Fase 5: se está colocando una chincheta libre en el lienzo. */
+  commentPinMode: boolean;
+  /** Fase 5: chincheta recién colocada, pendiente de escribir el comentario. */
+  commentPinDraft: CommentPinDraft | null;
 
   setCanvasSize(size: Size): void;
   setViewport(viewport: Viewport): void;
@@ -119,6 +129,13 @@ export type UiState = {
   openDocument(id: string): void;
   closeDocument(): void;
   setMoveToOpen(open: boolean): void;
+  /** Abre (o cierra) el hilo de comentarios de una tarjeta. */
+  openCommentThread(elementId: string, threadId?: string | null): void;
+  closeCommentThread(): void;
+  /** Entra en modo «colocar chincheta» (un clic en el lienzo la fija). */
+  setCommentPinMode(active: boolean): void;
+  /** Fija la chincheta recién colocada, lista para escribir el comentario. */
+  setCommentPinDraft(draft: CommentPinDraft | null): void;
   /** Reinicia la interfaz al cambiar de tablero. */
   resetWorkspace(): void;
 };
@@ -169,6 +186,10 @@ export const useUiStore = create<UiState>()((set, get) => ({
   connectorDraft: null,
   documentId: null,
   moveToOpen: false,
+  commentTargetId: null,
+  commentThreadId: null,
+  commentPinMode: false,
+  commentPinDraft: null,
 
   setCanvasSize(size) {
     const current = get().canvasSize;
@@ -352,6 +373,20 @@ export const useUiStore = create<UiState>()((set, get) => ({
     if (get().moveToOpen === open) return;
     set({ moveToOpen: open });
   },
+  openCommentThread(elementId, threadId = null) {
+    set({ commentTargetId: elementId, commentThreadId: threadId });
+  },
+  closeCommentThread() {
+    if (get().commentTargetId === null && get().commentThreadId === null) return;
+    set({ commentTargetId: null, commentThreadId: null });
+  },
+  setCommentPinMode(active) {
+    if (get().commentPinMode === active) return;
+    set({ commentPinMode: active, commentPinDraft: null });
+  },
+  setCommentPinDraft(draft) {
+    set({ commentPinDraft: draft, commentPinMode: false });
+  },
   resetWorkspace() {
     set({
       viewport: DEFAULT_VIEWPORT,
@@ -376,6 +411,10 @@ export const useUiStore = create<UiState>()((set, get) => ({
       panelTab: 'unsorted',
       homeOpen: false,
       tasksOpen: false,
+      commentTargetId: null,
+      commentThreadId: null,
+      commentPinMode: false,
+      commentPinDraft: null,
       // `focusRequest` no se toca: lo pide la vista de tareas justo antes de
       // abrir el tablero y el salto se consume en la sesión nueva.
     });

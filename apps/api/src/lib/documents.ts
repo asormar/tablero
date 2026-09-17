@@ -152,3 +152,35 @@ export async function reindexBoard(boardId: string): Promise<number | null> {
   if (!doc) return null;
   return syncSearchIndex(boardId, doc);
 }
+
+/**
+ * Indexa varios tableros recién creados (copia de plantilla, duplicado). Sin
+ * esto, un tablero copiado queda invisible para `GET /api/search` hasta que
+ * alguien reindexe a mano: su contenido nunca pasa por el hook de persistencia.
+ *
+ * Nunca lanza y sigue con el resto si un tablero falla: el índice no puede
+ * tumbar la operación que ya se guardó.
+ */
+export async function reindexBoards(
+  boardIds: string[],
+  onError?: (boardId: string, error: unknown) => void,
+): Promise<{ boards: number; elements: number; skipped: number }> {
+  let boards = 0;
+  let elements = 0;
+  let skipped = 0;
+  for (const boardId of boardIds) {
+    try {
+      const indexed = await reindexBoard(boardId);
+      if (indexed === null) {
+        skipped += 1;
+        continue;
+      }
+      boards += 1;
+      elements += indexed;
+    } catch (error) {
+      skipped += 1;
+      onError?.(boardId, error);
+    }
+  }
+  return { boards, elements, skipped };
+}

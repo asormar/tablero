@@ -37,11 +37,17 @@ model User {
 
   boards        Board[]        @relation("BoardOwner")
   sessions      Session[]
-  shares        Share[]
   comments      Comment[]
   assets        Asset[]
-  notifications Notification[]
+  notifications Notification[] @relation("NotificationRecipient")
   templates     Template[]
+  /// Membresías en tableros ajenos (fase 5).
+  memberships   BoardMember[]  @relation("BoardMemberUser")
+  membersInvited BoardMember[] @relation("BoardMemberInviter")
+  invitations   Invitation[]   @relation("InvitationInviter")
+  invitationsAccepted Invitation[] @relation("InvitationAcceptor")
+  activities    Activity[]
+  actedNotifications Notification[] @relation("NotificationActor")
 
   @@index([createdAt])
 }
@@ -70,8 +76,14 @@ model Board {
   /// Asset usado como portada. Sin FK: la integridad se valida en la API.
   coverImageId          String?
   isTemplate            Boolean   @default(false)
+  /// Slug inadvertible de la publicación (12 caracteres base58).
   publishedSlug         String?   @unique
+  /// argon2 de la contraseña de la publicación (null = sin contraseña).
   publishedPasswordHash String?
+  /// Publicación (fase 5): momento en que se publicó (null = no publicado).
+  publishedAt           DateTime?
+  /// La vista pública navega los subtableros (solo lectura).
+  publicIncludeSubBoards Boolean  @default(false)
   trashedAt             DateTime?
   /// Momento en que el usuario marcó el tablero como favorito (null = no lo es).
   favoriteAt            DateTime?
@@ -85,16 +97,20 @@ model Board {
   children    Board[]        @relation("BoardTree")
   document    BoardDocument?
   versions    BoardVersion[]
-  shares      Share[]
   comments    Comment[]
   templates   Template[]
   searchIndex SearchIndex[]
+  members     BoardMember[]
+  invitations Invitation[]
+  activities  Activity[]
+  notifications Notification[]
 
   @@index([ownerId])
   @@index([parentBoardId])
   @@index([trashedAt])
   @@index([favoriteAt])
   @@index([isTemplate])
+  @@index([publishedAt])
 }
 
 /// Estado Yjs serializado (1:1 con el tablero).
@@ -148,59 +164,132 @@ model LinkPreview {
   @@index([fetchedAt])
 }
 
-model Share {
-  id        String    @id @default(cuid())
-  boardId   String
-  userId    String?
-  email     String?
-  role      BoardRole @default(editor)
-  createdAt DateTime  @default(now())
+/// Miembro de un tablero (fase 5). El dueño no tiene fila: su rol sale de
+/// `Board.ownerId`. La herencia en subtableros la resuelve `lib/access.ts`.
+model BoardMember {
+  id          String    @id @default(cuid())
+  boardId     String
+  userId      String
+  role        BoardRole
+  /// Quién concedió el acceso (null si lo creó la API del dueño o un script).
+  invitedById String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
-  board Board @relation(fields: [boardId], references: [id], onDelete: Cascade)
-  user  User? @relation(fields: [userId], references: [id], onDelete: Cascade)
+  board     Board @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  user      User  @relation("BoardMemberUser", fields: [userId], references: [id], onDelete: Cascade)
+  invitedBy User? @relation("BoardMemberInviter", fields: [invitedById], references: [id], onDelete: SetNull)
 
-  // Postgres trata NULL como distinto: se permiten varias filas sin userId
-  // (invitaciones por email) y varias filas sin email (usuarios directos).
   @@unique([boardId, userId])
-  @@unique([boardId, email])
   @@index([boardId])
   @@index([userId])
-  @@index([email])
+  @@index([boardId, role])
 }
 
+/// Invitación por email con caducidad (fase 5). Al aceptarla nace la fila de
+/// `BoardMember` y la invitación queda marcada con `acceptedAt`.
+model Invitation {
+  id           String    @id @default(cuid())
+  boardId      String
+  email        String
+  role         BoardRole @default(viewer)
+  /// Token del enlace `/invite/:token` (32 bytes base64url).
+  token        String    @unique
+  expiresAt    DateTime
+  acceptedAt   DateTime?
+  acceptedById String?
+  invitedById  String
+  createdAt    DateTime  @default(now())
+
+  board      Board @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  invitedBy  User  @relation("InvitationInviter", fields: [invitedById], references: [id], onDelete: Cascade)
+  acceptedBy User? @relation("InvitationAcceptor", fields: [acceptedById], references: [id], onDelete: SetNull)
+
+  @@index([boardId])
+  @@index([email])
+  @@index([expiresAt])
+}
+
+/// Proyección del hilo de comentarios que vive en el documento Yjs (elemento
+/// `comment-pin`). La fuente de verdad es el documento: el hook de persistencia
+/// hace upsert de esta tabla con lo que encuentra ahí.
 model Comment {
-  id        String   @id @default(cuid())
-  boardId   String
-  elementId String?
-  authorId  String
-  body      String
-  parentId  String?
-  resolved  Boolean  @default(false)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id              String    @id @default(cuid())
+  boardId         String
+  /// Elemento del lienzo al que está anclado (null = chincheta suelta).
+  elementId       String?
+  /// Comentario raíz del hilo si esta fila es una respuesta.
+  parentCommentId String?
+  authorId        String
+  body            String
+  /// Posición de la chincheta libre en el lienzo (null si está anclada).
+  x               Float?
+  y               Float?
+  /// Hilo resuelto (null = abierto).
+  resolvedAt      DateTime?
+  /// Quién resolvió el hilo (id de usuario tal cual vive en el documento).
+  resolvedBy      String?
+  /// Ids de usuarios mencionados en el comentario.
+  mentions        Json?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
 
   board   Board     @relation(fields: [boardId], references: [id], onDelete: Cascade)
   author  User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
-  parent  Comment?  @relation("CommentThread", fields: [parentId], references: [id], onDelete: Cascade)
+  parent  Comment?  @relation("CommentThread", fields: [parentCommentId], references: [id], onDelete: Cascade)
   replies Comment[] @relation("CommentThread")
 
   @@index([boardId])
   @@index([elementId])
   @@index([authorId])
+  @@index([parentCommentId])
+  @@index([boardId, resolvedAt])
 }
 
+/// Registro de actividad del tablero. Lo reporta el cliente por lotes
+/// (`POST /api/boards/:id/activity`): es un registro para leer, no una
+/// frontera de seguridad.
+model Activity {
+  id          String   @id @default(cuid())
+  boardId     String
+  userId      String
+  action      String
+  elementId   String?
+  elementType String?
+  meta        Json     @default("{}")
+  createdAt   DateTime @default(now())
+
+  board Board @relation(fields: [boardId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([boardId, createdAt])
+  @@index([boardId, userId])
+  @@index([userId, createdAt])
+}
+
+/// Notificación de la cuenta (fase 5): menciones, respuestas, tablero
+/// compartido y tareas vencidas. `dedupeKey` evita duplicados (una mención por
+/// comentario y usuario, una tarea vencida por tarea y día).
 model Notification {
   id        String    @id @default(cuid())
   userId    String
-  type      String
-  payload   Json      @default("{}")
+  /// `mention` | `reply` | `comment` | `board-shared` | `task-overdue`.
+  kind      String
+  boardId   String?
+  elementId String?
+  actorId   String?
+  meta      Json      @default("{}")
+  dedupeKey String?   @unique
   readAt    DateTime?
   createdAt DateTime  @default(now())
 
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user  User   @relation("NotificationRecipient", fields: [userId], references: [id], onDelete: Cascade)
+  actor User?  @relation("NotificationActor", fields: [actorId], references: [id], onDelete: SetNull)
+  board Board? @relation(fields: [boardId], references: [id], onDelete: Cascade)
 
   @@index([userId, readAt])
-  @@index([createdAt])
+  @@index([userId, createdAt])
+  @@index([boardId])
 }
 
 model Template {

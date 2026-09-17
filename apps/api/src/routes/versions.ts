@@ -18,7 +18,8 @@ import { z } from 'zod';
 
 import { closeBoardConnections, beginBoardRestore, finishBoardRestore } from '../collab/server.js';
 import { prisma } from '../db.js';
-import { accessOrThrow, editorOrThrow, loadBoardAccess } from '../lib/boards.js';
+import { requireBoardEditor, requireBoardView, resolveBoardAccessFrom } from '../lib/access.js';
+import { loadBoardAccess } from '../lib/boards.js';
 import { decodeState } from '../lib/documents.js';
 import { notFound } from '../lib/errors.js';
 import { currentUser } from '../lib/session.js';
@@ -34,7 +35,7 @@ export async function versionsRoutes(app: FastifyInstance): Promise<void> {
     const { id } = idParamsSchema.parse(request.params);
     const query = listQuerySchema.parse(request.query ?? {});
     const access = await loadBoardAccess(user.id);
-    accessOrThrow(access, id);
+    requireBoardView(resolveBoardAccessFrom(access, id), { allowTrashed: true });
     return { versions: await listVersions(id, query.limit) };
   });
 
@@ -43,7 +44,7 @@ export async function versionsRoutes(app: FastifyInstance): Promise<void> {
     const user = currentUser(request);
     const { id, vid } = versionParamsSchema.parse(request.params);
     const access = await loadBoardAccess(user.id);
-    const { record } = accessOrThrow(access, id);
+    const { board: record } = requireBoardView(resolveBoardAccessFrom(access, id), { allowTrashed: true });
     const version = await prisma.boardVersion.findFirst({ where: { id: vid, boardId: id } });
     if (!version) throw notFound('La versión no existe para este tablero', 'version_not_found');
 
@@ -80,7 +81,7 @@ export async function versionsRoutes(app: FastifyInstance): Promise<void> {
     const user = currentUser(request);
     const { id } = idParamsSchema.parse(request.params);
     const access = await loadBoardAccess(user.id);
-    const { record } = editorOrThrow(access, id);
+    const { board: record } = requireBoardEditor(resolveBoardAccessFrom(access, id), { allowTrashed: true });
     if (record.trashedAt) {
       reply.code(409);
       return { error: 'El tablero está en la papelera', code: 'board_trashed' };
@@ -119,7 +120,7 @@ export async function versionsRoutes(app: FastifyInstance): Promise<void> {
     const user = currentUser(request);
     const { id, vid } = versionParamsSchema.parse(request.params);
     const access = await loadBoardAccess(user.id);
-    editorOrThrow(access, id);
+    requireBoardEditor(resolveBoardAccessFrom(access, id), { allowTrashed: true });
     const version = await prisma.boardVersion.findFirst({ where: { id: vid, boardId: id } });
     if (!version) throw notFound('La versión no existe para este tablero', 'version_not_found');
 

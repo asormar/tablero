@@ -4,6 +4,7 @@ import { buildApp } from './app.js';
 import { createCollabServer } from './collab/server.js';
 import { disconnectPrisma } from './db.js';
 import { assertRuntimeEnv, env, loadedEnvFiles } from './env.js';
+import { startOverdueSweep } from './lib/notifications.js';
 import { ensureBucket } from './lib/storage.js';
 
 async function main(): Promise<void> {
@@ -25,7 +26,12 @@ async function main(): Promise<void> {
   const collab = createCollabServer({ log: (message) => app.log.info(message) });
   collab.attach(app.server);
 
+  // Barrido de tareas vencidas cada 15 minutos (una notificación por tarea y
+  // día). Además se dispara al abrir el panel de notificaciones.
+  const stopSweep = startOverdueSweep((error) => app.log.warn({ err: error }, 'El barrido de tareas vencidas falló'));
+
   app.addHook('onClose', async () => {
+    stopSweep();
     await collab.destroy();
     await disconnectPrisma();
   });

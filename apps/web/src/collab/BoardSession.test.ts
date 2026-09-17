@@ -8,11 +8,14 @@
 
 import { beforeAll, describe, expect, it, vi } from 'vitest';
 
-import { addElement, localOrigin, moveElements, patchElement } from '@tablero/shared';
+import * as Y from 'yjs';
+
+import { addElement, getOrderedElements, localOrigin, moveElements, patchElement } from '@tablero/shared';
 
 import { writePlainText } from '@/lib/xmlFragment';
 
 import { BoardSession } from './BoardSession';
+import { bytesToBase64, loadLocalDocument, saveLocalDocument } from './localPersistence';
 
 beforeAll(() => {
   const storage = new Map<string, string>();
@@ -145,6 +148,164 @@ describe('BoardSession · deshacer', () => {
     expect(session.canRedo()).toBe(true);
     session.redo();
     expect(session.getLayout().some((item) => item.id === id)).toBe(true);
+    session.destroy();
+  });
+});
+
+describe('BoardSession · restauración de versiones', () => {
+  let resetCounter = 0;
+
+  /** Deja correr la recuperación (compara con el remoto antes de decidir). */
+  function settle(): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, 0));
+  }
+
+  function nextBoardId(): string {
+    resetCounter += 1;
+    return `board-restore-${resetCounter}`;
+  }
+
+  /** Copia local con una nota: lo que el cliente tenía antes de restaurar. */
+  function seedLocalCopy(boardId: string): void {
+    const doc = new Y.Doc();
+    addElement(doc, 'note', { x: 0, y: 0, createdBy: 'test' }, localOrigin);
+    saveLocalDocument(boardId, doc);
+    doc.destroy();
+  }
+
+  /** Cierre del socket con el código que manda el servidor (como el proveedor). */
+  function closeSocket(session: BoardSession, code: number, reason: string): void {
+    const internals = session as unknown as {
+      handleSocketClose(code: number, reason: string): void;
+    };
+    internals.handleSocketClose(code, reason);
+  }
+
+  /**
+   * La decisión que cierra el hallazgo ALTO: el servidor restauró una versión y
+   * cerró las conexiones (4205). La copia local no puede fusionarse con el
+   * estado restaurado (la unión de CRDTs solo agrega: revive lo que la
+   * restauración quitó), así que se descarta antes de reconstruir el documento.
+   */
+  it('un cierre 4205 descarta la copia local, corta la persistencia y pide reconstruir', async () => {
+    const boardId = nextBoardId();
+    seedLocalCopy(boardId);
+
+    const session = new BoardSession({ boardId, connect: false });
+    await session.init();
+    // Arranca fusionando la copia local (el camino que el 4205 debe cortar).
+    expect(session.getLayout()).toHaveLength(1);
+
+    const resets = vi.fn();
+    const off = session.subscribeReset(resets);
+    closeSocket(session, 4205, 'Reset Connection');
+    await settle();
+
+    expect(resets).toHaveBeenCalledTimes(1);
+    expect(loadLocalDocument(boardId)).toBeNull();
+
+    // La persistencia quedó cortada: un cambio local posterior no reescribe la
+    // copia descartada (ni siquiera al vencer el retardo de guardado).
+    vi.useFakeTimers();
+    addElement(session.doc, 'note', { x: 10, y: 10, createdBy: 'test' }, localOrigin);
+    vi.advanceTimersByTime(2000);
+    vi.useRealTimers();
+    expect(loadLocalDocument(boardId)).toBeNull();
+
+    // Sin fusión: una sesión nueva para el mismo tablero arranca vacía, porque
+    // el documento se arma solo con lo que devuelva el servidor.
+    const rebuilt = new BoardSession({ boardId, connect: false });
+    await rebuilt.init();
+    expect(rebuilt.getLayout()).toHaveLength(0);
+
+    off();
+    rebuilt.destroy();
+    session.destroy();
+  });
+
+  it('sin descartar la copia local, una sesión nueva la fusiona (control del arreglo)', async () => {
+    const boardId = nextBoardId();
+    seedLocalCopy(boardId);
+
+    const rebuilt = new BoardSession({ boardId, connect: false });
+    await rebuilt.init();
+    expect(rebuilt.getLayout()).toHaveLength(1);
+    rebuilt.destroy();
+  });
+
+  it('descarta la copia local que el propio restaurante guarda antes de recargar', async () => {
+    const boardId = nextBoardId();
+    seedLocalCopy(boardId);
+
+    const session = new BoardSession({ boardId, connect: false });
+    await session.init();
+    expect(session.getLayout()).toHaveLength(1);
+
+    // Es lo que hace el panel de historial antes de `location.reload()`.
+    session.discardLocalDocument();
+    expect(loadLocalDocument(boardId)).toBeNull();
+
+    const rebuilt = new BoardSession({ boardId, connect: false });
+    await rebuilt.init();
+    expect(rebuilt.getLayout()).toHaveLength(0);
+    rebuilt.destroy();
+    session.destroy();
+  });
+
+  it('un cierre 4205 sin contenido propio no descarta ni reconstruye: solo reconecta', async () => {
+    const boardId = nextBoardId();
+    // Documento remoto (lo que el servidor ya restauró) con una nota.
+    const remote = new Y.Doc();
+    addElement(remote, 'note', { x: 0, y: 0, createdBy: 'test' }, localOrigin);
+    const state = bytesToBase64(Y.encodeStateAsUpdate(remote));
+    remote.destroy();
+
+    const session = new BoardSession({
+      boardId,
+      connect: false,
+      readOnly: true,
+      documentSource: async () => ({ state, updatedAt: Date.now() }),
+    });
+    await session.init();
+    expect(session.getLayout()).toHaveLength(1);
+
+    const resets = vi.fn();
+    const off = session.subscribeReset(resets);
+    closeSocket(session, 4205, 'Reset Connection');
+    await settle();
+
+    // Nada que descartar (el documento es el remoto): no se reconstruye la
+    // sesión y la copia local queda rearmada con el estado actual. Sin esta
+    // rama, la guardia del servidor encadenaría reconstrucciones en bucle.
+    expect(resets).not.toHaveBeenCalled();
+    const copy = loadLocalDocument(boardId);
+    expect(copy).not.toBeNull();
+    const decoded = new Y.Doc();
+    Y.applyUpdate(decoded, copy as Uint8Array);
+    expect(getOrderedElements(decoded)).toHaveLength(1);
+    decoded.destroy();
+
+    off();
+    session.destroy();
+  });
+
+  it('un cierre normal no descarta nada ni pide reconstruir', async () => {
+    const boardId = nextBoardId();
+    seedLocalCopy(boardId);
+
+    const session = new BoardSession({ boardId, connect: false });
+    await session.init();
+
+    const resets = vi.fn();
+    const off = session.subscribeReset(resets);
+    closeSocket(session, 1000, '');
+    await settle();
+
+    expect(resets).not.toHaveBeenCalled();
+    expect(loadLocalDocument(boardId)).not.toBeNull();
+    expect(session.getLayout()).toHaveLength(1);
+
+    off();
     session.destroy();
   });
 });

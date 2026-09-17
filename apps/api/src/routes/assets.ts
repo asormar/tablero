@@ -46,6 +46,7 @@ import type { FastifyInstance, FastifyRequest } from 'fastify';
 
 import { prisma } from '../db.js';
 import { env } from '../env.js';
+import { requireBoardView, resolveBoardAccessFrom } from '../lib/access.js';
 import { deleteAssetObjects } from '../lib/assets.js';
 import { loadBoardAccess } from '../lib/boards.js';
 import { badRequest, HttpError, notFound } from '../lib/errors.js';
@@ -164,6 +165,24 @@ async function requireOwnAsset(request: FastifyRequest): Promise<Asset> {
   return row;
 }
 
+/**
+ * Asset **legible**: el propietario o alguien con acceso al tablero al que está
+ * asociado (un miembro de un tablero compartido tiene que poder ver sus
+ * imágenes). Ajeno e inexistente responden igual: 404.
+ */
+async function requireReadableAsset(request: FastifyRequest): Promise<Asset> {
+  const user = currentUser(request);
+  const { id } = assetIdParamSchema.parse(request.params ?? {});
+  const row = await prisma.asset.findUnique({ where: { id } });
+  if (!row) throw notFound('El archivo no existe', 'asset_not_found');
+  if (row.ownerId === user.id) return row;
+  if (row.boardId) {
+    const access = await loadBoardAccess(user.id);
+    if (resolveBoardAccessFrom(access, row.boardId).allowed) return row;
+  }
+  throw notFound('El archivo no existe', 'asset_not_found');
+}
+
 type ReceivedUpload = {
   size: number;
   sha256: string;
@@ -240,7 +259,7 @@ async function boardIdForUpload(request: FastifyRequest, boardId: string | undef
   if (!boardId) return null;
   const user = currentUser(request);
   const access = await loadBoardAccess(user.id);
-  if (!access.roleOf(boardId)) throw notFound('El tablero no existe o no tenés acceso');
+  requireBoardView(resolveBoardAccessFrom(access, boardId), { allowTrashed: true });
   return boardId;
 }
 
@@ -338,7 +357,7 @@ export async function assetsRoutes(app: FastifyInstance): Promise<void> {
     const query = listAssetsSchema.parse(request.query ?? {});
     if (query.boardId) {
       const access = await loadBoardAccess(user.id);
-      if (!access.roleOf(query.boardId)) throw notFound('El tablero no existe o no tenés acceso');
+      requireBoardView(resolveBoardAccessFrom(access, query.boardId), { allowTrashed: true });
     }
     const rows = await prisma.asset.findMany({
       where: {
@@ -353,12 +372,12 @@ export async function assetsRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get('/assets/:id', async (request) => {
-    const row = await requireOwnAsset(request);
+    const row = await requireReadableAsset(request);
     return { asset: toAssetSummary(row) };
   });
 
   app.get('/assets/:id/raw', async (request, reply) => {
-    const row = await requireOwnAsset(request);
+    const row = await requireReadableAsset(request);
     const download = isTruthyFlag(request.query ? (request.query as Record<string, unknown>)['download'] : undefined);
     // SVG y HTML se ejecutan si el navegador los sirve en línea, y este endpoint
     // redirige a la URL firmada del objeto: al abrirlos en una pestaña correrían
@@ -371,7 +390,7 @@ export async function assetsRoutes(app: FastifyInstance): Promise<void> {
   });
 
   app.get('/assets/:id/thumb', async (request, reply) => {
-    const row = await requireOwnAsset(request);
+    const row = await requireReadableAsset(request);
     // Sin miniatura propia se sirve el original (nunca 404): la web siempre
     // puede pedir esta ruta para previsualizar.
     const url = await getPresignedGetUrl(row.thumbnailKey ?? row.storageKey, SIGNED_URL_TTL_SECONDS);

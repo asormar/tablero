@@ -250,7 +250,7 @@ export const MAX_ACTIVITY_BATCH = 50;
 
 export const activityEntrySchema = z.object({
   action: z.enum(ACTIVITY_ACTIONS),
-  elementId: idSchema.optional(),
+  elementId: idSchema.nullish(),
   /**
    * Tipo del elemento, **tal cual vive en el documento**. No se cierra contra
    * `ELEMENT_TYPES`: el `type` de un elemento es un string libre del documento
@@ -259,9 +259,9 @@ export const activityEntrySchema = z.object({
    * de plantillas o de versiones viejas—. Rechazarlos tiraba el lote entero; el
    * registro de actividad es para leer, no una frontera de seguridad.
    */
-  elementType: z.string().trim().min(1).max(64).optional(),
+  elementType: z.string().trim().min(1).max(64).nullish(),
   /** Datos libres del evento (título anterior, destino de un movimiento…). */
-  meta: z.record(z.unknown()).optional(),
+  meta: z.record(z.unknown()).nullish(),
   /** Marca de tiempo del cliente; el servidor la acota a un rango razonable. */
   at: z.number().int().optional(),
 });

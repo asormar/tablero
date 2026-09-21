@@ -84,6 +84,15 @@ describe('esquemas de colaboración', () => {
     expect(activityBatchSchema.safeParse({ entries: [{ action: 'board.publish' }] }).success).toBe(true);
     expect(activityBatchSchema.safeParse({ entries: [{ action: 'updated' }] }).success).toBe(false);
     expect(activityBatchSchema.safeParse({ events: [{ action: 'element.create' }] }).success).toBe(false);
+    // El navegador manda `null` en los campos que no tiene (`elementId`,
+    // `elementType`, `meta`): si el esquema no los acepta, **cada envío del
+    // cliente** da 400 y el registro de actividad pierde todo lo que reporta la
+    // interfaz (pasó: el aviso «Datos inválidos» una vez por sesión).
+    expect(
+      activityBatchSchema.safeParse({
+        entries: [{ action: 'element.create', elementId: null, elementType: null, meta: null, at: 1 }],
+      }).success,
+    ).toBe(true);
   });
 
   it('marcar leídas: `{}` marca todas y `ids` marca las indicadas', () => {

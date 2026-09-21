@@ -167,6 +167,18 @@ export type ConnectorGeometry = {
   endDirection: Point;
 };
 
+/**
+ * Cuerpo mínimo visible de un conector, en píxeles de mundo.
+ *
+ * Con los dos extremos casi pegados (dos tarjetas que se tocan) el empuje mínimo
+ * de los controles plegaba la curva sobre el ancla: en pantalla quedaba solo la
+ * punta de flecha, sin trazo, y como el clic caía sobre la tarjeta no había
+ * forma de seleccionar el conector ni de borrarlo. Por debajo de esta distancia
+ * el cuerpo se estira a lo largo del eje para que la línea se vea y quede un
+ * trecho donde hacer clic.
+ */
+export const MIN_CONNECTOR_BODY = 24;
+
 function distance(a: Point, b: Point): number {
   return Math.hypot(b.x - a.x, b.y - a.y);
 }
@@ -196,24 +208,51 @@ function formatNumber(value: number): string {
  * Con `curve: 'straight'` los controles son el punto medio (la curva degenera en
  * la recta). Con `curved`, cada control sale del extremo en la dirección de su
  * lado, proporcional a la distancia: así la curva nunca cruza la tarjeta.
+ *
+ * Si las dos anclas están más cerca que `MIN_CONNECTOR_BODY` el cuerpo se estira
+ * hacia atrás desde el ancla de destino (la punta y la flecha no se mueven) para
+ * que la línea se vea y quede un trecho donde hacer clic; a distancias normales
+ * la geometría es exactamente la de siempre.
  */
 export function connectorGeometry(
   from: ResolvedEndpoint,
   to: ResolvedEndpoint,
   style: ConnectorStyle = DEFAULT_CONNECTOR_STYLE,
 ): ConnectorGeometry {
-  const start = from.point;
-  const end = to.point;
-  const span = Math.max(24, distance(start, end));
+  const anchorStart = from.point;
+  const anchorEnd = to.point;
+  const raw = distance(anchorStart, anchorEnd);
+
+  let start = anchorStart;
+  const end = anchorEnd;
+  let stretched = false;
+  if (raw < MIN_CONNECTOR_BODY) {
+    // Dirección del conector; con las anclas superpuestas sirve la normal del
+    // lado de salida (apunta hacia el destino).
+    const axis =
+      raw > 0
+        ? { x: (anchorEnd.x - anchorStart.x) / raw, y: (anchorEnd.y - anchorStart.y) / raw }
+        : from.side
+          ? sideNormal(from.side)
+          : { x: 1, y: 0 };
+    const grow = MIN_CONNECTOR_BODY - raw;
+    start = { x: anchorStart.x - axis.x * grow, y: anchorStart.y - axis.y * grow };
+    stretched = true;
+  }
+
+  const span = Math.max(MIN_CONNECTOR_BODY, distance(start, end));
   const push = Math.max(18, span * Math.max(0, Math.min(1, style.tension)));
+  // Con el cuerpo estirado, un empuje mayor que el propio cuerpo plegaría la
+  // curva sobre las anclas (el lazo que dejaba el conector sin línea).
+  const reach = stretched ? Math.min(push, span / 2) : push;
 
   let control1: Point;
   let control2: Point;
   if (style.curve === 'curved') {
     const normalFrom = from.side ? sideNormal(from.side) : normalize({ x: end.x - start.x, y: end.y - start.y });
     const normalTo = to.side ? sideNormal(to.side) : normalize({ x: start.x - end.x, y: start.y - end.y });
-    control1 = { x: start.x + normalFrom.x * push, y: start.y + normalFrom.y * push };
-    control2 = { x: end.x + normalTo.x * push, y: end.y + normalTo.y * push };
+    control1 = { x: start.x + normalFrom.x * reach, y: start.y + normalFrom.y * reach };
+    control2 = { x: end.x + normalTo.x * reach, y: end.y + normalTo.y * reach };
   } else {
     const mid = { x: (start.x + end.x) / 2, y: (start.y + end.y) / 2 };
     control1 = mid;

@@ -12,6 +12,7 @@ import {
   distanceToPath,
   hitsPath,
   isAttached,
+  MIN_CONNECTOR_BODY,
   pointOnPath,
   resolveEndpoint,
   sideNormal,
@@ -154,6 +155,90 @@ describe('aciertos y medidas', () => {
     expect(bounds.x + bounds.width).toBeGreaterThanOrEqual(500);
     expect(bounds.y).toBeCloseTo(50);
     expect(bounds.height).toBeCloseTo(0);
+  });
+});
+
+describe('cuerpo mínimo entre extremos muy próximos', () => {
+  /** Dos tarjetas de 200×100 con `gap` píxeles entre ellas (gap 0 = pegadas). */
+  const facing = (gap: number) => ({
+    from: resolveEndpoint(createEndpoint({ side: 'right' }), rect(0, 0, 200, 100)),
+    to: resolveEndpoint(createEndpoint({ side: 'left' }), rect(200 + gap, 0, 200, 100)),
+  });
+
+  const body = (geo: { start: { x: number; y: number }; end: { x: number; y: number } }): number =>
+    Math.hypot(geo.end.x - geo.start.x, geo.end.y - geo.start.y);
+
+  it('con las dos anclas en el mismo punto el cuerpo se estira a MIN_CONNECTOR_BODY', () => {
+    const { from, to } = facing(0);
+    // Pegadas de verdad: las dos anclas caen en el mismo punto (el defecto).
+    expect(to.point).toEqual(from.point);
+
+    const geo = connectorGeometry(from, to);
+    expect(body(geo)).toBeCloseTo(MIN_CONNECTOR_BODY, 6);
+    expect(geo.path).toBe('M 176 50 C 188 50, 188 50, 200 50');
+    // La punta no se mueve: sigue clavada en el borde de la tarjeta de destino.
+    expect(geo.end).toEqual(to.point);
+    expect(geo.endDirection).toEqual({ x: 1, y: 0 });
+    // Y hay trazo donde hacer clic.
+    expect(hitsPath(geo, geo.labelPoint, 6)).toBe(true);
+  });
+
+  it('con 4 px de hueco el trazo cruza el hueco y se puede clicar ahí', () => {
+    const { from, to } = facing(4);
+    const geo = connectorGeometry(from, to);
+    expect(geo.end).toEqual({ x: 204, y: 50 });
+    expect(body(geo)).toBeGreaterThanOrEqual(MIN_CONNECTOR_BODY - 1e-9);
+    // El cuerpo arranca detrás del borde de la primera tarjeta (queda oculto) y
+    // llega hasta la segunda: el hueco visible tiene línea.
+    expect(geo.start.x).toBeLessThan(200);
+    expect(hitsPath(geo, { x: 202, y: 50 }, 6)).toBe(true);
+    expect(hitsPath(geo, { x: 202, y: 54 }, 6)).toBe(true); // 4 px de desvío
+    expect(hitsPath(geo, { x: 202, y: 60 }, 6)).toBe(false); // 10 px: fuera
+  });
+
+  it('el cuerpo estirado no se pliega sobre las anclas', () => {
+    const { from, to } = facing(6);
+    const geo = connectorGeometry(from, to, { ...DEFAULT_CONNECTOR_STYLE, curve: 'curved', tension: 0.35 });
+    // Los controles caen dentro del tramo: nada de lazo hacia atrás.
+    for (const control of [geo.control1, geo.control2]) {
+      expect(control.x).toBeGreaterThanOrEqual(geo.start.x - 1e-9);
+      expect(control.x).toBeLessThanOrEqual(geo.end.x + 1e-9);
+    }
+    // Y la curva avanza siempre hacia el destino.
+    let previous = pointOnPath(geo, 0).x;
+    for (let i = 1; i <= 40; i += 1) {
+      const current = pointOnPath(geo, i / 40).x;
+      expect(current).toBeGreaterThanOrEqual(previous - 1e-9);
+      previous = current;
+    }
+  });
+
+  it('a distancias normales la geometría no cambia', () => {
+    const lejos = {
+      from: resolveEndpoint(createEndpoint({ side: 'right' }), rect(0, 0, 200, 100)),
+      to: resolveEndpoint(createEndpoint({ side: 'left' }), rect(500, 0, 200, 100)),
+    };
+    expect(connectorGeometry(lejos.from, lejos.to, { ...DEFAULT_CONNECTOR_STYLE, curve: 'curved' }).path).toBe(
+      'M 200 50 C 305 50, 395 50, 500 50',
+    );
+    expect(connectorGeometry(lejos.from, lejos.to, { ...DEFAULT_CONNECTOR_STYLE, curve: 'straight' }).path).toBe('M 200 50 L 500 50');
+
+    // Ni justo en el umbral (24 px) ni apenas por encima: mismos valores de siempre.
+    const umbral = facing(24);
+    expect(connectorGeometry(umbral.from, umbral.to, { ...DEFAULT_CONNECTOR_STYLE, curve: 'curved' }).path).toBe('M 200 50 C 218 50, 206 50, 224 50');
+    const corto = facing(40);
+    expect(connectorGeometry(corto.from, corto.to, { ...DEFAULT_CONNECTOR_STYLE, curve: 'curved' }).path).toBe('M 200 50 C 218 50, 222 50, 240 50');
+    expect(connectorGeometry(corto.from, corto.to, { ...DEFAULT_CONNECTOR_STYLE, curve: 'straight' }).path).toBe('M 200 50 L 240 50');
+  });
+
+  it('dos puntos libres superpuestos también se estiran', () => {
+    const punto = { x: 0, y: 0 };
+    const geo = connectorGeometry(
+      resolveEndpoint(createEndpoint({ point: punto }), null),
+      resolveEndpoint(createEndpoint({ point: { ...punto } }), null),
+    );
+    expect(body(geo)).toBeCloseTo(MIN_CONNECTOR_BODY, 6);
+    expect(geo.path).toBe('M -24 0 C -12 0, -12 0, 0 0');
   });
 });
 

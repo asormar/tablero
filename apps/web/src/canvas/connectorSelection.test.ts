@@ -12,7 +12,7 @@
 
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-import { addElement, localOrigin, pointOnPath } from '@tablero/shared';
+import { addElement, localOrigin, MIN_CONNECTOR_BODY, pointOnPath } from '@tablero/shared';
 
 import { connectorAtPoint, resolveConnectors } from '@/canvas/connectorGeometry';
 import { deleteSelectedConnector } from '@/canvas/connectorCommands';
@@ -81,6 +81,64 @@ describe('selección de conectores', () => {
     const session = new BoardSession({ boardId: `board-conn-vacio-${boardCounter}`, connect: false });
     await session.init();
     expect(connectorAtPoint(session, { x: 10, y: 10 })).toBeNull();
+    session.destroy();
+  });
+});
+
+describe('conector entre dos tarjetas pegadas', () => {
+  /** Dos notas seguidas: la segunda empieza donde termina la primera. */
+  async function peggedPair(): Promise<{ session: BoardSession; connectorId: string; seam: { x: number; y: number } }> {
+    boardCounter += 1;
+    const session = new BoardSession({ boardId: `board-pegado-${boardCounter}`, connect: false });
+    await session.init();
+    const from = addElement(session.doc, 'note', { x: 0, y: 0, createdBy: 'test' }, localOrigin);
+    const first = session.getLayout().find((item) => item.id === from);
+    expect(first).toBeDefined();
+    const to = addElement(
+      session.doc,
+      'note',
+      { x: first!.x + first!.width, y: first!.y, createdBy: 'test' },
+      localOrigin,
+    );
+    const connectorId = addConnector(session.doc, { elementId: from }, { elementId: to }, session.origin);
+    const [resolved] = resolveConnectors(session, session.getLayout());
+    expect(resolved).toBeDefined();
+    // La costura: el punto donde se tocan las dos tarjetas, que además es el
+    // ancla de destino (donde queda la punta).
+    expect(resolved!.geometry.end.x).toBeCloseTo(first!.x + first!.width, 6);
+    return { session, connectorId, seam: resolved!.geometry.end };
+  }
+
+  it('el cuerpo tiene el mínimo visible (antes era solo la punta de flecha)', async () => {
+    const { session, connectorId, seam } = await peggedPair();
+    const [resolved] = resolveConnectors(session, session.getLayout());
+    const { geometry } = resolved!;
+    expect(resolved!.connector.id).toBe(connectorId);
+    expect(geometry.end).toEqual(seam);
+    expect(geometry.endDirection).toEqual({ x: 1, y: 0 });
+    expect(Math.hypot(geometry.end.x - geometry.start.x, geometry.end.y - geometry.start.y)).toBeGreaterThanOrEqual(
+      MIN_CONNECTOR_BODY - 1e-6,
+    );
+    session.destroy();
+  });
+
+  it('el clic sobre la costura lo encuentra y Supr lo borra en una sola transacción', async () => {
+    const { session, connectorId, seam } = await peggedPair();
+    // El hit-test de siempre pasa por la costura: ahí hace clic el usuario.
+    expect(connectorAtPoint(session, seam)?.id).toBe(connectorId);
+    expect(connectorAtPoint(session, { x: seam.x, y: seam.y - 4 })?.id).toBe(connectorId);
+    // Lejos del trazo no hay nada que seleccionar.
+    expect(connectorAtPoint(session, { x: seam.x, y: seam.y - 40 })).toBeNull();
+
+    session.undoManager.stopCapturing();
+    useUiStore.getState().setSelectedConnector(connectorId);
+    expect(deleteSelectedConnector(session)).toBe(true);
+    expect(session.getConnectors()).toHaveLength(0);
+    // Una sola transacción: un `Deshacer` la devuelve entera.
+    session.undo();
+    const restored = session.getConnectors();
+    expect(restored).toHaveLength(1);
+    expect(restored[0]!.id).toBe(connectorId);
     session.destroy();
   });
 });

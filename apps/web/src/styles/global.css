@@ -355,20 +355,44 @@ summary:focus-visible,
 .crumbs__item {
   display: flex;
   align-items: center;
+  /*
+   * El tramo es un hijo flexible que tiene que poder encogerse: con el ancho
+   * mínimo automático no cedía y el enlace de dentro se salía de su caja. El
+   * recorte del nombre lo hace el enlace (`min-width: 0` + puntos suspensivos) y
+   * el chevron no se encoge (`flex: 0 0 auto`), así que sigue viéndose.
+   */
   min-width: 0;
 }
 
 .crumbs__sep {
   color: var(--text-faint);
+  /* El chevron nunca se encoge: es lo que separa una miga de la siguiente. */
   flex: 0 0 auto;
+}
+
+/*
+ * El primer tramo (la raíz) lleva además el icono y el nombre más corto: con el
+ * reparto proporcional del recorte se quedaba sin texto antes que los demás. Cede
+ * menos espacio para que su nombre también se recorte con `…` en vez de apagarse.
+ */
+.crumbs__item:first-child {
+  flex-shrink: 0.35;
 }
 
 .crumbs__link {
   display: flex;
   align-items: center;
   gap: 5px;
+  /*
+   * Sin `min-width: 0` el ancho mínimo de este hijo flexible era el de su
+   * contenido: no se encogía, se salía de la caja del tramo y el nombre se
+   * montaba encima de la miga siguiente. Con 0 el enlace se recorta con puntos
+   * suspensivos (lo hace `.crumbs__text`).
+   */
+  min-width: 0;
   max-width: 190px;
   padding: 4px 8px;
+  overflow: hidden;
   border-radius: var(--radius-ui);
   color: var(--text-muted);
   white-space: nowrap;
@@ -387,6 +411,9 @@ summary:focus-visible,
 }
 
 .crumbs__text {
+  /* El nombre se recorta con `…` dentro del enlace: sin `min-width: 0` su ancho
+     mínimo era el del texto y el recorte nunca llegaba a aplicarse. */
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
 }

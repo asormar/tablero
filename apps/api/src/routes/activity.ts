@@ -35,7 +35,18 @@ export async function activityRoutes(app: FastifyInstance): Promise<void> {
 
     // El documento para validar lo resuelve `recordActivity`: vivo si está
     // abierto en el servidor de colaboración, persistido si no.
-    const result = await recordActivity(id, user.id, input.entries);
+    //
+    // El cliente manda `null` en los campos que no tiene (el esquema los acepta
+    // para no tirar el lote entero): acá se normalizan a ausentes, que es como
+    // trabaja `recordActivity`.
+    const entries = input.entries.map(({ action, elementId, elementType, meta, at }) => ({
+      action,
+      elementId: elementId ?? undefined,
+      elementType: elementType ?? undefined,
+      meta: meta ?? undefined,
+      at: at ?? undefined,
+    }));
+    const result = await recordActivity(id, user.id, entries);
     reply.code(201);
     return { ok: true, accepted: result.accepted, discarded: result.discarded, entries: result.events };
   });

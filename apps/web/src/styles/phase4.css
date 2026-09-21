@@ -46,6 +46,9 @@
 }
 
 .topbar__search-text {
+  /* No se encoge: con `overflow: hidden` su ancho mínimo era 0, la barra
+     apretaba el botón y el texto salía recortado («Bus…»). */
+  flex: 0 0 auto;
   max-width: 120px;
   overflow: hidden;
   text-overflow: ellipsis;

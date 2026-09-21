@@ -1,6 +1,8 @@
 /**
- * Control de zoom (abajo a la derecha del lienzo) y su versión compacta para la
- * barra superior. El rango va del 10 % al 400 % (MIN_SCALE/MAX_SCALE).
+ * Control de zoom (abajo a la derecha del lienzo). El rango va del 10 % al
+ * 400 % (MIN_SCALE/MAX_SCALE) y es el único control de zoom de la interfaz: la
+ * barra superior ya no lleva una copia compacta (fase 7). Los atajos siguen
+ * igual: `Ctrl` `+`/`-`, `Ctrl+0` y `Shift+1` para encajar.
  */
 
 import { Maximize2, Minus, Plus } from 'lucide-react';
@@ -64,47 +66,3 @@ export function ZoomControl({ session }: { session: BoardSession }): JSX.Element
   );
 }
 
-export function ZoomControlCompact({ session }: { session: BoardSession }): JSX.Element {
-  const scale = useUiStore((state) => state.viewport.scale);
-  const anchor = useZoomAnchor();
-  return (
-    <div className="zoom zoom--compact" role="group" aria-label="Zoom">
-      <button
-        type="button"
-        className="zoom__button"
-        title="Alejar (−)"
-        aria-label="Alejar (−)"
-        onClick={() => useUiStore.getState().zoomStep(-1, anchor)}
-      >
-        <Minus size={13} />
-      </button>
-      <button
-        type="button"
-        className="zoom__value"
-        title="Restablecer al 100 % (Ctrl+0)"
-        aria-label="Restablecer al 100 % (Ctrl+0)"
-        onClick={() => useUiStore.getState().zoomAtPoint(anchor, 1)}
-      >
-        {formatZoom(scale)}
-      </button>
-      <button
-        type="button"
-        className="zoom__button"
-        title="Acercar (+)"
-        aria-label="Acercar (+)"
-        onClick={() => useUiStore.getState().zoomStep(1, anchor)}
-      >
-        <Plus size={13} />
-      </button>
-      <button
-        type="button"
-        className="zoom__button"
-        title="Ajustar a pantalla (Shift+1)"
-        aria-label="Ajustar a pantalla (Shift+1)"
-        onClick={() => fitToScreen(session)}
-      >
-        <Maximize2 size={13} />
-      </button>
-    </div>
-  );
-}

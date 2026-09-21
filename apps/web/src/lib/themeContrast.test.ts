@@ -15,6 +15,8 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
+import { CARD_COLORS } from '@tablero/shared';
+
 import { contrastRatio, meetsAA, mix } from './contrast';
 
 const CSS = readFileSync(join(__dirname, '..', 'styles', 'global.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
@@ -76,6 +78,42 @@ describe('tokens de tema: contraste AA', () => {
     for (const tokens of [light, dark]) {
       expect(meetsAA(token(tokens, '--accent-ink'), token(tokens, '--accent'))).toBe(true);
     }
+  });
+
+  it('los textos de ayuda llegan a 4.5:1 sobre las superficies de tarjeta', () => {
+    // Las tarjetas se pintan con la paleta compartida (no con `--surface`): el
+    // token tiene que pasar AA sobre las 13, en los dos temas. Era el caso que
+    // fallaba en el tema oscuro (faint sobre el amarillo #3E381D, 4.42:1) y en
+    // el claro (faint sobre el marrón #EDE2DA, 4.15:1).
+    const failures: string[] = [];
+    for (const [theme, tokens] of Object.entries({ claro: light, oscuro: dark })) {
+      const mode = theme === 'claro' ? 'light' : 'dark';
+      const pairs: [string, string][] = [
+        [token(tokens, '--text-faint'), '--text-faint'],
+        [token(tokens, '--text-muted'), '--text-muted'],
+      ];
+      for (const [foreground, name] of pairs) {
+        for (const [palette, definition] of Object.entries(CARD_COLORS)) {
+          const background = definition[mode].soft;
+          const ratio = ratioOn(foreground, background);
+          if (ratio < 4.5) failures.push(`${theme}: ${name} ${foreground} sobre ${palette} ${background} = ${ratio.toFixed(2)}`);
+        }
+      }
+    }
+    expect(failures).toEqual([]);
+  });
+
+  it('el texto de cada tarjeta llega a 4.5:1 sobre su propio fondo', () => {
+    // El caso reportado: el texto de una nota amarilla en el tema oscuro.
+    const failures: string[] = [];
+    for (const mode of ['light', 'dark'] as const) {
+      for (const [palette, definition] of Object.entries(CARD_COLORS)) {
+        const shades = definition[mode];
+        const ratio = contrastRatio(shades.text, shades.soft);
+        if (ratio < 4.5) failures.push(`${mode}: ${palette} ${shades.text} sobre ${shades.soft} = ${ratio.toFixed(2)}`);
+      }
+    }
+    expect(failures).toEqual([]);
   });
 
   it('el acento como texto sobre el fondo suave llega a 4.5:1', () => {

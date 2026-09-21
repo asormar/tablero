@@ -10,7 +10,7 @@ import { useEffect } from 'react';
 
 import { setSpacePan } from '@/canvas/panMode';
 import { createColumnAt } from '@/canvas/columnCommands';
-import { deleteSelectedConnector } from '@/canvas/ConnectorLayer';
+import { deleteSelectedConnector } from '@/canvas/connectorCommands';
 import {
   clearSelectionAndEditing,
   copySelection,

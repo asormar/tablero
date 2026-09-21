@@ -487,9 +487,22 @@
   background: rgb(0 0 0 / 32%);
 }
 
-.modal {
+/*
+ * Los diálogos de esta fase usan su propio envoltorio (`.modal-backdrop`), así
+ * que estas reglas van acotadas a él: un `.modal` suelto sigue siendo el fondo
+ * centrado de `global.css` (lo usan las once superficies de las fases 1–4:
+ * historial, atajos, plantillas, captura, ajustes…). Sin el acotado, la tarjeta
+ * de acá se aplicaba también a esos diálogos y quedaban sin fondo, sin centrado
+ * y con una tarjeta dentro de otra.
+ */
+.modal-backdrop .modal {
+  /* Devuelve la tarjeta al flujo del envoltorio (el `position: fixed; inset: 0`
+     de la clase base la clavaba en la esquina): el envoltorio es quien centra. */
+  position: static;
+  display: block;
   width: min(560px, 92vw);
   max-height: 86vh;
+  padding: 0;
   overflow: auto;
   border: 1px solid var(--border, #e0e0dc);
   border-radius: 12px;
@@ -498,7 +511,7 @@
   box-shadow: 0 18px 48px rgb(0 0 0 / 28%);
 }
 
-.modal__head {
+.modal-backdrop .modal__head {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -506,7 +519,7 @@
   border-bottom: 1px solid var(--border, #e0e0dc);
 }
 
-.modal__title {
+.modal-backdrop .modal__title {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -515,11 +528,11 @@
   font-weight: 700;
 }
 
-.modal__head .icon-button:last-child {
+.modal-backdrop .modal__head .icon-button:last-child {
   margin-left: auto;
 }
 
-.modal__body {
+.modal-backdrop .modal__body {
   padding: 12px 14px;
   display: flex;
   flex-direction: column;

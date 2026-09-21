@@ -17,7 +17,6 @@ import {
   LayoutGrid,
   List,
   ListChecks,
-  Maximize2,
   MessageSquarePlus,
   PanelRight,
   Play,
@@ -32,7 +31,7 @@ import {
 
 import { reportBoardActivityById } from '@/collab/activityBridge';
 import { renameBoard } from '@/app/boardService';
-import { fitToScreen, redoWithPrune, undoWithPrune } from '@/canvas/commands';
+import { redoWithPrune, undoWithPrune } from '@/canvas/commands';
 import type { BoardSession } from '@/collab/BoardSession';
 import { PresenceWatchers } from '@/collab/RemoteCursors';
 import { ROLE_LABELS, capabilityRefusal } from '@/collab/roles';
@@ -46,7 +45,7 @@ import { useSettingsStore } from '@/settings/settingsStore';
 import { Breadcrumbs } from './Breadcrumbs';
 import { NotificationBell } from './NotificationsPanel';
 import { SyncIndicator } from './SyncIndicator';
-import { ZoomControlCompact } from './ZoomControl';
+import { UserMenu } from './UserMenu';
 
 export type TopBarProps = {
   session: BoardSession;
@@ -169,17 +168,13 @@ export function TopBar({ session, boardId, onOpenBoard }: TopBarProps): JSX.Elem
           </button>
         </div>
 
-        <button
-          type="button"
-          className="icon-button"
-          title={t('topbar.fit')}
-          aria-label={t('topbar.fit')}
-          onClick={() => fitToScreen(session)}
-        >
-          <Maximize2 size={15} />
-        </button>
+        {/*
+         * El zoom y «encajar a pantalla» viven solo en el control flotante del
+         * lienzo (`ZoomControl`, abajo a la derecha): acá había además una copia
+         * compacta y un botón de encaje, tres formas de hacer lo mismo. Los
+         * atajos siguen igual (`Ctrl` `+`/`-`, `Ctrl+0`, `Shift+1`).
+         */}
 
-        <ZoomControlCompact session={session} />
         <PresenceWatchers boardId={boardId} dark={theme === 'dark'} />
         {permission.readOnly ? (
           <span
@@ -388,6 +383,8 @@ export function TopBar({ session, boardId, onOpenBoard }: TopBarProps): JSX.Elem
         >
           ?
         </button>
+
+        <UserMenu />
       </div>
     </header>
   );

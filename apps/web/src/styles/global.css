@@ -17,9 +17,13 @@
   --surface-2: #fafaf9;
   --surface-3: #f1f1ef;
   --text: #2b2b28;
-  --text-muted: #6b6b66;
-  /* `--text-faint` pasa AA (4.5:1) en las tres superficies: 5.28 / 5.05 / 4.67 */
-  --text-faint: #6c6c67;
+  /* Subidos en la auditoría de contraste de la fase 7: además de las tres
+     superficies (faint 5.87 / 5.62 / 5.19 y muted 6.04 / 5.34), tienen que
+     llegar a AA sobre las **13 superficies de tarjeta** de la paleta, que es
+     donde fallaban (el peor caso era el marrón #EDE2DA: faint 4.15 y muted
+     4.21). Ahora faint 4.61 y muted 4.74 como mínimo. */
+  --text-muted: #63635e;
+  --text-faint: #65655f;
   --border: rgba(0, 0, 0, 0.1);
   --border-strong: rgba(0, 0, 0, 0.18);
 
@@ -60,8 +64,10 @@
     --surface-3: #33333a;
     --text: #ececef;
     --text-muted: #a9a9af;
-    /* `--text-faint` pasa AA en las tres superficies: 5.67 / 5.22 / 4.71 */
-    --text-faint: #9e9ea6;
+    /* Subido en la auditoría de la fase 7: AA también sobre las superficies de
+       tarjeta (antes 4.42 sobre el amarillo #3E381D; ahora 4.69) y 5.00 sobre
+       `--surface-3`, además de 6.02 sobre `--surface`. */
+    --text-faint: #a3a3ab;
     --border: rgba(255, 255, 255, 0.12);
     --border-strong: rgba(255, 255, 255, 0.22);
     --accent: #77aeee;
@@ -91,8 +97,10 @@
   --surface-3: #33333a;
   --text: #ececef;
   --text-muted: #a9a9af;
-  /* `--text-faint` pasa AA en las tres superficies: 5.67 / 5.22 / 4.71 */
-  --text-faint: #9e9ea6;
+  /* Subido en la auditoría de la fase 7: AA también sobre las superficies de
+     tarjeta (antes 4.42 sobre el amarillo #3E381D; ahora 4.69) y 5.00 sobre
+     `--surface-3`, además de 6.02 sobre `--surface`. */
+  --text-faint: #a3a3ab;
   --border: rgba(255, 255, 255, 0.12);
   --border-strong: rgba(255, 255, 255, 0.22);
   --accent: #77aeee;
@@ -441,12 +449,6 @@ summary:focus-visible,
   box-shadow: var(--shadow-card);
 }
 
-.zoom--compact {
-  position: static;
-  box-shadow: none;
-  border-color: var(--border);
-}
-
 .zoom__button {
   display: inline-flex;
   align-items: center;
@@ -552,7 +554,9 @@ summary:focus-visible,
   flex-direction: column;
   align-items: center;
   gap: 4px;
-  padding: 8px 4px;
+  /* Relleno lateral corto: «Encabezado» es la etiqueta más larga de la barra y
+     con 4 px por lado el botón se salía 2 px del panel. */
+  padding: 8px 2px;
   border-radius: var(--radius-ui);
   color: var(--text-muted);
   transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
@@ -579,14 +583,25 @@ summary:focus-visible,
   flex-direction: column;
   align-items: center;
   gap: 2px;
+  max-width: 100%;
 }
 
+/*
+ * La barra mide 76 px (60 px útiles): los cuatro tamaños no entran en una fila
+ * junto al botón «Encabezado», así que envuelven en dos filas centradas. Antes
+ * el grupo medía 70 px dentro de un envoltorio de 44 px y la «S» quedaba fuera
+ * del panel (el `overflow-y: auto` de `.toolbar` la recortaba).
+ */
 .toolbar__sizes {
   display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
   gap: 2px;
+  max-width: 100%;
 }
 
 .toolbar__size {
+  flex: 0 0 auto;
   width: 16px;
   height: 16px;
   font-size: 9.5px;
@@ -1156,6 +1171,83 @@ summary:focus-visible,
   color: var(--danger);
 }
 
+/* --- Menú de usuario (barra superior) ------------------------------------- */
+
+.topbar__user {
+  display: inline-flex;
+  align-items: center;
+}
+
+.topbar__user-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-size: 12.5px;
+  font-weight: 700;
+  line-height: 1;
+  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+
+.topbar__user-button:hover,
+.topbar__user-button.is-active {
+  background: var(--accent);
+  color: var(--accent-ink);
+}
+
+/* El menú baja alineado al borde derecho del botón; hereda `.menu` (fijo). */
+.user-menu {
+  min-width: 248px;
+  max-width: min(320px, calc(100vw - 24px));
+}
+
+.user-menu__head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  margin: 0 0 5px;
+  padding: 7px 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.user-menu__avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent-strong);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.user-menu__identity {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.user-menu__name {
+  font-size: 12.5px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.user-menu__email {
+  font-size: 11.5px;
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
 .menu__sep {
   display: block;
   height: 1px;
@@ -1374,7 +1466,7 @@ summary:focus-visible,
 }
 
 .perf__label {
-  color: var(--text-faint);
+  color: var(--text-muted);
 }
 
 .perf__sep {

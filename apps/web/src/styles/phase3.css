@@ -1352,23 +1352,33 @@ tr:hover .tbl__row-handle {
   color: var(--text-faint);
 }
 
-/* --- Panel lateral: pestañas (Sin ordenar / Papelera) ---------------------- */
+/* --- Panel lateral: pestañas (Sin ordenar / Papelera / Comentarios) -------- */
 
+/*
+ * Las tres etiquetas no entran en los 264 px del panel en una sola fila: con
+ * `nowrap` la tercera se recortaba contra el borde derecho. Envuelven en dos
+ * filas y, además, el relleno y el cuerpo de letra bajan un punto para que la
+ * primera fila entre holgada.
+ */
 .panel__tabs {
   display: flex;
+  flex-wrap: wrap;
   gap: 4px;
+  min-width: 0;
 }
 
 .panel__tab {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  padding: 4px 9px;
+  flex: 0 0 auto;
+  padding: 4px 7px;
   border: 1px solid transparent;
   border-radius: var(--radius-ui);
   background: transparent;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: 11.5px;
+  white-space: nowrap;
   cursor: pointer;
 }
 

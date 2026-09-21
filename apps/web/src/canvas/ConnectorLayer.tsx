@@ -25,7 +25,7 @@ import {
 import { canvasPoint } from '@/canvas/canvasRef';
 import type { BoardSession } from '@/collab/BoardSession';
 import { useSessionConnectors, useSessionLayout } from '@/collab/SessionContext';
-import { patchConnector, removeConnectors } from '@/lib/connectors';
+import { patchConnector } from '@/lib/connectors';
 import { useUiStore } from '@/state/uiStore';
 
 /** Color del trazo: los tokens usan el matiz fuerte de la paleta. */
@@ -338,12 +338,3 @@ export const ConnectorLayer = memo(function ConnectorLayer({ session }: { sessio
     </>
   );
 });
-
-/** Borra el conector seleccionado (lo usa `Supr` y la barra del conector). */
-export function deleteSelectedConnector(session: BoardSession): boolean {
-  const id = useUiStore.getState().selectedConnectorId;
-  if (!id) return false;
-  removeConnectors(session.doc, [id], session.origin);
-  useUiStore.getState().setSelectedConnector(null);
-  return true;
-}

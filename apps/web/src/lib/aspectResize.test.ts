@@ -44,4 +44,22 @@ describe('appliedAspectResize', () => {
   it('convive con la redimensión lateral de la fase 1', () => {
     expect(appliedWidthResize({ x: 10, width: 200 }, 40, 'e')).toEqual({ x: 10, width: 240 });
   });
+
+  it('devuelve los dos ejes: el alto sale del ancho con el aspecto de partida', () => {
+    const result = appliedAspectResize(start, 40, 30);
+    expect(result.height).toBeGreaterThan(0);
+    expect(result.width / result.height).toBeCloseTo(start.width / start.height, 2);
+  });
+
+  it('el alto sigue al puntero también cuando solo se arrastra hacia abajo', () => {
+    const result = appliedAspectResize(start, 0, 60);
+    expect(result.width).toBeGreaterThan(start.width);
+    expect(result.height).toBeGreaterThan(start.height);
+  });
+
+  it('la esquina SW calcula el alto igual y mueve el origen', () => {
+    const result = appliedAspectResize(start, -80, 40, 'sw');
+    expect(result.width / result.height).toBeCloseTo(start.width / start.height, 2);
+    expect(result.x + result.width).toBe(start.x + start.width);
+  });
 });

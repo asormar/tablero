@@ -69,6 +69,9 @@ export type ResizeDirection = 'w' | 'e';
 
 export type ResizeResult = { x: number; width: number };
 
+/** Resultado del tirador de esquina: los dos ejes, siempre proporcionales. */
+export type AspectResizeResult = ResizeResult & { height: number };
+
 /**
  * Cambio de ancho desde un tirador lateral. El borde opuesto queda fijo y el
  * ancho se ajusta a la rejilla, nunca por debajo del mínimo.
@@ -99,6 +102,11 @@ export function nudgeDelta(shift: boolean): number {
  * aspecto de su recorte), así que la esquina solo mueve el ancho: el alto sigue
  * solo. El desplazamiento vertical se proyecta sobre el horizontal para que el
  * gesto se sienta diagonal (arrastrar hacia abajo-derecha agranda).
+ *
+ * Devuelve los **dos** ejes: el alto que le corresponde al ancho nuevo con el
+ * aspecto de partida. El gesto lo pinta en el DOM en cada frame (no solo al
+ * soltar), así que para las tarjetas con alto propio (mapa, dibujo) el estado
+ * final es exactamente el que se vio durante el arrastre.
  */
 export function appliedAspectResize(
   start: { x: number; y: number; width: number; height: number },
@@ -106,13 +114,14 @@ export function appliedAspectResize(
   dy: number,
   direction: 'se' | 'sw' = 'se',
   grid: number = GRID_SIZE,
-): ResizeResult {
+): AspectResizeResult {
   const aspect = start.height > 0 ? start.width / start.height : 1;
   const horizontal = direction === 'se' ? dx : -dx;
   const projected = horizontal + dy * aspect;
   const width = Math.max(MIN_ELEMENT_WIDTH, snapToGrid(start.width + projected, grid));
   const x = direction === 'se' ? start.x : start.x + (start.width - width);
-  return { x, width };
+  const height = Math.max(1, Math.round(width / aspect));
+  return { x, width, height };
 }
 
 export type NudgeMove = { id: string; x: number; y: number };

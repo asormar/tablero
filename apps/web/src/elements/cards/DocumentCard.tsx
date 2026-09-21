@@ -6,7 +6,7 @@
  * completa con el botón o con doble clic.
  */
 
-import { FileText, Maximize2 } from 'lucide-react';
+import { Expand, FileText } from 'lucide-react';
 import { useMemo } from 'react';
 
 import type { CanvasElement } from '@tablero/shared';
@@ -47,7 +47,8 @@ export function DocumentCard({ session, element, simplified }: DocumentCardProps
           onPointerDown={(event) => event.stopPropagation()}
           onClick={open}
         >
-          <Maximize2 size={12} />
+          {/* `Expand`: abrir la tarjeta en grande (la vista se «encaja» con `Maximize2`). */}
+          <Expand size={12} />
         </button>
       </header>
       <h3 className="doc-card__title">{preview.title || 'Documento sin título'}</h3>

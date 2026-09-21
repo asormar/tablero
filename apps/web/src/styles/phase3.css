@@ -1140,6 +1140,11 @@ tr:hover .tbl__row-handle {
 .el--map {
   padding: 0;
   overflow: hidden;
+  /* La tarjeta arma su propio contexto de apilado (`position: absolute` la
+     hereda de `.el`): así los panes de Leaflet —que traen z-index 200–700— no
+     pueden tapar la lista de resultados de la búsqueda, y la tarjeta se sigue
+     pintando en el orden del documento como cualquier otra. */
+  z-index: 0;
 }
 
 /* El contenedor de Leaflet necesita una altura real: sin esto el mapa se
@@ -1229,6 +1234,10 @@ tr:hover .tbl__row-handle {
   flex: 1;
   min-height: 0;
   background: var(--surface-3);
+  /* Los panes de Leaflet viven dentro de este contexto: quedan por debajo de la
+     lista de resultados (`z-index: 5`), que antes se pintaba detrás del mapa. */
+  position: relative;
+  z-index: 1;
 }
 
 .map__status {

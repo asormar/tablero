@@ -14,7 +14,7 @@ import {
   Globe,
   History,
   Home,
-  LayoutGrid,
+  LayoutTemplate,
   List,
   ListChecks,
   MessageSquarePlus,
@@ -27,6 +27,7 @@ import {
   Share2,
   Undo2,
   Upload,
+  Zap,
 } from 'lucide-react';
 
 import { reportBoardActivityById } from '@/collab/activityBridge';
@@ -197,7 +198,8 @@ export function TopBar({ session, boardId, onOpenBoard }: TopBarProps): JSX.Elem
             aria-pressed={captureOpen}
             onClick={() => usePanelsStore.getState().setCaptureOpen(true)}
           >
-            <MessageSquarePlus size={15} />
+            {/* Rayo: la captura rápida no es un comentario (ese es el globo). */}
+            <Zap size={15} />
           </button>
           <button
             type="button"
@@ -237,7 +239,8 @@ export function TopBar({ session, boardId, onOpenBoard }: TopBarProps): JSX.Elem
             data-topbar-templates
             onClick={() => usePanelsStore.getState().setTemplatesOpen(true)}
           >
-            <LayoutGrid size={15} />
+            {/* Plantillas: el mismo icono que la galería (`TemplateGallery`). */}
+            <LayoutTemplate size={15} />
           </button>
           <button
             type="button"

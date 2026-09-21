@@ -51,6 +51,7 @@ import {
   writeSystemText,
 } from '@/lib/clipboard';
 import { type ElementLayout, rectOf } from '@/lib/layout';
+import { removeConnectors } from '@/lib/connectors';
 import { blocksToPlainText } from '@/lib/textBlocks';
 import { alignmentMoves } from '@/lib/align';
 import { nudgeMoves } from '@/lib/dragMath';
@@ -277,20 +278,30 @@ export function createFromPaste(session: BoardSession, world: Point, text: strin
 // --- Mutaciones sobre la selección -------------------------------------------
 
 /**
- * Borra la selección: la manda a la **papelera** (marca `deletedAt`), no la saca
- * del documento. Es lo que hace posible el panel de papelera y el restaurar; el
+ * Borra la selección entera —tarjetas **y** conectores— en **una sola**
+ * transacción: un `Deshacer` devuelve todo junto, sin pasos intermedios.
+ *
+ * Las tarjetas van a la **papelera** (marca `deletedAt`), no salen del
+ * documento: es lo que hace posible el panel de papelera y el restaurar; el
  * texto enriquecido no se mueve y `Ctrl/Cmd+Z` sigue devolviendo la tarjeta sin
  * dejar copia (el deshacer quita la marca). Los assets se liberan recién cuando
- * el elemento sale del documento para siempre (ver `emptyTrashForever`).
+ * el elemento sale del documento para siempre (ver `emptyTrashForever`). Los
+ * conectores se quitan del documento (no tienen papelera): el deshacer los
+ * devuelve enteros.
  */
 export function deleteSelection(session: BoardSession): void {
   const ui = useUiStore.getState();
   const ids = ui.selection;
-  if (ids.length === 0) return;
+  const connectorIds = ui.selectedConnectorIds;
+  if (ids.length === 0 && connectorIds.length === 0) return;
   if (!allowWrite(session)) return;
-  trashElements(session.doc, ids, session.origin, { deletedBy: currentUserId() });
+  session.doc.transact(() => {
+    if (ids.length > 0) trashElements(session.doc, ids, session.origin, { deletedBy: currentUserId() });
+    if (connectorIds.length > 0) removeConnectors(session.doc, connectorIds, session.origin);
+  }, session.origin);
   ui.setEditing(null);
   ui.clearSelection();
+  ui.setSelectedConnectors([]);
   for (const id of ids) {
     const element = session.getElement(id);
     reportBoardActivity(session, { action: 'element.delete', elementId: id, elementType: element?.type ?? null });
@@ -448,29 +459,39 @@ export function toggleSelectionLock(session: BoardSession): boolean {
   return !allLocked;
 }
 
-/** Ancho y posición desde un tirador lateral (al soltar, una transacción). */
+/**
+ * Ancho, posición y alto de un redimensionado (al soltar, una transacción).
+ *
+ * `height` llega solo desde el tirador de esquina en tarjetas con alto propio
+ * (mapa, dibujo): el gesto pinta los dos ejes y el commit los escribe, así el
+ * resultado final es exactamente el que se vio durante el arrastre.
+ */
 export function resizeSelectionWidth(
   session: BoardSession,
-  changes: { id: string; x: number; width: number }[],
+  changes: { id: string; x: number; width: number; height?: number }[],
 ): void {
   if (changes.length === 0) return;
   session.doc.transact(() => {
     for (const change of changes) {
       const element = session.getElement(change.id);
       if (!element) continue;
-      patchElement(session.doc, change.id, { x: change.x, width: change.width }, session.origin, {
-        touch: false,
-      });
+      patchElement(
+        session.doc,
+        change.id,
+        { x: change.x, width: change.width, ...(change.height !== undefined ? { height: change.height } : {}) },
+        session.origin,
+        { touch: false },
+      );
       // El dibujo se escala con la tarjeta: si no, el trazo queda deformado.
       if (element.type === 'sketch' && element.width > 0) {
         const scale = change.width / element.width;
-        const height = element.height ?? DEFAULT_SIZES.sketch.height ?? 220;
+        const height = change.height ?? element.height ?? DEFAULT_SIZES.sketch.height ?? 220;
         patchElement(
           session.doc,
           change.id,
           {
             strokes: (element.strokes ?? []).map((stroke) => scaleStroke(stroke, scale, scale)),
-            height: Math.max(48, Math.round(height * scale)),
+            height: Math.max(48, Math.round(height)),
           },
           session.origin,
           { touch: false },
@@ -479,7 +500,7 @@ export function resizeSelectionWidth(
     }
     resizeElements(
       session.doc,
-      changes.map((change) => ({ id: change.id, width: change.width })),
+      changes.map((change) => ({ id: change.id, width: change.width, height: change.height })),
       session.origin,
     );
   }, session.origin);
@@ -582,9 +603,13 @@ export function editElement(session: BoardSession, id: string): void {
   reportBoardActivity(session, { action: 'element.edit', elementId: id, elementType: element.type });
 }
 
-/** Quita de la selección los elementos que ya no existen (tras deshacer). */
+/** Quita de la selección los elementos (y conectores) que ya no existen (tras deshacer). */
 export function pruneSelection(session: BoardSession): void {
   const ui = useUiStore.getState();
+  const existingConnectors = new Set(session.getConnectors().map((connector) => connector.id));
+  if (ui.selectedConnectorIds.some((id) => !existingConnectors.has(id))) {
+    ui.setSelectedConnectors(ui.selectedConnectorIds.filter((id) => existingConnectors.has(id)));
+  }
   if (ui.selection.length === 0) return;
   const existing = new Set(session.getLayout().map((item) => item.id));
   const next = ui.selection.filter((id) => existing.has(id));

@@ -9,10 +9,10 @@
 import {
   ArrowDownToLine,
   ArrowUpToLine,
+  BoxSelect,
   ClipboardPaste,
   Copy,
   CopyPlus,
-  Crosshair,
   FolderInput,
   LayoutGrid,
   Lock,
@@ -297,7 +297,8 @@ export function ContextMenu({ session }: { session: BoardSession }): JSX.Element
             role="menuitem"
             onClick={() => run(() => selectAll(session))}
           >
-            <Crosshair size={15} />
+            {/* Caja de selección: la mira (`Crosshair`) es «encuadrar» en el mapa. */}
+            <BoxSelect size={15} />
             <span>Seleccionar todo</span>
             <kbd>Ctrl+A</kbd>
           </button>

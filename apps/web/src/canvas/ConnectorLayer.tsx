@@ -261,9 +261,12 @@ export const ConnectorLayer = memo(function ConnectorLayer({ session }: { sessio
   const measured = useUiStore((state) => state.measuredHeights);
   const viewport = useUiStore((state) => state.viewport);
   const canvasSize = useUiStore((state) => state.canvasSize);
+  const selectedIds = useUiStore((state) => state.selectedConnectorIds);
+  // El tirador de curvatura sigue al conector «principal» (el último elegido).
   const selectedId = useUiStore((state) => state.selectedConnectorId);
   const [editingLabelId, setEditingLabelId] = useState<string | null>(null);
   const simplified = viewport.scale < SIMPLIFIED_SCALE;
+  const selected = useMemo(() => new Set(selectedIds), [selectedIds]);
 
   const resolved = useMemo<ResolvedConnector[]>(() => {
     if (connectors.length === 0) return [];
@@ -310,7 +313,7 @@ export const ConnectorLayer = memo(function ConnectorLayer({ session }: { sessio
           <ConnectorPaths
             key={item.connector.id}
             item={item}
-            selected={selectedId === item.connector.id}
+            selected={selected.has(item.connector.id)}
             simplified={simplified}
           />
         ))}
@@ -322,7 +325,7 @@ export const ConnectorLayer = memo(function ConnectorLayer({ session }: { sessio
               key={item.connector.id}
               session={session}
               item={item}
-              selected={selectedId === item.connector.id}
+              selected={selected.has(item.connector.id)}
               editing={editingLabelId === item.connector.id}
               onEdit={(id) => setEditingLabelId(id)}
               onDone={() => setEditingLabelId(null)}

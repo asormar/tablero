@@ -32,3 +32,14 @@ export function setNodeWidth(id: string, width: number): void {
   if (!node) return;
   node.style.width = `${width}px`;
 }
+
+/**
+ * Alto en vivo del tirador de esquina. Solo se escribe en tarjetas con alto
+ * propio en el documento (mapa, dibujo): las de alto automático lo sacan de su
+ * contenido y escribir un alto a mano lo dejaría pegado tras el gesto.
+ */
+export function setNodeHeight(id: string, height: number): void {
+  const node = nodes.get(id);
+  if (!node) return;
+  node.style.height = `${height}px`;
+}

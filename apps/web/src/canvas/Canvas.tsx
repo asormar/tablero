@@ -26,7 +26,7 @@ import {
 } from '@tablero/shared';
 
 import { addElementsToColumn } from '@/canvas/columnCommands';
-import { connectorAtPoint, refreshConnectorNodes } from '@/canvas/connectorGeometry';
+import { connectorAtPoint, connectorsInRect, refreshConnectorNodes } from '@/canvas/connectorGeometry';
 import { startConnectorDrag } from '@/canvas/connectorDrag';
 import { ConnectorLayer } from '@/canvas/ConnectorLayer';
 import { highlightColumn, kanbanTargetAt, type KanbanTarget } from '@/canvas/kanbanDrag';
@@ -291,14 +291,23 @@ export function Canvas({ session, onOpenBoard, readOnly = false }: CanvasProps):
       const ui = useUiStore.getState();
       const startWorld = screenToWorld(ui.viewport, startPoint);
       const base = additive ? [...ui.selection] : [];
-      if (!additive) ui.clearSelection();
+      const baseConnectors = additive ? [...ui.selectedConnectorIds] : [];
+      if (!additive) {
+        ui.clearSelection();
+        ui.setSelectedConnectors([]);
+      }
       ui.setEditing(null);
       ui.setInteraction('marquee');
 
       let latest = startPoint;
       let frame = 0;
-      let lastKey = ui.selection.join('|');
+      let lastKey = ui.selection.join('|') + '#' + ui.selectedConnectorIds.join('|');
 
+      /**
+       * El lazo abarca tarjetas **y** conectores: las flechas entran por su
+       * geometría (`connectorsInRect`), así que un lazo sobre dos tarjetas
+       * también selecciona la flecha que las une y `Supr` borra todo junto.
+       */
       activeTrack.current = trackPointer(
         (event) => {
           latest = canvasPoint(event.clientX, event.clientY);
@@ -309,11 +318,14 @@ export function Canvas({ session, onOpenBoard, readOnly = false }: CanvasProps):
             const rect: Rect = rectFromPoints(startWorld, screenToWorld(state.viewport, latest));
             state.setMarquee(rect);
             const hits = idsInRect(session.getLayout(), rect);
+            const connectorHits = connectorsInRect(session, rect).map((connector) => connector.id);
             const next = additive ? [...new Set([...base, ...hits])] : hits;
-            const key = next.join('|');
+            const nextConnectors = additive ? [...new Set([...baseConnectors, ...connectorHits])] : connectorHits;
+            const key = next.join('|') + '#' + nextConnectors.join('|');
             if (key === lastKey) return;
             lastKey = key;
             useUiStore.getState().select(next);
+            useUiStore.getState().setSelectedConnectors(nextConnectors);
           });
         },
         () => {
@@ -433,6 +445,9 @@ export function Canvas({ session, onOpenBoard, readOnly = false }: CanvasProps):
       const drag = startWidthResize({
         item: { id, rect: rectOf(item, ui.measuredHeights) },
         direction,
+        // Con alto propio (mapa, dibujo) la esquina mueve los dos ejes; las de
+        // alto automático (imagen, vídeo) lo derivan del ancho.
+        fixedHeight: !item.autoHeight,
         viewport: ui.viewport,
         startPointer: startPoint,
         onCommit: (change) => {

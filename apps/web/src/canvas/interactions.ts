@@ -9,11 +9,11 @@
 
 import type { Guide, Point, Rect, Viewport } from '@tablero/shared';
 
-import { appliedAspectResize, appliedDrag, appliedWidthResize, type ResizeDirection, type ResizeResult } from '@/lib/dragMath';
+import { appliedAspectResize, appliedDrag, appliedWidthResize, type ResizeDirection } from '@/lib/dragMath';
 import { useSettingsStore } from '@/settings/settingsStore';
 import { useUiStore } from '@/state/uiStore';
 
-import { setNodeTransform, setNodeWidth } from './nodeRegistry';
+import { setNodeHeight, setNodeTransform, setNodeWidth } from './nodeRegistry';
 
 export type DragItem = { id: string; rect: Rect };
 export type Move = { id: string; x: number; y: number };
@@ -168,18 +168,26 @@ export function startMoveDrag(params: MoveDragParams): PointerDrag {
 
 export type ResizeDragParams = {
   item: DragItem;
-  /** `se` es la esquina (aspecto intacto: solo cambia el ancho). */
+  /** `se` es la esquina (aspecto intacto: mueve los dos ejes). */
   direction: ResizeDirection | 'se';
+  /**
+   * La tarjeta tiene alto propio en el documento (mapa, dibujo, …). Entonces el
+   * gesto mueve el alto además del ancho: se pinta en el DOM en cada frame y se
+   * commitea al soltar. Con alto automático (imagen, vídeo) el alto lo deriva el
+   * contenido del ancho, así que tocar el DOM dejaría un alto pegado.
+   */
+  fixedHeight?: boolean;
   viewport: Viewport;
   startPointer: Point;
-  onCommit(change: { id: string; x: number; width: number }): void;
+  onCommit(change: { id: string; x: number; width: number; height?: number }): void;
 };
 
 export function startWidthResize(params: ResizeDragParams): PointerDrag {
   const { item, direction, viewport, startPointer, onCommit } = params;
+  const fixedHeight = params.fixedHeight === true && direction === 'se';
   let pointer: Point | null = startPointer;
   let frame = 0;
-  let current = { x: item.rect.x, width: item.rect.width };
+  let current = { x: item.rect.x, width: item.rect.width, height: item.rect.height };
   let done = false;
   let moved = false;
 
@@ -191,10 +199,11 @@ export function startWidthResize(params: ResizeDragParams): PointerDrag {
 
   const paint = (): void => {
     setNodeWidth(item.id, current.width);
+    if (fixedHeight) setNodeHeight(item.id, current.height);
     setNodeTransform(item.id, Math.round(current.x), Math.round(item.rect.y));
   };
 
-  const resolve = (at: Point): ResizeResult => {
+  const resolve = (at: Point): { x: number; width: number; height: number } => {
     const dx = (at.x - startPointer.x) / viewport.scale;
     if (direction === 'se') {
       const dy = (at.y - startPointer.y) / viewport.scale;
@@ -204,14 +213,15 @@ export function startWidthResize(params: ResizeDragParams): PointerDrag {
         dy,
       );
     }
-    return appliedWidthResize({ x: item.rect.x, width: item.rect.width }, dx, direction);
+    const next = appliedWidthResize({ x: item.rect.x, width: item.rect.width }, dx, direction);
+    return { ...next, height: item.rect.height };
   };
 
   const flush = (): void => {
     frame = 0;
     if (done || !pointer) return;
     const next = resolve(pointer);
-    if (next.width === current.width && next.x === current.x) return;
+    if (next.width === current.width && next.x === current.x && next.height === current.height) return;
     current = next;
     if (!moved) markDragging();
     moved = true;
@@ -234,20 +244,24 @@ export function startWidthResize(params: ResizeDragParams): PointerDrag {
         cancelAnimationFrame(frame);
         frame = 0;
       }
-      if (!done) return;
       const last = pointer;
       if (last) {
         const next = resolve(last);
-        if (next.width !== current.width || next.x !== current.x) {
+        if (next.width !== current.width || next.x !== current.x || next.height !== current.height) {
           current = next;
           moved = true;
         }
       }
       if (commit && moved) {
         paint();
-        onCommit({ id: item.id, x: Math.round(current.x), width: current.width });
+        onCommit({
+          id: item.id,
+          x: Math.round(current.x),
+          width: current.width,
+          ...(fixedHeight ? { height: current.height } : {}),
+        });
       } else {
-        current = { x: item.rect.x, width: item.rect.width };
+        current = { x: item.rect.x, width: item.rect.width, height: item.rect.height };
         paint();
       }
       useUiStore.getState().setDraggingIds([]);

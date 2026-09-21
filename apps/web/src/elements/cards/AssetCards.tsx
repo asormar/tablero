@@ -12,16 +12,15 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 
 import {
-  Archive,
   Check,
   Crop,
   Download,
   ExternalLink,
   Expand,
+  FileArchive,
   FileText,
   Frame,
   ImageOff,
-  Maximize2,
   Palette,
   Pause,
   Play,
@@ -192,7 +191,8 @@ export function ImageCard({ session, element, simplified }: CardProps): JSX.Elem
         <>
           <CardTools>
             <button type="button" title="Ver a pantalla completa (clic)" onClick={() => openViewer(element.id)}>
-              <Maximize2 size={13} />
+              {/* `Expand` = abrir la tarjeta en grande; `Maximize2` es encajar la vista. */}
+              <Expand size={13} />
             </button>
             <button type="button" title="Recortar" onClick={() => openCropEditor(element.id)}>
               <Crop size={13} />
@@ -482,7 +482,9 @@ function Waveform({ peaks }: { peaks: number[] }): JSX.Element {
 const FILE_ICON_BY_KIND: { matches: RegExp; icon: JSX.Element }[] = [
   { matches: /^(pdf)$/i, icon: <FileText size={18} /> },
   { matches: /^(csv|xls|xlsx|ods)$/i, icon: <Table2 size={18} /> },
-  { matches: /^(zip|rar|7z|tar|gz)$/i, icon: <Archive size={18} /> },
+  // `FileArchive` (y no `Archive`): la caja de archivo es la papelera en la
+  // barra superior y en el panel lateral.
+  { matches: /^(zip|rar|7z|tar|gz)$/i, icon: <FileArchive size={18} /> },
 ];
 
 export function FileCard({ session, element, simplified }: CardProps): JSX.Element {

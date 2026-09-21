@@ -12,11 +12,13 @@
 
 import { beforeAll, beforeEach, describe, expect, it } from 'vitest';
 
-import { addElement, localOrigin, MIN_CONNECTOR_BODY, pointOnPath } from '@tablero/shared';
+import { addElement, boundsOf, localOrigin, MIN_CONNECTOR_BODY, pointOnPath } from '@tablero/shared';
 
-import { connectorAtPoint, resolveConnectors } from '@/canvas/connectorGeometry';
+import { connectorsInRect, connectorAtPoint, resolveConnectors } from '@/canvas/connectorGeometry';
+import { deleteSelection } from '@/canvas/commands';
 import { deleteSelectedConnector } from '@/canvas/connectorCommands';
 import { BoardSession } from '@/collab/BoardSession';
+import { rectOf } from '@/lib/layout';
 import { addConnector } from '@/lib/connectors';
 import { useUiStore } from '@/state/uiStore';
 
@@ -41,9 +43,9 @@ beforeAll(() => {
 let boardCounter = 0;
 
 /** Dos notas separadas y una flecha de la primera a la segunda. */
-async function boardWithConnector(): Promise<{ session: BoardSession; from: string; to: string; connectorId: string }> {
+async function boardWithConnector(role: 'owner' | null = null): Promise<{ session: BoardSession; from: string; to: string; connectorId: string }> {
   boardCounter += 1;
-  const session = new BoardSession({ boardId: `board-conn-${boardCounter}`, connect: false });
+  const session = new BoardSession({ boardId: `board-conn-${boardCounter}`, connect: false, role });
   await session.init();
   const from = addElement(session.doc, 'note', { x: 0, y: 0, createdBy: 'test' }, localOrigin);
   const to = addElement(session.doc, 'note', { x: 640, y: 320, createdBy: 'test' }, localOrigin);
@@ -81,6 +83,52 @@ describe('selección de conectores', () => {
     const session = new BoardSession({ boardId: `board-conn-vacio-${boardCounter}`, connect: false });
     await session.init();
     expect(connectorAtPoint(session, { x: 10, y: 10 })).toBeNull();
+    session.destroy();
+  });
+});
+
+describe('lazo de selección con conectores', () => {
+  it('el lazo sobre dos tarjetas también abarca la flecha que las une', async () => {
+    const { session, from, to, connectorId } = await boardWithConnector();
+    const boxes = session.getLayout().map((item) => rectOf(item));
+    const rect = boundsOf(boxes);
+    expect(rect).not.toBeNull();
+    // El lazo que envuelve las dos tarjetas abarca el trazo que las une.
+    expect(connectorsInRect(session, rect!).map((connector) => connector.id)).toEqual([connectorId]);
+    // Un lazo lejos (o entre las tarjetas pero sin tocar el trazo que pasó por
+    // ahí) no la incluye.
+    expect(connectorsInRect(session, { x: rect!.x - 900, y: rect!.y, width: 120, height: 120 })).toEqual([]);
+    expect(from).not.toBe(to);
+    session.destroy();
+  });
+
+  it('Supr borra tarjetas y conector en UNA transacción y Ctrl+Z devuelve todo', async () => {
+    const { session, from, to, connectorId } = await boardWithConnector('owner');
+    const rect = boundsOf(session.getLayout().map((item) => rectOf(item)));
+    expect(rect).not.toBeNull();
+    const ui = useUiStore.getState();
+    // El lazo deja las dos tarjetas y la flecha dentro de la selección.
+    ui.select([from, to]);
+    ui.setSelectedConnectors(connectorsInRect(session, rect!).map((connector) => connector.id));
+    expect(useUiStore.getState().selection).toHaveLength(2);
+    expect(useUiStore.getState().selectedConnectorIds).toEqual([connectorId]);
+
+    // Se corta el agrupado: el borrado es un paso de deshacer propio.
+    session.undoManager.stopCapturing();
+    deleteSelection(session);
+    expect(session.getLayout()).toHaveLength(0);
+    expect(session.getConnectors()).toHaveLength(0);
+    expect(useUiStore.getState().selection).toEqual([]);
+    expect(useUiStore.getState().selectedConnectorIds).toEqual([]);
+
+    // Un solo `Deshacer` devuelve las dos tarjetas y la flecha entera.
+    session.undo();
+    expect(session.getLayout().map((item) => item.id).sort()).toEqual([from, to].sort());
+    const restored = session.getConnectors();
+    expect(restored).toHaveLength(1);
+    expect(restored[0]!.id).toBe(connectorId);
+    expect(restored[0]!.from.elementId).toBe(from);
+    expect(restored[0]!.to.elementId).toBe(to);
     session.destroy();
   });
 });

@@ -23,6 +23,7 @@ import {
   Map as MapIcon,
   MessageSquarePlus,
   Mic,
+  Music,
   Palette,
   Paperclip,
   PenTool,
@@ -63,7 +64,9 @@ type Tool = {
 const CONTENT_TOOLS: Tool[] = [
   { type: 'image', label: 'Imagen', icon: <ImageIcon size={18} />, hint: 'Imagen — clic para elegir archivos' },
   { type: 'video', label: 'Vídeo', icon: <Video size={18} />, hint: 'Vídeo — clic para elegir archivos' },
-  { type: 'audio', label: 'Audio', icon: <Mic size={18} />, hint: 'Audio — clic para elegir archivos' },
+  // Nota musical (el mismo icono que la tarjeta de audio vacía): el micrófono
+  // queda para «Grabar», que es otra acción, en la misma barra.
+  { type: 'audio', label: 'Audio', icon: <Music size={18} />, hint: 'Audio — clic para elegir archivos' },
   { type: 'file', label: 'Archivo', icon: <Paperclip size={18} />, hint: 'Archivo — clic para elegir archivos' },
   { type: 'link', label: 'Enlace', icon: <Link2 size={18} />, hint: 'Enlace — clic para crear una tarjeta y pegar la URL' },
   { type: 'swatch', label: 'Muestra', icon: <Palette size={18} />, hint: 'Muestra de color — clic para crear una' },

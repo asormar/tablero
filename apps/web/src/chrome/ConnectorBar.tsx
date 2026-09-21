@@ -24,7 +24,8 @@ import { createRectResolver, geometryOf } from '@/canvas/connectorGeometry';
 import { ColorPicker } from '@/chrome/ColorPicker';
 import type { BoardSession } from '@/collab/BoardSession';
 import { useSessionConnectors, useSessionLayout } from '@/collab/SessionContext';
-import { patchConnector, removeConnectors } from '@/lib/connectors';
+import { patchConnector } from '@/lib/connectors';
+import { deleteSelectedConnectors } from '@/canvas/connectorCommands';
 import { useUiStore } from '@/state/uiStore';
 
 const ARROW_OPTIONS: { kind: ArrowKind; label: string; icon: JSX.Element }[] = [
@@ -216,10 +217,9 @@ export function ConnectorBar({ session }: { session: BoardSession }): JSX.Elemen
       <button
         type="button"
         className="icon-button icon-button--danger"
-        title="Eliminar el conector (Supr)"
+        title="Eliminar los conectores seleccionados (Supr)"
         onClick={() => {
-          removeConnectors(session.doc, [connector.id], session.origin);
-          useUiStore.getState().setSelectedConnector(null);
+          deleteSelectedConnectors(session);
         }}
       >
         <Trash2 size={14} />

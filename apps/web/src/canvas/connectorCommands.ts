@@ -1,10 +1,11 @@
 /**
  * Comandos de conectores (fase 7).
  *
- * Borrar el conector seleccionado vivía dentro de `ConnectorLayer.tsx` (un
+ * Borrar los conectores seleccionados vivía dentro de `ConnectorLayer.tsx` (un
  * componente): acá queda como lógica pura —sin DOM ni React— para poder
  * probarla. El borrado va en **una sola** transacción de Yjs: un `Deshacer`
- * devuelve la flecha entera, no a medias.
+ * devuelve las flechas enteras, no a medias. La selección puede traer varios
+ * (el lazo del lienzo selecciona por geometría): se borran todos juntos.
  */
 
 import { removeConnectors } from '@/lib/connectors';
@@ -12,14 +13,22 @@ import type { BoardSession } from '@/collab/BoardSession';
 import { useUiStore } from '@/state/uiStore';
 
 /**
- * Borra el conector seleccionado (lo usan `Supr`/`Backspace` y la barra del
- * conector). Devuelve `false` si no había ninguno seleccionado, para que el
- * llamante pueda seguir con el borrado normal de tarjetas.
+ * Borra los conectores seleccionados (lo usan `Supr`/`Backspace` y la barra del
+ * conector). Devuelve cuántos borró, para que el llamante pueda seguir con el
+ * borrado normal de tarjetas.
+ */
+export function deleteSelectedConnectors(session: BoardSession): number {
+  const ids = useUiStore.getState().selectedConnectorIds;
+  if (ids.length === 0) return 0;
+  removeConnectors(session.doc, ids, session.origin);
+  useUiStore.getState().setSelectedConnectors([]);
+  return ids.length;
+}
+
+/**
+ * Igual que `deleteSelectedConnectors`, con el contrato booleano de siempre
+ * (`true` si había algo seleccionado y se borró).
  */
 export function deleteSelectedConnector(session: BoardSession): boolean {
-  const id = useUiStore.getState().selectedConnectorId;
-  if (!id) return false;
-  removeConnectors(session.doc, [id], session.origin);
-  useUiStore.getState().setSelectedConnector(null);
-  return true;
+  return deleteSelectedConnectors(session) > 0;
 }

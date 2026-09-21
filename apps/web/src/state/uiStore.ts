@@ -69,7 +69,12 @@ export type UiState = {
   recorderOpen: boolean;
   /** Elemento cuya paleta se está mostrando. */
   paletteTargetId: string | null;
-  /** Conector seleccionado (flecha o línea). */
+  /**
+   * Conectores seleccionados. El lazo puede abarcar varios (y convive con la
+   * selección de tarjetas); el clic individual deja uno solo.
+   */
+  selectedConnectorIds: string[];
+  /** Conector «principal» de la selección (el último): el que mueve su barra. */
   selectedConnectorId: string | null;
   /** Línea de inserción del kanban, en coordenadas de pantalla. */
   dropLine: { x: number; y: number; width: number } | null;
@@ -123,7 +128,10 @@ export type UiState = {
   closeCropEditor(): void;
   setRecorderOpen(open: boolean): void;
   setPaletteTarget(id: string | null): void;
+  /** Selecciona un conector (o ninguno): deja la selección en ese único id. */
   setSelectedConnector(id: string | null): void;
+  /** Reemplaza la selección de conectores entera (lazo del lienzo). */
+  setSelectedConnectors(ids: string[]): void;
   setDropLine(line: { x: number; y: number; width: number } | null): void;
   setConnectorDraft(draft: { x1: number; y1: number; x2: number; y2: number } | null): void;
   openDocument(id: string): void;
@@ -181,6 +189,7 @@ export const useUiStore = create<UiState>()((set, get) => ({
   cropTargetId: null,
   recorderOpen: false,
   paletteTargetId: null,
+  selectedConnectorIds: [],
   selectedConnectorId: null,
   dropLine: null,
   connectorDraft: null,
@@ -342,8 +351,20 @@ export const useUiStore = create<UiState>()((set, get) => ({
     set({ paletteTargetId: id });
   },
   setSelectedConnector(id) {
-    if (get().selectedConnectorId === id) return;
-    set({ selectedConnectorId: id });
+    get().setSelectedConnectors(id ? [id] : []);
+  },
+  setSelectedConnectors(ids) {
+    const next = [...new Set(ids)];
+    const current = get().selectedConnectorIds;
+    const primary = next.length > 0 ? (next[next.length - 1] ?? null) : null;
+    if (
+      current.length === next.length &&
+      current.every((id, index) => next[index] === id) &&
+      get().selectedConnectorId === primary
+    ) {
+      return;
+    }
+    set({ selectedConnectorIds: next, selectedConnectorId: primary });
   },
   setDropLine(line) {
     const current = get().dropLine;
@@ -403,6 +424,7 @@ export const useUiStore = create<UiState>()((set, get) => ({
       cropTargetId: null,
       recorderOpen: false,
       paletteTargetId: null,
+      selectedConnectorIds: [],
       selectedConnectorId: null,
       dropLine: null,
       connectorDraft: null,

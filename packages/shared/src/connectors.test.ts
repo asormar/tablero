@@ -5,6 +5,7 @@ import {
   autoSides,
   connectorBounds,
   connectorGeometry,
+  connectorIntersectsRect,
   createConnector,
   createEndpoint,
   dashArray,
@@ -155,6 +156,48 @@ describe('aciertos y medidas', () => {
     expect(bounds.x + bounds.width).toBeGreaterThanOrEqual(500);
     expect(bounds.y).toBeCloseTo(50);
     expect(bounds.height).toBeCloseTo(0);
+  });
+});
+
+describe('acierto del lazo de selección', () => {
+  /** Flecha horizontal de (200, 50) a (500, 50), con los dos extremos fijos. */
+  const geo = connectorGeometry(
+    resolveEndpoint(createEndpoint({ side: 'right' }), rect(0, 0, 200, 100)),
+    resolveEndpoint(createEndpoint({ side: 'left' }), rect(500, 0, 200, 100)),
+    { ...DEFAULT_CONNECTOR_STYLE, curve: 'straight' },
+  );
+
+  it('un lazo que envuelve la flecha la incluye', () => {
+    expect(connectorIntersectsRect(geo, rect(0, 0, 700, 400))).toBe(true);
+  });
+
+  it('un lazo que cruza la flecha por la mitad la incluye', () => {
+    expect(connectorIntersectsRect(geo, rect(300, 10, 60, 80))).toBe(true);
+  });
+
+  it('un lazo que solo toca el trazo la incluye', () => {
+    expect(connectorIntersectsRect(geo, rect(340, 40, 40, 11))).toBe(true);
+  });
+
+  it('un lazo cerca pero sin tocar la flecha no la incluye', () => {
+    // Encima del trazo, sin cruzarlo (la caja envolvente del lazo queda arriba).
+    expect(connectorIntersectsRect(geo, rect(300, 5, 60, 30))).toBe(false);
+    // A la derecha del extremo final.
+    expect(connectorIntersectsRect(geo, rect(520, 0, 80, 100))).toBe(false);
+  });
+
+  it('un lazo degenerado (arrastre horizontal) sigue cruzando la flecha', () => {
+    expect(connectorIntersectsRect(geo, rect(330, 50, 60, 0))).toBe(true);
+  });
+
+  it('una curva también entra por el lazo', () => {
+    const curva = connectorGeometry(
+      resolveEndpoint(createEndpoint({ side: 'bottom' }), rect(0, 0, 200, 100)),
+      resolveEndpoint(createEndpoint({ side: 'bottom' }), rect(0, 600, 200, 100)),
+    );
+    const middle = pointOnPath(curva, 0.5);
+    expect(connectorIntersectsRect(curva, { x: middle.x - 20, y: middle.y - 20, width: 40, height: 40 })).toBe(true);
+    expect(connectorIntersectsRect(curva, { x: middle.x + 200, y: middle.y, width: 40, height: 40 })).toBe(false);
   });
 });
 

@@ -10,7 +10,6 @@ import { useEffect } from 'react';
 
 import { setSpacePan } from '@/canvas/panMode';
 import { createColumnAt } from '@/canvas/columnCommands';
-import { deleteSelectedConnector } from '@/canvas/connectorCommands';
 import {
   clearSelectionAndEditing,
   copySelection,
@@ -165,8 +164,9 @@ export function useShortcuts(session: BoardSession): void {
       // --- Borrado y movimiento ----------------------------------------------
       if (event.key === 'Delete' || event.key === 'Backspace') {
         event.preventDefault();
-        // Con una flecha seleccionada, `Supr` borra el conector.
-        if (deleteSelectedConnector(session)) return;
+        // Una sola transacción para todo lo seleccionado: tarjetas (a la
+        // papelera) y conectores (fuera del documento). Un `Deshacer` lo
+        // devuelve entero, también cuando el lazo mezcló tarjetas y flechas.
         deleteSelection(session);
         return;
       }

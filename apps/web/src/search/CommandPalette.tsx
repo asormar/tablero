@@ -11,20 +11,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 
 import {
-  Archive,
   Download,
   History,
+  Inbox,
   Keyboard,
   LayoutList,
-  MessageSquarePlus,
+  LayoutTemplate,
   Moon,
   Monitor,
-  Palette,
   Plus,
   Search,
   Settings,
   Sun,
   Upload,
+  Zap,
 } from 'lucide-react';
 
 import { type ElementType, ROOT_BOARD_TITLE } from '@tablero/shared';
@@ -203,13 +203,13 @@ export function CommandPalette({
       {
         id: 'new-template',
         key: 'palette.action.newFromTemplate',
-        icon: <Palette size={14} />,
+        icon: <LayoutTemplate size={14} />,
         run: () => panels.setTemplatesOpen(true),
       },
       {
         id: 'capture',
         key: 'palette.action.capture',
-        icon: <MessageSquarePlus size={14} />,
+        icon: <Zap size={14} />,
         run: () => panels.setCaptureOpen(true),
       },
       {
@@ -269,7 +269,7 @@ export function CommandPalette({
       {
         id: 'unsorted',
         key: 'palette.action.unsorted',
-        icon: <Archive size={14} />,
+        icon: <Inbox size={14} />,
         run: () => {
           void fetchUnsortedBoard()
             .then(({ board }) => {

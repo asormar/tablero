@@ -8,7 +8,7 @@
  */
 
 import type { Rect, Point } from './geometry.js';
-import { rectBottom, rectCenterX, rectCenterY, rectRight } from './geometry.js';
+import { expandRect, rectBottom, rectCenterX, rectCenterY, rectRight, rectsIntersect } from './geometry.js';
 
 export const ANCHOR_SIDES = ['auto', 'left', 'right', 'top', 'bottom'] as const;
 export type AnchorSide = (typeof ANCHOR_SIDES)[number];
@@ -318,6 +318,79 @@ export function connectorBounds(geometry: ConnectorGeometry, samples = 16): Rect
     maxY = Math.max(maxY, point.y);
   }
   return { x: minX, y: minY, width: maxX - minX, height: maxY - minY };
+}
+
+function pointInRect(point: Point, rect: Rect): boolean {
+  return (
+    point.x >= rect.x &&
+    point.x <= rect.x + rect.width &&
+    point.y >= rect.y &&
+    point.y <= rect.y + rect.height
+  );
+}
+
+/** Signo del giro a→b→c (0 = colineales). */
+function orientation(a: Point, b: Point, c: Point): number {
+  return (b.x - a.x) * (c.y - a.y) - (b.y - a.y) * (c.x - a.x);
+}
+
+/** ¿Los dos segmentos se cruzan de verdad (sin contarse los extremos)? */
+function segmentsCross(a: Point, b: Point, c: Point, d: Point): boolean {
+  const o1 = orientation(a, b, c);
+  const o2 = orientation(a, b, d);
+  const o3 = orientation(c, d, a);
+  const o4 = orientation(c, d, b);
+  return o1 * o2 < 0 && o3 * o4 < 0;
+}
+
+/** ¿El segmento a→b cruza alguno de los cuatro bordes del rectángulo? */
+function segmentCrossesRect(a: Point, b: Point, rect: Rect): boolean {
+  const left = rect.x;
+  const right = rect.x + rect.width;
+  const top = rect.y;
+  const bottom = rect.y + rect.height;
+  const corners: Point[] = [
+    { x: left, y: top },
+    { x: right, y: top },
+    { x: right, y: bottom },
+    { x: left, y: bottom },
+  ];
+  for (let i = 0; i < corners.length; i += 1) {
+    const from = corners[i];
+    const to = corners[(i + 1) % corners.length];
+    if (from && to && segmentsCross(a, b, from, to)) return true;
+  }
+  return false;
+}
+
+/**
+ * ¿La curva de un conector intersecta el rectángulo? Es el acierto del lazo de
+ * selección: la flecha entra cuando el rectángulo la toca, la cruza o la
+ * envuelve; y no entra cuando el lazo pasa cerca pero no llega al trazo.
+ *
+ * Primero descarta con la caja envolvente (O(1) para todo lo lejano) y después
+ * camina la polilínea muestreada comprobando punto a punto y segmento a
+ * segmento: así un lazo que cruza una línea larga por la mitad cuenta aunque
+ * ningún punto de muestreo caiga dentro. `tolerance` (1 px de mundo) cubre el
+ * lazo degenerado de un arrastre perfectamente horizontal o vertical.
+ */
+export function connectorIntersectsRect(
+  geometry: ConnectorGeometry,
+  rect: Rect,
+  samples = 32,
+  tolerance = 1,
+): boolean {
+  const box = tolerance > 0 ? expandRect(rect, tolerance) : rect;
+  if (!rectsIntersect(connectorBounds(geometry, samples), box)) return false;
+  let previous = geometry.start;
+  if (pointInRect(previous, box)) return true;
+  for (let i = 1; i <= samples; i += 1) {
+    const point = pointOnPath(geometry, i / samples);
+    if (pointInRect(point, box)) return true;
+    if (segmentCrossesRect(previous, point, box)) return true;
+    previous = point;
+  }
+  return false;
 }
 
 /** Patrón de guiones para el trazo. */

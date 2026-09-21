@@ -14,6 +14,7 @@ import {
   type Point,
   type Rect,
   connectorGeometry,
+  connectorIntersectsRect,
   hitsPath,
   resolveEndpoint,
 } from '@tablero/shared';
@@ -86,6 +87,21 @@ export function connectorAtPoint(
     if (!best || distance < best.distance) best = { connector: item.connector, distance };
   }
   return best?.connector ?? null;
+}
+
+/**
+ * Conectores cuya geometría intersecta un rectángulo de mundo (el lazo).
+ * Se resuelve con los rectángulos **vivos** de las tarjetas, así que un lazo
+ * sobre tarjetas que se acaban de mover acierta igual.
+ */
+export function connectorsInRect(session: BoardSession, rect: Rect): Connector[] {
+  const resolved = resolveConnectors(session, session.getLayout());
+  const hits: Connector[] = [];
+  for (const item of resolved) {
+    if (!connectorIntersectsRect(item.geometry, rect)) continue;
+    hits.push(item.connector);
+  }
+  return hits;
 }
 
 // --- Nodos del DOM para el seguimiento en vivo -------------------------------

@@ -280,6 +280,14 @@ export class BoardSession {
    */
   async init(): Promise<void> {
     if (this.destroyed) return;
+    // Un tablero local (`bd_…`) no existe en el servidor: no hay documento que
+    // descargar ni conexión que abrir. El rechazo 4401 del socket solo dejaría
+    // la interfaz en solo lectura; el contenido vive en el documento local que
+    // el constructor cargó de `localStorage`.
+    if (this.boardId.startsWith('bd_')) {
+      this.setState('offline');
+      return;
+    }
     if (this.options.connect === false && !this.forcedReadOnly) {
       this.setState('offline');
       return;

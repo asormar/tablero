@@ -169,5 +169,10 @@ export function localBoard(id: string, title = ROOT_BOARD_TITLE, parentBoardId: 
     trashedAt: null,
     createdAt: now,
     updatedAt: now,
+    // Un tablero creado en este navegador (`bd_…`) es del usuario local: su rol
+    // es dueño, o la matriz de capacidades lo dejaría solo lectura por `role`
+    // ausente. Los tableros del servidor que aún no se pudieron leer conservan
+    // el rol desconocido (no se presume propiedad ajena).
+    role: id.startsWith('bd_') ? 'owner' : undefined,
   };
 }

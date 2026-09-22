@@ -309,3 +309,25 @@ describe('BoardSession · restauración de versiones', () => {
     session.destroy();
   });
 });
+
+describe('BoardSession · tablero local', () => {
+  it('un tablero local (bd_…) no toca la red y queda editable', async () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal('fetch', fetchSpy);
+    try {
+      const session = new BoardSession({ boardId: 'bd_localnet1', connect: true, role: 'owner' });
+      await session.init();
+
+      // Sin servidor al que llamar: el documento vive en localStorage y el rol
+      // dueño deja la interfaz en editable (el 4401 de antes la bloqueaba).
+      expect(session.getSyncState()).toBe('offline');
+      expect(session.provider).toBeNull();
+      expect(fetchSpy).not.toHaveBeenCalled();
+      expect(session.getPermission().readOnly).toBe(false);
+
+      session.destroy();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});

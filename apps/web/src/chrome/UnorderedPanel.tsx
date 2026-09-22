@@ -21,6 +21,7 @@ import { worldFromClient } from '@/canvas/canvasRef';
 import { BoardSession } from '@/collab/BoardSession';
 import { useExternalSessionLayout, useSession } from '@/collab/SessionContext';
 import { pullElements, transferFailureMessage } from '@/lib/boardTransfer';
+import { isSignedIn } from '@/lib/userMenu';
 import { blocksToPlainText } from '@/lib/textBlocks';
 import { useAppStore } from '@/state/appStore';
 
@@ -45,6 +46,7 @@ function labelFor(session: BoardSession, id: string, type: ElementType): { title
 
 export function UnorderedPanelBody(): JSX.Element {
   const currentSession = useSession();
+  const apiOnline = useAppStore((state) => state.apiOnline);
   const [board, setBoard] = useState<BoardSummary | null>(null);
   const [session, setSession] = useState<BoardSession | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -58,6 +60,16 @@ export function UnorderedPanelBody(): JSX.Element {
     let created: BoardSession | null = null;
     setError(null);
     setBoard(null);
+    if (!apiOnline) {
+      // La bandeja vive en un tablero del servidor: sin API no hay nada que
+      // abrir (el intento daría 401). Se avisa y se reintenta al volver.
+      setError(
+        isSignedIn(useAppStore.getState().user)
+          ? 'El servidor no responde: la bandeja «Sin ordenar» no está disponible.'
+          : 'La bandeja vive en el servidor: entrá con tu cuenta para verla.',
+      );
+      return undefined;
+    }
     void (async () => {
       try {
         const result = await fetchUnsortedBoard();
@@ -76,7 +88,7 @@ export function UnorderedPanelBody(): JSX.Element {
       setSession(null);
       setBoard(null);
     };
-  }, [reloadKey]);
+  }, [apiOnline, reloadKey]);
 
   const layout = useExternalSessionLayout(session);
   const items = useMemo<UnsortedItem[]>(() => {

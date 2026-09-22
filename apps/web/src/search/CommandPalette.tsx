@@ -120,6 +120,13 @@ export function CommandPalette({
       setRemoteFailed(false);
       return undefined;
     }
+    // Sin API (modo local o sesión caída) no se consulta el índice del servidor:
+    // se sigue con la búsqueda local del tablero abierto.
+    if (!useAppStore.getState().apiOnline) {
+      setGroups([]);
+      setRemoteFailed(false);
+      return undefined;
+    }
     const controller = new AbortController();
     setLoading(true);
     const timer = setTimeout(() => {

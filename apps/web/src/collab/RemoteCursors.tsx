@@ -134,7 +134,11 @@ export function PresenceWatchers({ boardId, dark = false }: { boardId: string; d
   // conexiones mirando», incluida otra pestaña del mismo usuario.
   const socketEntries = uniqueByUser(presence);
   const socketAvailable = socketLive === 'saved' || socketLive === 'saving';
-  const useFallback = socketEntries.length === 0 && !socketAvailable;
+  // El respaldo REST solo sirve para tableros del servidor con la API accesible:
+  // un tablero local (`bd_…`) no existe allí y su presencia daría 401 en bucle.
+  const apiOnline = useAppStore((state) => state.apiOnline);
+  const canRestFallback = apiOnline && !boardId.startsWith('bd_');
+  const useFallback = socketEntries.length === 0 && !socketAvailable && canRestFallback;
 
   useEffect(() => {
     if (!useFallback) return undefined;

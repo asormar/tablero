@@ -1,155 +1,146 @@
 # Tablero
 
-**Un espacio visual infinito de tableros anidados: el Milanote que corre en tu
-propia máquina.** Notas, kanban, tablas, mapas, dibujos, imágenes y archivos
-sobre un lienzo libre — con colaboración en tiempo real, plantillas, búsqueda
-global y una extensión de navegador para capturar lo que estás leyendo.
+**An infinite visual canvas of nested boards: the Milanote that runs on your
+own machine.** Notes, kanban, tables, maps, drawings, images and files on a
+free-form canvas — with real-time collaboration, templates, global search and
+a browser extension to capture whatever you are reading.
 
-Clon funcional de Milanote para uso personal y autoalojado, con identidad
-visual propia. Interfaz en español (con inglés disponible), pensado para
-correr en local con Docker.
+A functional Milanote clone for personal, self-hosted use, with its own visual
+identity. The interface is in Spanish (English is also available) and it is
+meant to run locally with Docker.
 
-## Características
+## Features
 
-**Lienzo**
-- Lienzo infinito con zoom, selección por lazo, arrastre con guías magnéticas
-  de alineación y rejilla de 8 px — 60 fps sostenidos con 300+ tarjetas.
-- Tableros anidados con migas de pan; mover y duplicar con todo el subárbol.
-- Deshacer/rehacer por gesto: un arrastre es un paso, el texto se deshace
-  dentro de su editor.
+**Canvas**
+- Infinite canvas with zoom, lasso selection, dragging with magnetic alignment
+  guides and an 8 px grid — sustained 60 fps with 300+ cards.
+- Nested boards with breadcrumbs; move and duplicate whole subtrees.
+- Undo/redo per gesture: a drag is a single step, and text undoes inside its
+  own editor.
 
-**Contenido**
-- Notas con texto enriquecido (TipTap), encabezados, tarjetas de tablero,
-  columnas kanban, tareas con fechas y subtareas, tablas, documento largo,
-  dibujo a mano alzada y mapa con búsqueda de lugares.
-- Imágenes, vídeo, audio, PDF, enlaces con vista previa y archivos: subida
-  con cola, miniaturas, deduplicación y visores propios.
-- Pegado inteligente: `Ctrl/Cmd+V` con texto, imágenes o un enlace de YouTube
-  crea el tipo de tarjeta que corresponde.
+**Content**
+- Rich-text notes (TipTap), headings, board cards, kanban columns, tasks with
+  due dates and subtasks, tables, long-form documents, freehand drawing and a
+  map with place search.
+- Images, video, audio, PDF, links with previews and files: queued uploads,
+  thumbnails, deduplication and custom viewers.
+- Smart paste: `Ctrl/Cmd+V` with text, an image or a YouTube link creates the
+  matching card type.
 
-**Organización y productividad**
-- Búsqueda global (full-text en español) y paleta de comandos `Ctrl/Cmd+K`.
-- 12 plantillas del sistema, papelera con 30 días de retención, favoritos,
-  bandeja «Sin ordenar» y vista global de tareas.
-- Historial de versiones con restauración reversible.
-- Exportación a PNG, PDF, Markdown, texto, JSON e ZIP; importación desde
-  Markdown y CSV.
-- Tema claro/oscuro, ajustes por cuenta, PWA instalable con shell sin
-  conexión y vista optimizada para móvil.
+**Organization and productivity**
+- Global search (Spanish full-text) and a `Ctrl/Cmd+K` command palette.
+- 12 system templates, a trash with 30-day retention, favorites, an
+  «Unsorted» inbox and a global tasks view.
+- Version history with reversible restore.
+- Export to PNG, PDF, Markdown, text, JSON and ZIP; import from Markdown and
+  CSV.
+- Light/dark themes, per-account settings, an installable PWA with an offline
+  shell and a mobile-optimized view.
 
-**Colaboración**
-- Compartir tableros con roles (dueño, editor, comentarista, lector)
-  heredados por jerarquía, y publicar un tablero con enlace público
-  (`/p/:slug`, contraseña opcional).
-- Cursores y selección en tiempo real, presencia, comentarios con menciones,
-  notificaciones y registro de actividad.
+**Collaboration**
+- Share boards with roles (owner, editor, commenter, viewer) inherited down
+  the hierarchy, and publish a board with a public link (`/p/:slug`, optional
+  password).
+- Real-time cursors and selection, presence, comments with @mentions,
+  notifications and an activity log.
 
 **Extras**
-- Extensión de navegador (Manifest V3) que manda la página actual —título, URL
-  y selección— a «Sin ordenar» con tu token personal.
-- Captura rápida por API (`POST /api/capture`) para atajos y scripts.
-- Accesibilidad: flujo completo con teclado, foco visible, trampa de foco en
-  diálogos y contraste AA en ambos temas (0 violaciones en la auditoría con
-  navegador real).
+- Browser extension (Manifest V3) that sends the current page — title, URL and
+  selection — to «Unsorted» using your personal token.
+- Quick capture API (`POST /api/capture`) for shortcuts and scripts.
+- Accessibility: full keyboard flow, visible focus, focus traps in dialogs and
+  AA contrast in both themes (0 violations in a real-browser audit).
 
 ## Stack
 
-| Capa | Tecnología |
+| Layer | Technology |
 | --- | --- |
 | Frontend | React 18 · Vite · TypeScript · Zustand · Yjs + TipTap · Leaflet |
-| Backend | Fastify · Prisma · PostgreSQL 16 · Hocuspocus (colaboración Yjs) |
-| Almacenamiento | MinIO (S3 compatible) · sharp · ffmpeg |
+| Backend | Fastify · Prisma · PostgreSQL 16 · Hocuspocus (Yjs collaboration) |
+| Storage | MinIO (S3-compatible) · sharp · ffmpeg |
 | Monorepo | pnpm workspaces — `apps/web`, `apps/api`, `packages/shared` |
-| Calidad | Vitest · Playwright (e2e) · smokes HTTP/WebSocket · auditoría de accesibilidad con navegador real |
+| Quality | Vitest · Playwright (e2e) · HTTP/WebSocket smoke tests · real-browser accessibility audit |
 
-Las decisiones técnicas y sus motivos están en [`ARCHITECTURE.md`](ARCHITECTURE.md).
+## Getting started
 
-## Puesta en marcha
-
-Requisitos: **Node 22**, **pnpm 9** (`npm install -g pnpm@9`) y **Docker** con
-Compose (PostgreSQL 16 y MinIO).
+Requirements: **Node 22**, **pnpm 9** (`npm install -g pnpm@9`) and **Docker**
+with Compose (PostgreSQL 16 and MinIO).
 
 ```bash
-# 1. Infraestructura
+# 1. Infrastructure
 docker compose -f docker/docker-compose.yml up -d
-docker compose -f docker/docker-compose.yml ps      # esperar "healthy"
+docker compose -f docker/docker-compose.yml ps      # wait for "healthy"
 
-# 2. Variables de entorno
+# 2. Environment variables
 cp .env.example .env
 cp .env.example apps/api/.env
 
-# 3. Dependencias y base de datos
+# 3. Dependencies and database
 pnpm install
-# `pnpm install` genera el cliente de Prisma solo (script `postinstall` de la
-# raíz); si el esquema cambia, volvé a generarlo con `pnpm db:generate`.
+# `pnpm install` generates the Prisma client by itself (the root `postinstall`
+# script); after a schema change, regenerate it with `pnpm db:generate`.
 pnpm --filter @tablero/api exec prisma migrate dev --name init
 
-# 4. Arrancar (dos terminales)
-pnpm --filter @tablero/api dev      # API REST + WebSocket en :8787
-pnpm --filter @tablero/web dev      # interfaz en :5173
+# 4. Run (two terminals)
+pnpm --filter @tablero/api dev      # REST API + WebSocket on :8787
+pnpm --filter @tablero/web dev      # UI on :5173
 ```
 
-Abrí <http://localhost:5173>: si no hay sesión aparece la pantalla de
-**acceso** (entrar o crear cuenta; el registro crea el tablero raíz «Inicio»).
-El panel nunca bloquea: «seguir sin cuenta» deja trabajar en local en ese
-navegador, y lo que se haya creado así se adopta en el servidor al entrar.
-Después, empezá a arrastrar tarjetas desde la barra lateral.
+Open <http://localhost:5173>: with no session you get the **sign-in** screen
+(log in or create an account; registering creates the root board «Inicio»).
+The panel never blocks: «continue without an account» lets you work locally in
+that browser, and anything created that way is adopted by the server when you
+sign in. Then start dragging cards from the sidebar.
 
-### Puertos
+### Ports
 
-| Servicio | Puerto | Nota |
+| Service | Port | Note |
 | --- | --- | --- |
-| API REST + WebSocket `/collab` | 8787 | comparten servidor HTTP |
-| Interfaz (desarrollo) | 5173 | proxya `/api` y `/collab` a 8787 |
-| Vista previa del build | 4173 | `pnpm --filter @tablero/web preview` |
-| PostgreSQL | **5433** | el compose publica 5433 (ver comentario en `docker/docker-compose.yml`); el `.env` ya apunta a 5433 |
-| MinIO | 9000 (S3) / 9001 (consola) | bucket creado por el contenedor de inicialización |
+| REST API + WebSocket `/collab` | 8787 | share the HTTP server |
+| UI (development) | 5173 | proxies `/api` and `/collab` to 8787 |
+| Build preview | 4173 | `pnpm --filter @tablero/web preview` |
+| PostgreSQL | **5433** | the compose file publishes 5433 (see the comment in `docker/docker-compose.yml`); `.env` already points at 5433 |
+| MinIO | 9000 (S3) / 9001 (console) | bucket created by the init container |
 
-## Estructura
+## Repository layout
 
 ```
-apps/web           React 18 + Vite + Zustand + Yjs + TipTap (lienzo, PWA)
+apps/web           React 18 + Vite + Zustand + Yjs + TipTap (canvas, PWA)
 apps/api           Fastify + Prisma + PostgreSQL + Hocuspocus (REST + WebSocket)
-apps/extension     extensión de navegador Manifest V3 (captura a «Sin ordenar»)
-packages/shared    tipos, esquemas Zod y lógica de dominio (con tests)
-docker             compose de Postgres y MinIO
-docs               verificación por fase y revisiones independientes
-ARCHITECTURE.md    decisiones técnicas y sus motivos
+apps/extension     Manifest V3 browser extension (capture to «Unsorted»)
+packages/shared    types, Zod schemas and domain logic (with tests)
+docker             Postgres and MinIO compose
 ```
 
-## Pruebas
+## Tests
 
 ```bash
-pnpm test                            # vitest en todos los paquetes
-pnpm typecheck                       # TypeScript estricto en los cuatro paquetes
-pnpm --filter @tablero/web build     # build de producción
+pnpm test                            # vitest across all packages
+pnpm typecheck                       # strict TypeScript in all four packages
+pnpm --filter @tablero/web build     # production build
 
-bash apps/api/scripts/smoke-rest.sh              # ciclo CRUD completo por HTTP
-pnpm --filter @tablero/api smoke:collab          # tiempo real: escribe, desconecta, verifica persistencia
-pnpm --filter @tablero/api smoke:assets          # archivos: subida, miniaturas, dedupe, límites, permisos
-pnpm --filter @tablero/api smoke:productividad   # búsqueda, plantillas, exportación
-pnpm --filter @tablero/api smoke:colaboracion    # roles, publicación, comentarios
-pnpm --filter @tablero/web e2e                   # Playwright: 14 pruebas end-to-end
+bash apps/api/scripts/smoke-rest.sh              # full CRUD cycle over HTTP
+pnpm --filter @tablero/api smoke:collab          # real time: write, disconnect, verify persistence
+pnpm --filter @tablero/api smoke:assets          # files: upload, thumbnails, dedupe, limits, permissions
+pnpm --filter @tablero/api smoke:productividad   # search, templates, export
+pnpm --filter @tablero/api smoke:colaboracion    # roles, publishing, comments
+pnpm --filter @tablero/web e2e                   # Playwright: 14 end-to-end tests
 ```
 
-Cuenta actual: **1124 tests unitarios** (280 en `shared`, 267 en `api`, 577 en
-`web`) en verde, typecheck limpio en los cuatro paquetes y **14 pruebas
-end-to-end** con Playwright. La lógica de dominio vive en `packages/shared` y
-no depende del navegador.
+Current numbers: **1124 unit tests** (280 in `shared`, 267 in `api`, 577 in
+`web`) all green, typecheck clean across the four packages and **14
+end-to-end tests** with Playwright. The domain logic lives in
+`packages/shared` and has no browser dependency.
 
-## Documentación
+## Documentation
 
-| Documento | Qué contiene |
+| Document | Contents |
 | --- | --- |
-| [`ARCHITECTURE.md`](ARCHITECTURE.md) | decisiones técnicas, trampas conocidas y su motivación |
-| [`docs/verificacion.md`](docs/verificacion.md) | verificación por fase, con la evidencia de ejecución real |
-| [`docs/phases/`](docs/phases/) | briefs de implementación de las fases 3–6 |
-| [`docs/review/`](docs/review/) | revisiones independientes por fase |
-| [`apps/extension/README.md`](apps/extension/README.md) | instalación y funcionamiento de la extensión |
+| [`apps/extension/README.md`](apps/extension/README.md) | how to install and use the browser extension |
+| [`apps/web/e2e/README.md`](apps/web/e2e/README.md) | how the Playwright end-to-end suite runs |
 
-## Estado
+## Status
 
-Proyecto completo: las seis fases del plan (base y lienzo, contenido
-multimedia, estructura, productividad, colaboración y extras) implementadas,
-verificadas con ejecución real y revisadas por un revisor independiente.
-El detalle está en [`docs/verificacion.md`](docs/verificacion.md).
+Complete: all six phases of the plan (base and canvas, media content,
+structure, productivity, collaboration and extras) implemented, verified with
+real execution and reviewed by an independent reviewer.

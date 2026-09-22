@@ -249,8 +249,8 @@ export async function membersRoutes(app: FastifyInstance): Promise<void> {
 }
 
 /**
- * Vista de una invitación por su token, **sin sesión** (fase 5, contrato de
- * `ARCHITECTURE.md`: «el token es la credencial»). Es la única ruta del módulo
+ * Vista de una invitación por su token, **sin sesión** (fase 5: el token es la
+ * credencial). Es la única ruta del módulo
  * fuera del scope protegido, así que va en su propio plugin y `routes/index.ts`
  * la registra con las públicas.
  *

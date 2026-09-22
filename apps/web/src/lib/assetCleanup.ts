@@ -1,7 +1,7 @@
 /**
  * Liberación de los archivos de una tarjeta que sale del documento para siempre.
  *
- * Decisión (documentada en `ARCHITECTURE.md`): borrar una tarjeta solo la manda
+ * Decisión de diseño: borrar una tarjeta solo la manda
  * a la **papelera** (marca `deletedAt`), así que el archivo no se toca — el
  * deshacer y el restaurar tienen que seguir mostrando la imagen. Un asset se
  * libera recién cuando el elemento sale del documento para siempre (al vaciar la

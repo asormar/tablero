@@ -1,0 +1,95 @@
+# Tablero en producción: web estática + API + PostgreSQL.
+#
+#   docker compose -f docker/docker-compose.prod.yml --env-file docker/.env.prod up -d
+#
+# La configuración sale de `docker/.env.prod` (copiar de `.env.prod.example`).
+# El almacenamiento de archivos va a Cloudflare R2: el bucket se crea desde el
+# panel de Cloudflare, no desde acá (por eso no hay servicio de objetos acá).
+#
+# Solo Caddy publica puertos. La API y la base quedan en la red interna.
+
+name: tablero
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: tablero-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-tablero}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?definí POSTGRES_PASSWORD en docker/.env.prod}
+      POSTGRES_DB: ${POSTGRES_DB:-tablero}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-tablero} -d ${POSTGRES_DB:-tablero}']
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    # Sin `ports`: la base no se expone a internet.
+
+  api:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.api
+    container_name: tablero-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: '8787'
+      # Escuchar en todas las interfaces: dentro del contenedor, no en el host.
+      HOST: '0.0.0.0'
+      DATABASE_URL: postgresql://${POSTGRES_USER:-tablero}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-tablero}?schema=public
+      # Debe coincidir exactamente con el origen del navegador: la guarda CSRF
+      # rechaza toda petición mutante que no venga de acá.
+      APP_ORIGIN: https://${SITE_ADDRESS}
+      SESSION_SECRET: ${SESSION_SECRET:?definí SESSION_SECRET (32+ caracteres) en docker/.env.prod}
+      # Cloudflare R2: `auto` es obligatorio y el direccionamiento por ruta va
+      # en false (R2 usa virtual-hosted).
+      S3_ENDPOINT: https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com
+      S3_ACCESS_KEY: ${R2_ACCESS_KEY_ID:?falta R2_ACCESS_KEY_ID en docker/.env.prod}
+      S3_SECRET_KEY: ${R2_SECRET_ACCESS_KEY:?falta R2_SECRET_ACCESS_KEY en docker/.env.prod}
+      S3_BUCKET: ${R2_BUCKET:-tablero}
+      S3_REGION: auto
+      S3_FORCE_PATH_STYLE: 'false'
+      MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-500}
+      GEOCODE_USER_AGENT: ${GEOCODE_USER_AGENT:-TableroBot/0.1 (+https://github.com/asormar/tablero)}
+    expose:
+      - '8787'
+
+  web:
+    build:
+      context: ..
+      dockerfile: docker/Dockerfile.web
+    container_name: tablero-web
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      SITE_ADDRESS: ${SITE_ADDRESS:?definí SITE_ADDRESS (el dominio) en docker/.env.prod}
+      # Caddy sólo acepta `email <valor>`: una variable de entorno **definida
+      # pero vacía** no activa el default de `{$ACME_EMAIL:...}` y el Caddyfile
+      # deja de parsear. Por eso el compose no manda una cadena vacía, sino el
+      # default cuando el usuario no lo configuró.
+      ACME_EMAIL: ${ACME_EMAIL:-localhost}
+    ports:
+      - '80:80'
+      - '443:443'
+      - '443:443/udp'   # HTTP/3
+    volumes:
+      # Certificados: sin este volumen Caddy pide uno nuevo en cada reinicio y
+      # Let's Encrypt agota el límite de tasa.
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  postgres-data:
+    name: tablero-postgres-data
+  caddy-data:
+    name: tablero-caddy-data
+  caddy-config:
+    name: tablero-caddy-config

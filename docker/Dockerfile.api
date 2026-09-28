@@ -1,0 +1,80 @@
+# Imagen de producción de la API (Fastify + Hocuspocus + Prisma).
+#
+# La API arranca TypeScript directamente con `tsx` (mismo comando que
+# `pnpm start`), así que la imagen no compila `apps/api`: se llevan el código
+# y las dependencias. Para producción sí compila `packages/shared` a `dist/`,
+# que es lo que resuelve el paquete de workspace en tiempo de ejecución.
+#
+# Arquitectura: funciona en arm64 (Oracle Ampere A1) y en amd64. `sharp` y
+# `@node-rs/argon2` traen binarios precompilados para `linux-arm64`; se
+# instala **dentro** de la imagen (nunca copiando node_modules del host, que
+# sería de otra plataforma).
+
+# --- deps -------------------------------------------------------------------
+# Capa aparte para que `pnpm install` no se re-ejecute en cada cambio de código.
+FROM node:22-bookworm-slim AS deps
+
+# `ffmpeg`/`ffprobe` generan las miniaturas de vídeo y audio (lib/media.ts).
+# `ca-certificates` hace falta para descargar por HTTPS.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates ffmpeg \
+ && rm -rf /var/lib/apt/lists/*
+
+ENV PNPM_HOME=/pnpm
+ENV PATH=$PNPM_HOME:$PATH
+RUN corepack enable
+
+WORKDIR /app
+
+# Solo los manifiestos: la capa se reutiliza mientras no cambien.
+# Incluido `apps/extension` porque `apps/*` es un paquete del workspace y
+# `pnpm install --frozen-lockfile` verifica que coincidan con el lockfile.
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY apps/api/package.json ./apps/api/
+COPY apps/web/package.json ./apps/web/
+COPY apps/extension/package.json ./apps/extension/
+COPY packages/shared/package.json ./packages/shared/
+
+# `--frozen-lockfile` y `ignore-scripts`: el `postinstall` de la raíz genera el
+# cliente de Prisma, que todavía no está en la imagen (faltan los fuentes).
+RUN pnpm install --frozen-lockfile --ignore-scripts
+
+# --- build ------------------------------------------------------------------
+FROM deps AS build
+
+WORKDIR /app
+# `tsconfig.base.json`: lo extienden `packages/shared` y `apps/api`.
+COPY tsconfig.base.json ./
+COPY packages/shared ./packages/shared
+COPY apps/api ./apps/api
+
+# `packages/shared` se compila a dist/ (lo resuelve el paquete de workspace en
+# runtime); el cliente de Prisma se genera contra el esquema real.
+RUN pnpm --filter @tablero/shared build \
+ && pnpm --filter @tablero/api prisma:generate
+
+# --- runtime ----------------------------------------------------------------
+FROM node:22-bookworm-slim AS runtime
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends ca-certificates ffmpeg \
+ && rm -rf /var/lib/apt/lists/*
+
+ENV PNPM_HOME=/pnpm
+ENV PATH=$PNPM_HOME:$PATH
+ENV NODE_ENV=production
+RUN corepack enable
+
+WORKDIR /app
+
+# Todo el árbol compilado viene entero de la etapa de build. Copiar
+# `node_modules` por partes (raíz, .pnpm, .prisma por separado) es frágil:
+# con pnpm el cliente de Prisma y los enlaces viven en rutas que cambian
+# entre versiones, y un `COPY` a una ruta que no existe rompe el build.
+COPY --from=build /app ./
+
+# Las migraciones se aplican en cada arranque: es idempotente y evita el
+# paso manual de `prisma migrate deploy` en el servidor.
+EXPOSE 8787
+
+CMD ["sh", "-c", "pnpm --filter @tablero/api exec prisma migrate deploy && pnpm --filter @tablero/api start"]

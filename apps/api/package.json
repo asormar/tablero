@@ -19,7 +19,8 @@
     "smoke:colaboracion": "tsx scripts/smoke-colaboracion.ts",
     "smoke:collab": "tsx scripts/smoke-collab.ts",
     "smoke:productividad": "tsx scripts/smoke-productividad.ts",
-    "smoke:upgrade": "node scripts/smoke-upgrade.mjs"
+    "smoke:upgrade": "node scripts/smoke-upgrade.mjs",
+    "smoke:deploy": "node scripts/smoke-ws-proxy.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1133.0",

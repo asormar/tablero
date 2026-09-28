@@ -1,0 +1,60 @@
+# Contexto de build de las imágenes de producción.
+#
+# Sin esto se copiaría `node_modules` (con binarios de Windows y los symlinks
+# que usa pnpm), que ni sirve en Linux ni debe entrar: las imágenes instalan
+# sus propias dependencias y así resuelven los binarios nativos de la
+# plataforma destino (sharp y @node-rs/argon2 en arm64).
+
+# Dependencias (se instalan dentro de la imagen)
+node_modules
+**/node_modules
+.pnpm-store
+
+# Salida de build (la imagen la genera)
+dist
+**/dist
+build
+**/build
+*.tsbuildinfo
+
+# Git
+.git
+.gitignore
+.github
+
+# Entorno: nunca un .env dentro de la imagen
+.env
+.env.*
+!.env.example
+!.env.*.example
+docker/.env.prod
+
+# Docker
+docker/docker-compose*.yml
+Dockerfile*
+.dockerignore
+
+# Tests, e2e y verificación: no hacen falta en producción
+**/*.test.ts
+**/*.test.tsx
+**/e2e
+**/playwright-report
+**/test-results
+coverage
+apps/api/scripts
+docs
+
+# El manifiesto de la extensión sí tiene que entrar: `apps/*` es un paquete
+# del workspace de pnpm y su ausencia rompe `pnpm install --frozen-lockfile`
+# (el lockfile lo lista como importer). El código de la extensión, no.
+apps/extension/src
+apps/extension/dist
+
+# Editor y sistema operativo
+.vscode
+.idea
+**/.DS_Store
+Thumbs.db
+
+# Varios
+*.log

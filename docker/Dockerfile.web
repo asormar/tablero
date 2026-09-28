@@ -1,0 +1,47 @@
+# Imagen de producción de la web: build de Vite servido por Caddy.
+#
+# Caddy termina el TLS y sirve el `dist/` estático con el fallback de SPA
+# (`try_files ... /index.html`). Lo que no es un archivo — `/api` y `/collab` —
+# va por proxy a la API, que así queda en el mismo origen que la interfaz
+# (necesario para la cookie de sesión y para la guarda CSRF, que compara el
+# `Origin` contra APP_ORIGIN).
+
+# --- build ------------------------------------------------------------------
+FROM node:22-bookworm-slim AS build
+
+ENV PNPM_HOME=/pnpm
+ENV PATH=$PNPM_HOME:$PATH
+RUN corepack enable
+
+WORKDIR /app
+
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+COPY apps/api/package.json ./apps/api/
+COPY apps/web/package.json ./apps/web/
+# `apps/*` es un paquete del workspace: sin su manifiesto, el lockfile no
+# coincide con el workspace y `--frozen-lockfile` falla.
+COPY apps/extension/package.json ./apps/extension/
+COPY packages/shared/package.json ./packages/shared/
+
+RUN pnpm install --frozen-lockfile --ignore-scripts
+
+COPY packages/shared ./packages/shared
+COPY apps/web ./apps/web
+# `apps/web/tsconfig.json` extiende este archivo de la raíz.
+COPY tsconfig.base.json ./
+
+# `apps/web` consume `@tablero/shared` como fuente TypeScript (alias de Vite),
+# así que alcanza con el paquete compartido en su forma original.
+RUN pnpm --filter @tablero/web build
+
+# --- runtime ----------------------------------------------------------------
+FROM caddy:2.8-alpine AS runtime
+
+COPY --from=build /app/apps/web/dist /srv
+COPY docker/Caddyfile /etc/caddy/Caddyfile
+
+# 80/443: Caddy pide el certificado y redirige. La API no se publica: solo
+# entra por el proxy de Caddy, en la red interna de Compose.
+EXPOSE 80 443
+
+CMD ["caddy", "run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]

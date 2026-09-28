@@ -31,6 +31,13 @@ export const SIGNED_URL_TTL_SECONDS = 15 * 60;
 /**
  * MinIO (y cualquier S3 autoalojado) exige direccionamiento por ruta:
  * `http://host/bucket/clave` en vez de `http://bucket.host/clave`.
+ * R2 usa virtual-hosted, así que `forcePathStyle` sale de la configuración
+ * (`S3_FORCE_PATH_STYLE`): en producción va en `false`.
+ *
+ * `requestChecksumCalculation`/`responseChecksumValidation` en `WHEN_REQUIRED`:
+ * desde la v3.729 el SDK calcula los checksums flexibles (CRC32) por defecto y
+ * los manda en la petición, lo que R2 rechaza con un error de firma. Con
+ * `WHEN_REQUIRED` solo se envían cuando la operación los pide de verdad.
  */
 export const s3 = new S3Client({
   endpoint: env.s3.endpoint,
@@ -39,7 +46,9 @@ export const s3 = new S3Client({
     accessKeyId: env.s3.accessKey,
     secretAccessKey: env.s3.secretKey,
   },
-  forcePathStyle: true,
+  forcePathStyle: env.s3.forcePathStyle,
+  requestChecksumCalculation: 'WHEN_REQUIRED',
+  responseChecksumValidation: 'WHEN_REQUIRED',
 });
 
 /** Clave del archivo original. Extensión derivada del MIME (o del nombre). */
@@ -61,9 +70,18 @@ function isNotFound(error: unknown): boolean {
   );
 }
 
+/** ¿El endpoint es de Cloudflare R2? (`<cuenta>.r2.cloudflarestorage.com`). */
+function isR2(): boolean {
+  return /\.r2\.cloudflarestorage\.com$/.test(env.s3.endpoint);
+}
+
 /**
  * Crea el bucket si hace falta. Idempotente: repetirla no cambia nada.
  * Devuelve `true` cuando el bucket quedó disponible.
+ *
+ * En R2 el bucket se crea desde el panel de Cloudflare: el endpoint no acepta
+ * `CreateBucket` con `LocationConstraint`, así que acá solo se verifica que
+ * exista y se avisa (sin tirar) cuando falta.
  */
 export async function ensureBucket(): Promise<boolean> {
   try {
@@ -74,6 +92,11 @@ export async function ensureBucket(): Promise<boolean> {
       // Otro error (credenciales, red): no se intenta crear, se propaga.
       throw error;
     }
+  }
+  if (isR2()) {
+    throw new Error(
+      `El bucket "${env.s3.bucket}" no existe en R2: créalo desde el panel de Cloudflare (Storage & Databases → R2) y reiniciá la API`,
+    );
   }
   try {
     await s3.send(new CreateBucketCommand({ Bucket: env.s3.bucket }));

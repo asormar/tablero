@@ -1,0 +1,61 @@
+# Caddy: TLS automático + estático de la SPA + proxy de la API.
+#
+# Todo en un mismo origen a propósito. La cookie de sesión es httpOnly y la
+# guarda CSRF de la API exige que el `Origin` coincida con APP_ORIGIN
+# (`apps/api/src/app.ts`); partir la web y la API en dominios distintos rompe
+# las dos cosas.
+#
+# El dominio sale de $SITE_ADDRESS (ver docker/docker-compose.prod.yml). Con un
+# subdominio de DuckDNS funciona el desafío HTTP-01 normal, porque la VM tiene
+# IP pública y los puertos 80/443 abiertos.
+
+{
+	# Con ACME_EMAIL vacío, Caddy **no** acepta `email` sin valor (rompe el
+	# parseo del Caddyfile con "wrong argument count"). Ojo: el default
+	# `{$ACME_EMAIL:...}` sólo se aplica si la variable está **sin definir**;
+	# si viene definida pero vacía, Caddy igual falla. Por eso el compose
+	# mandate `localhost` cuando el usuario no la configuró.
+	email {$ACME_EMAIL:localhost}
+}
+
+{$SITE_ADDRESS} {
+	encode zstd gzip
+
+	# --- API REST ------------------------------------------------------------
+	handle /api/* {
+		reverse_proxy api:8787
+	}
+
+	# --- Colaboración en tiempo real ----------------------------------------
+	# Hocuspocus sobre el mismo servidor HTTP. Caddyoune el WebSocket sin
+	# configuración extra en reverse_proxy.
+	handle /collab {
+		reverse_proxy api:8787 {
+			# Una ida y vuelta deCollaboración no debe quedar esperando.
+			transport http {
+				read_timeout 24h
+				write_timeout 24h
+			}
+		}
+		# Hocuspocus no debe cachearse ni compartirse.
+		header {
+			Cache-Control "no-store"
+		}
+	}
+
+	# --- SPA -----------------------------------------------------------------
+	# `try_files` resuelve cada ruta de la SPA a index.html (tableros anidados,
+	# /p/:slug de tableros publicados, /invite/:token).
+	handle {
+		root * /srv
+		try_files {path} {path}/ /index.html
+		file_server
+	}
+
+	# `handle` evita que las directivas de una ruta se filtren a las otras: cada
+	# bloque es una terminal. Sin esto, /api y /collab se sirven el index.html.
+	log {
+		output stdout
+		format console
+	}
+}

@@ -66,6 +66,13 @@ function readInt(name: string, fallback: number): number {
   return Number.isFinite(value) && value > 0 ? value : fallback;
 }
 
+function readBool(name: string, fallback: boolean): boolean {
+  const value = readString(name, '').toLowerCase();
+  if (value === 'true' || value === '1' || value === 'yes') return true;
+  if (value === 'false' || value === '0' || value === 'no') return false;
+  return fallback;
+}
+
 function readList(name: string): string[] {
   return readString(name, '')
     .split(',')
@@ -133,7 +140,14 @@ export const env = {
     accessKey: readString('S3_ACCESS_KEY', 'tablero'),
     secretKey: readString('S3_SECRET_KEY', 'tablero123'),
     bucket: readString('S3_BUCKET', 'tablero'),
+    // R2 exige literalmente 'auto'; MinIO lo ignora.
     region: readString('S3_REGION', 'us-east-1'),
+    /**
+     * Direccionamiento por ruta (`host/bucket/clave`). MinIO y el S3
+     * autoalojado lo necesitan; R2 usa el virtual-hosted por defecto
+     * (`bucket.host/clave`), así que en producción va en `false`.
+     */
+    forcePathStyle: readBool('S3_FORCE_PATH_STYLE', true),
   },
 } as const;
 

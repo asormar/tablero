@@ -11,6 +11,9 @@ build/
 .env
 .env.*
 !.env.example
+!.env.*.example
+# El compose de producción lee sus variables de acá (nunca versionado).
+docker/.env.prod
 
 # Data (local volumes)
 data/

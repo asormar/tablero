@@ -44,7 +44,7 @@
   border: 1px solid var(--border);
   box-shadow: var(--shadow-card-hover);
   opacity: 0;
-  transition: opacity var(--dur-fast) var(--ease);
+  transition: opacity var(--dur-fast) ease;
 }
 
 .el:hover .card-tools,
@@ -176,10 +176,15 @@
 
 .upload-card__fill {
   position: absolute;
-  inset: 0 auto 0 0;
-  width: var(--upload-progress, 0%);
+  inset: 0;
   background: var(--accent);
-  transition: width 120ms linear;
+  /* Progreso con `--p` (0–1) y `transform`, que no recalcula el layout. Mientras
+     el TSX siga poniendo `--upload-progress` (en %), el ancho lo respeta y `--p`
+     vale 1; con `--p` el ancho queda al 100 %. No hay que poner ambos. */
+  width: var(--upload-progress, 100%);
+  transform: scaleX(var(--p, 1));
+  transform-origin: left;
+  transition: transform 120ms linear, width 120ms linear;
 }
 
 /* --- Tarjeta vacía (elegir archivo) --------------------------------------- */
@@ -828,7 +833,7 @@
 .viewer {
   position: fixed;
   inset: 0;
-  z-index: 60;
+  z-index: var(--z-fullscreen);
   display: flex;
   flex-direction: column;
   background: rgba(18, 18, 20, 0.94);
@@ -902,7 +907,7 @@
 }
 
 .viewer__image {
-  will-change: transform, width, height;
+  will-change: transform;
   user-select: none;
   box-shadow: 0 8px 40px rgba(0, 0, 0, 0.5);
 }
@@ -972,7 +977,7 @@
 .recorder {
   position: fixed;
   inset: 0;
-  z-index: 61;
+  z-index: calc(var(--z-fullscreen) + 1);
   display: grid;
   place-items: center;
   background: rgba(18, 18, 20, 0.6);
@@ -1160,7 +1165,12 @@
   display: block;
   height: 100%;
   background: var(--danger);
-  transition: width 80ms linear;
+  /* Nivel con `--p` (0–1) y `transform`; el `width` en línea del TSX actual sigue
+     funcionando hasta que ponga `--p`. */
+  width: 100%;
+  transform: scaleX(var(--p, 1));
+  transform-origin: left;
+  transition: transform 80ms linear, width 80ms linear;
 }
 
 .recorder__hint {
@@ -1207,8 +1217,10 @@
   opacity: 1;
 }
 
-.el__handle--se:hover {
-  transform: scale(1.2);
+@media (hover: hover) and (pointer: fine) {
+  .el__handle--se:hover {
+    transform: scale(1.2);
+  }
 }
 
 .canvas.is-file-over {

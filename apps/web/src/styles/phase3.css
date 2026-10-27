@@ -50,7 +50,7 @@
 .drop-line {
   position: absolute;
   height: 2px;
-  z-index: 41;
+  z-index: calc(var(--z-overlay) + 1);
   border-radius: 2px;
   background: var(--accent);
   box-shadow: 0 0 0 1px rgba(47, 111, 201, 0.25);
@@ -152,7 +152,6 @@
 .conn__label-input {
   width: 120px;
   border: 0;
-  outline: none;
   font: inherit;
   color: inherit;
   background: transparent;
@@ -174,7 +173,7 @@
 }
 
 .overlay--connector {
-  z-index: 22;
+  z-index: calc(var(--z-canvas-ui) + 2);
 }
 
 .conn-draft {
@@ -212,8 +211,10 @@
   pointer-events: auto;
 }
 
-.el__anchor:hover {
-  transform: scale(1.25);
+@media (hover: hover) and (pointer: fine) {
+  .el__anchor:hover {
+    transform: scale(1.25);
+  }
 }
 
 .el__anchor--left {
@@ -245,7 +246,7 @@
 }
 
 .ctxbar--connector {
-  z-index: 45;
+  z-index: calc(var(--z-overlay) + 5);
 }
 
 .ctxbar__value {
@@ -305,7 +306,6 @@
   flex: 1;
   min-width: 0;
   border: 0;
-  outline: none;
   font: inherit;
   font-weight: 600;
   font-size: 13px;
@@ -322,7 +322,7 @@
   display: flex;
   gap: 2px;
   opacity: 0;
-  transition: opacity var(--dur-fast) var(--ease);
+  transition: opacity var(--dur-fast) ease;
 }
 
 .col:hover .col__actions,
@@ -398,7 +398,6 @@
   flex: 1;
   min-width: 0;
   border: 0;
-  outline: none;
   font: inherit;
   font-weight: 600;
   background: transparent;
@@ -428,7 +427,12 @@
   display: block;
   height: 100%;
   background: var(--accent);
-  transition: width var(--dur) var(--ease);
+  /* Progreso con `--p` (0–1) y `transform`; el `width` en línea del TSX actual
+     sigue funcionando hasta que ponga `--p`. */
+  width: 100%;
+  transform: scaleX(var(--p, 1));
+  transform-origin: left;
+  transition: transform var(--dur) var(--ease-out), width var(--dur) var(--ease-out);
 }
 
 .todo__progress-label {
@@ -494,7 +498,6 @@
   flex: 1;
   min-width: 0;
   border: 0;
-  outline: none;
   font: inherit;
   font-size: 12.5px;
   color: inherit;
@@ -548,7 +551,6 @@
   font-size: 11px;
   background: var(--surface);
   color: var(--text);
-  outline: none;
 }
 
 .todo__chip {
@@ -687,7 +689,6 @@
   width: 100%;
   padding: 4px 4px 4px 14px;
   border: 0;
-  outline: none;
   font: inherit;
   font-size: 11.5px;
   font-weight: 600;
@@ -815,7 +816,7 @@ tr:hover .tbl__row-handle {
   left: auto;
   transform: none;
   min-width: 190px;
-  z-index: 30;
+  z-index: calc(var(--z-canvas-ui) + 10);
 }
 
 /* --- Documento (tarjeta y página) ---------------------------------------- */
@@ -868,7 +869,7 @@ tr:hover .tbl__row-handle {
 .doc-page {
   position: fixed;
   inset: 0;
-  z-index: 90;
+  z-index: calc(var(--z-fullscreen) + 5);
   display: grid;
   place-items: center;
   padding: 24px;
@@ -1199,7 +1200,6 @@ tr:hover .tbl__row-handle {
   flex: 1;
   min-width: 0;
   border: 0;
-  outline: none;
   font: inherit;
   font-size: 11.5px;
   color: inherit;
@@ -1278,7 +1278,6 @@ tr:hover .tbl__row-handle {
   flex: 1;
   min-width: 0;
   border: 0;
-  outline: none;
   font: inherit;
   color: inherit;
   background: transparent;
@@ -1323,7 +1322,6 @@ tr:hover .tbl__row-handle {
 .move-to__search input {
   flex: 1;
   border: 0;
-  outline: none;
   font: inherit;
   color: var(--text);
   background: transparent;
@@ -1492,7 +1490,7 @@ tr:hover .tbl__row-handle {
 /* Fantasma que sigue al puntero al arrastrar de la bandeja al lienzo. */
 .unsorted__ghost {
   position: fixed;
-  z-index: 60;
+  z-index: var(--z-popover);
   max-width: 220px;
   padding: 5px 9px;
   border-radius: var(--radius-ui);

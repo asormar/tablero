@@ -32,7 +32,7 @@
   background: var(--surface-2);
   color: var(--text-muted);
   font-size: 12.5px;
-  transition: border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+  transition: border-color var(--dur-fast) ease, color var(--dur-fast) ease;
 }
 
 .topbar__search:hover {
@@ -93,7 +93,7 @@
   background: var(--surface-2);
   color: var(--text);
   font-size: 12.5px;
-  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+  transition: background var(--dur-fast) ease, border-color var(--dur-fast) ease;
 }
 
 .button:hover:not(:disabled) {
@@ -152,6 +152,12 @@
   padding-top: 12vh;
 }
 
+/* Se abre con el teclado (Ctrl+K) decenas de veces al día: sin entrada animada. */
+.palette,
+.palette .modal__panel {
+  animation: none;
+}
+
 .palette__panel {
   width: min(620px, 100%);
   max-height: min(560px, 80vh);
@@ -180,6 +186,11 @@
   outline: none;
 }
 
+/* Sin anillo en el campo, el foco se ve en el filo inferior de la fila. */
+.palette__search:focus-within {
+  border-bottom-color: var(--accent);
+}
+
 .palette__close {
   padding: 2px 7px;
   border: 1px solid var(--border);
@@ -194,7 +205,7 @@
   border: 2px solid var(--border-strong);
   border-top-color: var(--accent);
   border-radius: 50%;
-  animation: spin 700ms linear infinite;
+  animation: spin var(--dur-spin) linear infinite;
 }
 
 .palette__filters {
@@ -352,7 +363,7 @@
   position: absolute;
   top: 12px;
   right: 12px;
-  z-index: 40;
+  z-index: var(--z-overlay);
   width: min(420px, calc(100% - 24px));
   border: 1px solid var(--border);
   border-radius: var(--radius-ui);
@@ -380,6 +391,11 @@
 
 .board-search__input:focus {
   outline: none;
+}
+
+/* Sin anillo en el campo, el foco se ve en el borde de la caja. */
+.board-search:focus-within {
+  border-color: var(--accent);
 }
 
 .board-search__count {
@@ -963,7 +979,7 @@
 .presentation {
   position: fixed;
   inset: 0;
-  z-index: 120;
+  z-index: var(--z-presentation);
   background: var(--canvas-bg);
 }
 
@@ -982,7 +998,7 @@
   color: #ffffff;
   font-size: 12px;
   opacity: 0;
-  transition: opacity var(--dur) var(--ease);
+  transition: opacity var(--dur) ease;
 }
 
 .presentation__hud {
@@ -1046,7 +1062,7 @@
 .list-view {
   position: absolute;
   inset: 0;
-  z-index: 45;
+  z-index: calc(var(--z-overlay) + 5);
   display: flex;
   flex-direction: column;
   background: var(--surface);
@@ -1154,8 +1170,9 @@
 
 /* --- Destello de la tarjeta señalada por una búsqueda ---------------------- */
 
+/* Dura 1000 ms: `FlashEffect` quita la clase pasado ese tiempo (`FLASH_MS`). */
 .el.is-flash {
-  animation: el-flash 1400ms var(--ease);
+  animation: el-flash 1000ms var(--ease-out);
 }
 
 @keyframes el-flash {
@@ -1165,7 +1182,96 @@
   }
   15%,
   60% {
-    box-shadow: 0 0 0 4px rgba(47, 111, 201, 0.55);
+    box-shadow: 0 0 0 4px color-mix(in srgb, var(--accent) 55%, transparent);
+  }
+}
+
+/* --- Puntero táctil: áreas de toque de 44 px ------------------------------- */
+
+/*
+ * El aspecto no cambia: el área de toque se amplía con un `::before` invisible
+ * (cada objetivo ocupa su tamaño visible más el margen que falta hasta 44 px),
+ * para no ensanchar la barra contextual ni las tarjetas del lienzo. Los gestos
+ * del lienzo detectan `[data-handle]` y `[data-anchor]` con `closest`, así que
+ * un toque en el pseudoelemento llega al propio elemento.
+ */
+@media (pointer: coarse) {
+  /* `.el__handle` y `.el__anchor` ya son `position: absolute`. */
+  .icon-button,
+  .zoom__button,
+  .card-tools button,
+  .card-tools__link {
+    position: relative;
+  }
+
+  .icon-button::before,
+  .zoom__button::before,
+  .card-tools button::before,
+  .card-tools__link::before,
+  .el__handle::before,
+  .el__anchor::before {
+    content: '';
+    position: absolute;
+  }
+
+  /* 28 → 44 px */
+  .icon-button::before {
+    inset: -8px;
+  }
+
+  /* 26 → 44 px */
+  .zoom__button::before {
+    inset: -9px;
+  }
+
+  /* 22 → 44 px */
+  .icon-button--small::before,
+  .card-tools button::before,
+  .card-tools__link::before {
+    inset: -11px;
+  }
+
+  /*
+   * Manijas y anclas se ensanchan hacia fuera de la tarjeta (con unos pocos
+   * píxeles hacia dentro) para que el toque cerca del borde siga siendo de la
+   * tarjeta. Las medidas parten del borde interior de cada una (las anclas
+   * tienen 2 px de borde).
+   */
+
+  /* Manijas W/E, 9 × 26 → 44 × 44 px */
+  .el__handle--w::before {
+    inset: -9px 0 -9px -35px;
+  }
+
+  .el__handle--e::before {
+    inset: -9px -35px -9px 0;
+  }
+
+  /* Manija de esquina, 12 × 12 → 44 × 44 px */
+  .el__handle--se::before {
+    inset: -6px -26px -26px -6px;
+  }
+
+  /* Anclas, 6 × 6 de área interior → 44 × 44 px */
+  .el__anchor--left::before {
+    inset: -19px 0 -19px -38px;
+  }
+
+  .el__anchor--right::before {
+    inset: -19px -38px -19px 0;
+  }
+
+  .el__anchor--top::before {
+    inset: -38px -19px 0;
+  }
+
+  .el__anchor--bottom::before {
+    inset: 0 -19px -38px;
+  }
+
+  .toolbar__tool {
+    min-width: 44px;
+    min-height: 44px;
   }
 }
 
@@ -1287,20 +1393,86 @@
     width: auto;
   }
 
+  /* Cubre la barra superior y la de herramientas, pero queda por debajo de los
+     menús y popovers (antes empataba con ellos en 60). */
   .list-view {
     position: fixed;
-    z-index: 60;
+    z-index: calc(var(--z-panel) + 5);
   }
 }
 
+/*
+ * Movimiento reducido (global, la única hoja que lo trata): se conservan los
+ * fundidos de opacidad (hasta 120 ms) y se quita todo desplazamiento y escala
+ * de las animaciones; los giros se ralentizan y el desplazamiento suave se apaga.
+ * Las curvas de cada animación se heredan de la regla original.
+ */
 @media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+
+  @keyframes card-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes panel-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes panel-out {
+    to {
+      opacity: 0;
+    }
+  }
+
+  @keyframes auth-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes pop-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  .el.is-new .el__content,
+  .panel,
+  .panel.is-leaving,
+  .auth__card,
+  .ctxbar,
+  .ctxbar.is-leaving,
+  .boot__card {
+    animation-duration: 120ms;
+  }
+
   .palette__spinner,
+  .boot__spinner,
   .spin {
     animation-duration: 2000ms;
   }
 
+  /* El destello pasa a un anillo fijo (sin pulso), con el mismo acento. */
   .el.is-flash {
     animation: none;
-    box-shadow: 0 0 0 3px rgba(47, 111, 201, 0.55);
+    box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 55%, transparent);
   }
 }

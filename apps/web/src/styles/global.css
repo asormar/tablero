@@ -48,7 +48,34 @@
   --dur-fast: 120ms;
   --dur: 160ms;
   --dur-slow: 200ms;
-  --ease: cubic-bezier(0.2, 0.7, 0.3, 1);
+  --dur-spin: 800ms;
+  /* Curvas: entradas y salidas con `--ease-out`, movimiento en pantalla con
+     `--ease-in-out`, cajones laterales con `--ease-drawer`. Los cambios de color
+     y de fondo por hover usan el `ease` de CSS tal cual. `--ease` queda como
+     alias de `--ease-out` para lo que aún no se ha migrado. */
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease: var(--ease-out);
+
+  /* Escala de apilado. Dentro de cada nivel se suma un desplazamiento pequeño
+     (`calc(var(--z-…) + 1)`) cuando el orden relativo importa. */
+  --z-canvas-ui: 20; /* guías, marquesina, zoom, cursores remotos */
+  --z-overlay: 40; /* barra contextual, buscador del tablero, vista de lista */
+  --z-panel: 50;
+  --z-popover: 60; /* menús, popovers, comentarios */
+  --z-fullscreen: 70; /* visor, recortador, página de documento */
+  --z-modal: 80;
+  --z-toast: 100;
+  --z-presentation: 120;
+
+  /* Comentarios: ámbar propio con variante oscura. `--comment` es el borde (3:1
+     sobre el lienzo), `--comment-ink` el texto sobre `--comment-soft` y
+     `--comment-text` el ámbar como texto sobre las superficies (AA). */
+  --comment: #cc7119;
+  --comment-soft: #fdebd8;
+  --comment-ink: #3b2712;
+  --comment-text: #a4510a;
 
   --topbar-h: 52px;
   --toolbar-w: 76px;
@@ -77,6 +104,10 @@
     --sync-ok: #7cc46a;
     --sync-warn: #e0a05a;
     --danger: #f08c8c;
+    --comment: #e39a4f;
+    --comment-soft: #3d2a14;
+    --comment-ink: #f6dcbb;
+    --comment-text: #f0a867;
     --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.4);
     --shadow-card-hover: 0 2px 8px rgba(0, 0, 0, 0.5);
     --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.55);
@@ -110,6 +141,10 @@
   --sync-ok: #7cc46a;
   --sync-warn: #e0a05a;
   --danger: #f08c8c;
+  --comment: #e39a4f;
+  --comment-soft: #3d2a14;
+  --comment-ink: #f6dcbb;
+  --comment-text: #f0a867;
   --shadow-card: 0 1px 3px rgba(0, 0, 0, 0.4);
   --shadow-card-hover: 0 2px 8px rgba(0, 0, 0, 0.5);
   --shadow-pop: 0 12px 32px rgba(0, 0, 0, 0.55);
@@ -166,10 +201,13 @@ kbd {
 /*
  * Foco visible (fase 6, accesibilidad): un anillo consistente para todo lo que
  * recibe el foco con el teclado. `:focus-visible` no se activa con el ratón, así
- * que el clic no lo muestra y `Tab` siempre sí. Los campos de texto no lo
- * necesitan: cambian borde y sombra en `:focus` (ver `.field__input:focus` y
- * compañía).
+ * que el clic no lo muestra y `Tab` siempre sí. Los campos de texto con borde o
+ * sombra propios en `:focus` (ver `.field__input:focus` y compañía), o cuyo
+ * contenedor marca el foco con `:focus-within`, apagan el anillo con
+ * `outline: none`; el resto de campos en línea de las tarjetas conserva el
+ * anillo de esta regla.
  */
+:focus-visible,
 button:focus-visible,
 a[href]:focus-visible,
 summary:focus-visible,
@@ -204,7 +242,7 @@ summary:focus-visible,
 }
 
 .spin {
-  animation: spin 900ms linear infinite;
+  animation: spin var(--dur-spin) linear infinite;
 }
 
 @keyframes spin {
@@ -231,7 +269,7 @@ summary:focus-visible,
   border: 1px solid var(--border);
   border-radius: var(--radius-ui);
   box-shadow: var(--shadow-card);
-  animation: fade-in var(--dur-slow) var(--ease);
+  animation: fade-in var(--dur-slow) var(--ease-out);
 }
 
 .boot__spinner {
@@ -240,7 +278,7 @@ summary:focus-visible,
   border: 2px solid var(--border-strong);
   border-top-color: var(--accent);
   border-radius: 50%;
-  animation: spin 700ms linear infinite;
+  animation: spin var(--dur-spin) linear infinite;
 }
 
 .boot__text {
@@ -329,7 +367,7 @@ summary:focus-visible,
   border: 1px solid transparent;
   border-radius: var(--radius-ui);
   outline: none;
-  transition: background var(--dur-fast) var(--ease), border-color var(--dur-fast) var(--ease);
+  transition: background var(--dur-fast) ease, border-color var(--dur-fast) ease;
 }
 
 .topbar__title:hover {
@@ -396,7 +434,7 @@ summary:focus-visible,
   border-radius: var(--radius-ui);
   color: var(--text-muted);
   white-space: nowrap;
-  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+  transition: background var(--dur-fast) ease, color var(--dur-fast) ease;
 }
 
 .crumbs__link:hover {
@@ -436,7 +474,7 @@ summary:focus-visible,
   height: 28px;
   border-radius: var(--radius-ui);
   color: var(--text-muted);
-  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+  transition: background var(--dur-fast) ease, color var(--dur-fast) ease;
 }
 
 .icon-button:hover:not(:disabled) {
@@ -465,7 +503,7 @@ summary:focus-visible,
   position: absolute;
   right: 16px;
   bottom: 16px;
-  z-index: 30;
+  z-index: calc(var(--z-canvas-ui) + 10);
   display: flex;
   align-items: center;
   gap: 2px;
@@ -484,7 +522,7 @@ summary:focus-visible,
   height: 26px;
   border-radius: 4px;
   color: var(--text-muted);
-  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+  transition: background var(--dur-fast) ease, color var(--dur-fast) ease;
 }
 
 .zoom__button:hover {
@@ -524,7 +562,7 @@ summary:focus-visible,
   border-radius: 999px;
   color: var(--text-muted);
   background: var(--surface-3);
-  transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+  transition: background var(--dur) ease, color var(--dur) ease;
 }
 
 .sync.is-saved {
@@ -586,7 +624,7 @@ summary:focus-visible,
   padding: 8px 2px;
   border-radius: var(--radius-ui);
   color: var(--text-muted);
-  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+  transition: background var(--dur-fast) ease, color var(--dur-fast) ease;
 }
 
 .toolbar__tool:hover:not(:disabled) {
@@ -697,6 +735,18 @@ summary:focus-visible,
   top: 0;
   left: 0;
   transform-origin: 0 0;
+}
+
+/*
+ * La capa del mundo solo se promociona mientras la cámara se mueve: en reposo,
+ * un `will-change` permanente deja el texto rasterizado a la escala anterior y
+ * mantiene una capa enorme en memoria. `data-interaction` es el marcador de
+ * movimiento de cámara (pan o animación) y `.is-panning` lo cubre el arrastre
+ * actual de la mano; el `translate3d` del transform en línea ya la compone.
+ */
+.canvas__world[data-interaction],
+[data-interaction] .canvas__world,
+.canvas.is-panning .canvas__world {
   will-change: transform;
 }
 
@@ -709,7 +759,7 @@ summary:focus-visible,
   border-radius: var(--radius-card);
   background: var(--surface);
   box-shadow: var(--shadow-card);
-  transition: box-shadow var(--dur-fast) var(--ease);
+  transition: box-shadow var(--dur-fast) ease;
 }
 
 .el.is-dragging {
@@ -736,7 +786,7 @@ summary:focus-visible,
 }
 
 .el.is-new .el__content {
-  animation: card-in var(--dur) var(--ease);
+  animation: card-in var(--dur) var(--ease-out);
 }
 
 @keyframes card-in {
@@ -760,15 +810,17 @@ summary:focus-visible,
   background: var(--accent);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
   opacity: 0;
-  transition: opacity var(--dur-fast) var(--ease), transform var(--dur-fast) var(--ease);
+  transition: opacity var(--dur-fast) ease, transform var(--dur-fast) ease;
 }
 
 .el.is-selected .el__handle {
   opacity: 1;
 }
 
-.el__handle:hover {
-  transform: translateY(-50%) scaleX(1.35);
+@media (hover: hover) and (pointer: fine) {
+  .el__handle:hover {
+    transform: translateY(-50%) scaleX(1.35);
+  }
 }
 
 .el__handle--w {
@@ -1027,7 +1079,7 @@ summary:focus-visible,
   width: 100%;
   height: 100%;
   overflow: visible;
-  z-index: 20;
+  z-index: var(--z-canvas-ui);
 }
 
 .guide {
@@ -1041,7 +1093,7 @@ summary:focus-visible,
 }
 
 .overlay--marquee {
-  z-index: 21;
+  z-index: calc(var(--z-canvas-ui) + 1);
   border: 1px solid var(--accent);
   background: rgba(47, 111, 201, 0.1);
   border-radius: 2px;
@@ -1051,7 +1103,7 @@ summary:focus-visible,
 
 .ctxbar {
   position: absolute;
-  z-index: 40;
+  z-index: var(--z-overlay);
   display: flex;
   align-items: center;
   gap: 2px;
@@ -1060,16 +1112,53 @@ summary:focus-visible,
   border: 1px solid var(--border);
   border-radius: var(--radius-ui);
   box-shadow: var(--shadow-pop);
-  animation: pop-in var(--dur-fast) var(--ease);
+  /* La entrada escala desde el lado que toca la selección. */
+  transform-origin: bottom center;
+  animation: pop-in 150ms var(--ease-out);
 }
 
+.ctxbar[data-placement='below'] {
+  transform-origin: top center;
+}
+
+/*
+ * La barra de conectores (`ConnectorBar`) coloca la barra con un `transform`
+ * en línea, anterior a `scale`: el origen que cuadra con el ancla es la
+ * esquina superior izquierda de la caja sin desplazar, que es donde caen
+ * `left` y `top`.
+ */
+.ctxbar--connector {
+  transform-origin: 0 0;
+}
+
+/*
+ * Solo `opacity` y la propiedad individual `scale`: así componen con el
+ * desplazamiento de la barra (`translate` o `transform` en línea) en vez de
+ * pisarlo.
+ */
 @keyframes pop-in {
   from {
     opacity: 0;
-    transform: translate(-50%, -100%) scale(0.96);
+    scale: 0.96;
   }
   to {
     opacity: 1;
+    scale: 1;
+  }
+}
+
+/* Salida corta al quedarse sin selección (la monta `ContextBar`). */
+.ctxbar.is-leaving {
+  pointer-events: none;
+  animation: fade-out 120ms var(--ease-out) forwards;
+}
+
+@keyframes fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
   }
 }
 
@@ -1096,7 +1185,7 @@ summary:focus-visible,
   border: 1px solid var(--border);
   border-radius: var(--radius-ui);
   box-shadow: var(--shadow-pop);
-  z-index: 50;
+  z-index: var(--z-panel);
 }
 
 .popover--align {
@@ -1121,11 +1210,13 @@ summary:focus-visible,
   height: 18px;
   border-radius: 50%;
   border: 1px solid var(--border);
-  transition: transform var(--dur-fast) var(--ease);
+  transition: transform var(--dur-fast) ease;
 }
 
-.colors__swatch:hover {
-  transform: scale(1.14);
+@media (hover: hover) and (pointer: fine) {
+  .colors__swatch:hover {
+    transform: scale(1.14);
+  }
 }
 
 .colors__swatch.is-none {
@@ -1147,25 +1238,14 @@ summary:focus-visible,
 
 .menu {
   position: fixed;
-  z-index: 60;
+  z-index: var(--z-popover);
   min-width: 232px;
   padding: 5px;
   background: var(--surface);
   border: 1px solid var(--border);
   border-radius: var(--radius-ui);
   box-shadow: var(--shadow-pop);
-  animation: menu-in var(--dur-fast) var(--ease);
-}
-
-@keyframes menu-in {
-  from {
-    opacity: 0;
-    transform: translateY(-3px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
+  /* Sin animación de entrada: el menú contextual se abre decenas de veces al día. */
 }
 
 .menu__item {
@@ -1177,7 +1257,7 @@ summary:focus-visible,
   border-radius: 4px;
   color: var(--text);
   text-align: left;
-  transition: background var(--dur-fast) var(--ease);
+  transition: background var(--dur-fast) ease;
 }
 
 .menu__item span:first-of-type {
@@ -1217,7 +1297,7 @@ summary:focus-visible,
   font-size: 12.5px;
   font-weight: 700;
   line-height: 1;
-  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+  transition: background var(--dur-fast) ease, color var(--dur-fast) ease;
 }
 
 .topbar__user-button:hover,
@@ -1303,7 +1383,7 @@ summary:focus-visible,
   flex: 0 0 var(--panel-w);
   background: var(--surface);
   border-left: 1px solid var(--border);
-  animation: panel-in var(--dur-slow) var(--ease);
+  animation: panel-in 240ms var(--ease-drawer);
 }
 
 @keyframes panel-in {
@@ -1314,6 +1394,23 @@ summary:focus-visible,
   to {
     opacity: 1;
     transform: none;
+  }
+}
+
+/* Salida: `SidePanel` mantiene el panel montado hasta que acaba. */
+.panel.is-leaving {
+  pointer-events: none;
+  animation: panel-out 150ms var(--ease-out) forwards;
+}
+
+@keyframes panel-out {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translateX(8px);
   }
 }
 
@@ -1472,7 +1569,7 @@ summary:focus-visible,
   position: absolute;
   left: 12px;
   bottom: 12px;
-  z-index: 30;
+  z-index: calc(var(--z-canvas-ui) + 10);
   display: flex;
   align-items: center;
   gap: 5px;
@@ -1577,7 +1674,7 @@ summary:focus-visible,
   border: 1px solid var(--border);
   border-radius: var(--radius-ui);
   box-shadow: var(--shadow-pop);
-  animation: auth-in var(--dur-slow) var(--ease);
+  animation: auth-in var(--dur-slow) var(--ease-out);
 }
 
 @keyframes auth-in {
@@ -1631,7 +1728,7 @@ summary:focus-visible,
   border-radius: 4px;
   font-size: 13px;
   color: var(--text-muted);
-  transition: background var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+  transition: background var(--dur-fast) ease, color var(--dur-fast) ease;
 }
 
 .auth__tab.is-active {
@@ -1666,7 +1763,7 @@ summary:focus-visible,
   background: var(--surface-2);
   border: 1px solid var(--border-strong);
   border-radius: var(--radius-card);
-  transition: border-color var(--dur-fast) var(--ease), box-shadow var(--dur-fast) var(--ease);
+  transition: border-color var(--dur-fast) ease, box-shadow var(--dur-fast) ease;
 }
 
 .auth__input:focus {
@@ -1693,7 +1790,7 @@ summary:focus-visible,
   color: var(--accent-ink);
   background: var(--accent);
   border-radius: var(--radius-card);
-  transition: filter var(--dur-fast) var(--ease);
+  transition: filter var(--dur-fast) ease;
 }
 
 .auth__submit:hover:not(:disabled) {

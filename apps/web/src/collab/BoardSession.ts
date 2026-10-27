@@ -162,7 +162,7 @@ export function hasLocalOnlyContent(doc: Y.Doc, remoteState: Uint8Array): boolea
 }
 
 
-const POSITIONAL_KEYS = new Set(['x', 'y', 'width', 'height', 'parentId']);
+const POSITIONAL_KEYS = new Set(['x', 'y', 'width', 'height', 'parentId', 'type', 'locked']);
 
 type CacheEntry<T> = { version: number; value: T };
 
@@ -1165,7 +1165,12 @@ export class BoardSession {
         }
         continue;
       }
-      // Cambios en tipos anidados (por ejemplo dentro de una columna).
+      // Edición del texto enriquecido (`Y.XmlFragment` en `text`): no cambia el
+      // layout y el observador del fragmento ya avisa al elemento, así que aquí
+      // no se hace nada (evita invalidar todo el layout y avisar dos veces por
+      // cada pulsación).
+      if (event.path.length > 1 && event.path[1] === 'text') continue;
+      // Otros tipos anidados (por ejemplo `childrenIds` de una columna).
       if (event.path.length > 0) touched.add(String(event.path[0]));
       layoutChanged = true;
     }

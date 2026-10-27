@@ -6,7 +6,7 @@
  */
 
 import { type CanvasElement, type ElementType, type HeadingSize, elementLabel } from '@tablero/shared';
-import { Suspense, lazy } from 'react';
+import { Suspense, lazy, memo } from 'react';
 
 import { Star } from 'lucide-react';
 
@@ -56,7 +56,7 @@ export type ElementContentProps = {
   simplified: boolean;
 };
 
-export function ElementContent({ session, element, editing, simplified }: ElementContentProps) {
+function ElementContentBase({ session, element, editing, simplified }: ElementContentProps) {
   switch (element.type) {
     case 'note':
       return (
@@ -109,6 +109,13 @@ export function ElementContent({ session, element, editing, simplified }: Elemen
       return <GenericCard type={element.type} />;
   }
 }
+
+/**
+ * Memoizado: `element` viene cacheado por versión en la sesión y el resto son
+ * booleanos, así que la tarjeta solo repinta su contenido cuando cambia algo
+ * suyo (no por un re-render del contenedor).
+ */
+export const ElementContent = memo(ElementContentBase);
 
 function TextView({
   session,

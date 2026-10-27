@@ -7,7 +7,7 @@
  * el arrastre se pueda resolver escribiendo directamente en el DOM.
  */
 
-import { memo, useLayoutEffect, useRef, useState } from 'react';
+import { memo, useLayoutEffect, useRef } from 'react';
 import type { CSSProperties } from 'react';
 
 import { Lock } from 'lucide-react';
@@ -50,7 +50,11 @@ export type CanvasElementViewProps = {
   showHandles: boolean;
 };
 
-/** Puntos de anclaje para crear conectores (aparecen al pasar el ratón). */
+/**
+ * Puntos de anclaje para crear conectores. Siempre están en el DOM y su
+ * visibilidad la resuelve CSS (`:hover`, `:focus-within` y tarjeta seleccionada):
+ * así pasar el ratón por encima no re-renderiza la tarjeta.
+ */
 const ANCHOR_SIDES = ['left', 'right', 'top', 'bottom'] as const;
 
 function CanvasElementViewBase(props: CanvasElementViewProps): JSX.Element | null {
@@ -62,7 +66,6 @@ function CanvasElementViewBase(props: CanvasElementViewProps): JSX.Element | nul
   const permission = useSessionPermission();
   const readOnly = !canCapability(permission.role, 'edit');
   const ref = useRef<HTMLDivElement | null>(null);
-  const [hovered, setHovered] = useState(false);
 
   useLayoutEffect(() => {
     const node = ref.current;
@@ -153,8 +156,6 @@ function CanvasElementViewBase(props: CanvasElementViewProps): JSX.Element | nul
       tabIndex={0}
       onFocus={focusCard}
       onKeyDown={onCardKeyDown}
-      onPointerEnter={() => setHovered(true)}
-      onPointerLeave={() => setHovered(false)}
     >
       <div className="el__content">
         <ElementContent
@@ -170,7 +171,7 @@ function CanvasElementViewBase(props: CanvasElementViewProps): JSX.Element | nul
           <Lock size={12} />
         </span>
       ) : null}
-      {!readOnly && !props.simplified && !element.locked && (hovered || props.selected) ? (
+      {!readOnly && !props.simplified && !element.locked ? (
         <>
           {ANCHOR_SIDES.map((side) => (
             <span

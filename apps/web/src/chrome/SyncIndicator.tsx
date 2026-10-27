@@ -26,7 +26,7 @@ function describe(state: SyncState, apiOnline: boolean): Descriptor {
         label: 'Sin conexión',
         title: apiOnline
           ? 'Sin conexión con el servidor de colaboración: los cambios se guardan en este navegador'
-          : 'El servidor no responde: seguís trabajando en local y se guarda en este navegador',
+          : 'El servidor no responde: sigues trabajando en local y se guarda en este navegador',
         icon: <CloudOff size={14} />,
         tone: 'is-offline',
       };

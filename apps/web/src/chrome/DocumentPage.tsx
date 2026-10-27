@@ -19,6 +19,7 @@ import type { BoardSession } from '@/collab/BoardSession';
 import { useSessionElement, useSessionText } from '@/collab/SessionContext';
 import { outlineOf, wordCountOf } from '@/lib/docOutline';
 import { pickFiles } from '@/lib/filePicker';
+import { toast } from '@/lib/toast';
 import { useAppStore } from '@/state/appStore';
 import { useUiStore } from '@/state/uiStore';
 
@@ -68,7 +69,7 @@ function DocumentPageInner({ session, documentId }: { session: BoardSession; doc
       });
       editor.chain().focus().setImage({ src: assetApiPath(asset.url), alt: file.name }).run();
     } catch {
-      useAppStore.getState().setNotice('No se pudo subir la imagen del documento.');
+      toast.error('No se pudo subir la imagen del documento.');
     }
   };
 
@@ -137,7 +138,7 @@ function DocumentPageInner({ session, documentId }: { session: BoardSession; doc
             <h2 className="doc-page__outline-title">Índice</h2>
             {outline.length === 0 ? (
               <p className="doc-page__outline-empty">
-                Los encabezados del documento aparecen acá para saltar entre secciones.
+                Los encabezados del documento aparecen aquí para saltar entre secciones.
               </p>
             ) : (
               <ol className="doc-page__outline-list">

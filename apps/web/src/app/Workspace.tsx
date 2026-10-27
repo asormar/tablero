@@ -13,16 +13,13 @@ import { X } from 'lucide-react';
 import { fitToScreen, focusElementInView } from '@/canvas/commands';
 import { Canvas } from '@/canvas/Canvas';
 import { FlashEffect } from '@/canvas/FlashEffect';
-import { BoardsHome } from '@/chrome/BoardsHome';
 import { ConnectorBar } from '@/chrome/ConnectorBar';
 import { ContextBar } from '@/chrome/ContextBar';
 import { ContextMenu } from '@/chrome/ContextMenu';
-import { DocumentPage } from '@/chrome/DocumentPage';
 import { MoveToDialog } from '@/chrome/MoveToDialog';
 import { PerfOverlay } from '@/chrome/PerfOverlay';
 import { ShortcutsModal } from '@/chrome/ShortcutsModal';
 import { SidePanel } from '@/chrome/SidePanel';
-import { TasksPage } from '@/chrome/TasksPage';
 import { Toolbar } from '@/chrome/Toolbar';
 import { TopBar } from '@/chrome/TopBar';
 import { ZoomControl } from '@/chrome/ZoomControl';
@@ -110,6 +107,52 @@ const LazyListView = lazy(async () => {
   const module = await import('@/mobile/ListView');
   return { default: module.ListView };
 });
+
+// Inicio de tableros, tareas y documento a pantalla completa: se descargan al
+// abrirlos por primera vez. Cada ranura monta su pieza solo con la superficie
+// abierta, que es lo que dispara la descarga del chunk.
+const LazyBoardsHome = lazy(async () => {
+  const module = await import('@/chrome/BoardsHome');
+  return { default: module.BoardsHome };
+});
+const LazyTasksPage = lazy(async () => {
+  const module = await import('@/chrome/TasksPage');
+  return { default: module.TasksPage };
+});
+const LazyDocumentPage = lazy(async () => {
+  const module = await import('@/chrome/DocumentPage');
+  return { default: module.DocumentPage };
+});
+
+function BoardsHomeSlot({ onOpenBoard }: { onOpenBoard(boardId: string): void }): JSX.Element | null {
+  const open = useUiStore((state) => state.homeOpen);
+  if (!open) return null;
+  return (
+    <Suspense fallback={null}>
+      <LazyBoardsHome onOpenBoard={onOpenBoard} />
+    </Suspense>
+  );
+}
+
+function TasksPageSlot({ onOpenBoard }: { onOpenBoard(boardId: string): void }): JSX.Element | null {
+  const open = useUiStore((state) => state.tasksOpen);
+  if (!open) return null;
+  return (
+    <Suspense fallback={null}>
+      <LazyTasksPage onOpenBoard={onOpenBoard} />
+    </Suspense>
+  );
+}
+
+function DocumentPageSlot({ session }: { session: BoardSession }): JSX.Element | null {
+  const open = useUiStore((state) => Boolean(state.documentId));
+  if (!open) return null;
+  return (
+    <Suspense fallback={null}>
+      <LazyDocumentPage session={session} />
+    </Suspense>
+  );
+}
 
 // Superficies de la fase 5 (colaboración): compartir, publicar, notificaciones,
 // actividad y el globo de comentarios.
@@ -322,10 +365,10 @@ function WorkspaceShell({
       </main>
       <ContextMenu session={session} />
       <ShortcutsModal />
-      <DocumentPage session={session} />
+      <DocumentPageSlot session={session} />
       <MoveToDialog session={session} />
-      <BoardsHome onOpenBoard={onOpenBoard} />
-      <TasksPage onOpenBoard={onOpenBoard} />
+      <BoardsHomeSlot onOpenBoard={onOpenBoard} />
+      <TasksPageSlot onOpenBoard={onOpenBoard} />
       {viewerId ? (
         <Suspense fallback={null}>
           <LazyImageViewer session={session} />

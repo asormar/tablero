@@ -18,6 +18,7 @@ import {
   arrowPaths,
   createRectResolver,
   geometryOf,
+  hasColumnChildEndpoints,
   registerConnectorNodes,
   releaseConnectorNodes,
   type ResolvedConnector,
@@ -185,6 +186,7 @@ function ConnectorHandle({ session, item }: ConnectorHandleProps): JSX.Element {
   }, [connector.id]);
 
   const paint = (tension: number): void => {
+    // Gesto en vivo: rectángulos del DOM (modo por defecto).
     const resolve = createRectResolver(session.getLayout(), useUiStore.getState().measuredHeights);
     const next = geometryOf({ ...connector, style: { ...connector.style, tension } }, resolve);
     applyGeometry(connector.id, next, { x: next.labelPoint.x, y: next.labelPoint.y });
@@ -259,28 +261,38 @@ export const ConnectorLayer = memo(function ConnectorLayer({ session }: { sessio
   const connectors = useSessionConnectors();
   const layout = useSessionLayout();
   const measured = useUiStore((state) => state.measuredHeights);
-  const viewport = useUiStore((state) => state.viewport);
-  const canvasSize = useUiStore((state) => state.canvasSize);
   const selectedIds = useUiStore((state) => state.selectedConnectorIds);
   // El tirador de curvatura sigue al conector «principal» (el último elegido).
   const selectedId = useUiStore((state) => state.selectedConnectorId);
   const [editingLabelId, setEditingLabelId] = useState<string | null>(null);
-  const simplified = viewport.scale < SIMPLIFIED_SCALE;
+  // Solo importa de qué lado del umbral está el zoom: suscribirse al booleano
+  // evita re-renderizar la capa en cada frame de paneo o de zoom.
+  const simplified = useUiStore((state) => state.viewport.scale < SIMPLIFIED_SCALE);
   const selected = useMemo(() => new Set(selectedIds), [selectedIds]);
+
+  // Los extremos en hijos de columna salen del DOM (el flujo de la columna los
+  // ubica), así que solo en ese caso la geometría depende del viewport.
+  const domBacked = useMemo(
+    () => hasColumnChildEndpoints(session, connectors, layout),
+    [session, connectors, layout],
+  );
+  const viewport = useUiStore((state) => (domBacked ? state.viewport : null));
 
   const resolved = useMemo<ResolvedConnector[]>(() => {
     if (connectors.length === 0) return [];
-    const resolve = createRectResolver(layout, measured);
+    const resolve = createRectResolver(layout, measured, { live: false });
     return connectors.map((connector) => ({ connector, geometry: geometryOf(connector, resolve) }));
-    // El rectángulo del DOM cambia con el zoom, con el layout y con las alturas.
-  }, [connectors, layout, measured, viewport.x, viewport.y, viewport.scale]);
+    // Coordenadas de mundo: solo cambian con el layout, las alturas medidas o los
+    // conectores. El viewport entra únicamente si hay extremos leídos del DOM.
+  }, [connectors, layout, measured, viewport]);
 
-  // Caja del SVG: cubre lo visible más lo que ocupan los conectores (sin recortes).
+  // Caja del SVG: la unión de lo que ocupan los conectores, en coordenadas de
+  // mundo (la capa vive dentro del mundo transformado), sin depender del viewport.
   const box = useMemo(() => {
-    let minX = viewport.x;
-    let minY = viewport.y;
-    let maxX = viewport.x + canvasSize.width / viewport.scale;
-    let maxY = viewport.y + canvasSize.height / viewport.scale;
+    let minX = Infinity;
+    let minY = Infinity;
+    let maxX = -Infinity;
+    let maxY = -Infinity;
     for (const item of resolved) {
       const points = [item.geometry.start, item.geometry.end, item.geometry.labelPoint];
       for (const point of points) {
@@ -297,7 +309,7 @@ export const ConnectorLayer = memo(function ConnectorLayer({ session }: { sessio
       width: Math.ceil(maxX - minX + pad * 2),
       height: Math.ceil(maxY - minY + pad * 2),
     };
-  }, [resolved, viewport.x, viewport.y, viewport.scale, canvasSize.width, canvasSize.height]);
+  }, [resolved]);
 
   if (resolved.length === 0) return null;
 

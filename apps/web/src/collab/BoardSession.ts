@@ -111,10 +111,19 @@ export const DEFAULT_COLLAB_URL = 'ws://localhost:8787/collab';
  * `VITE_COLLAB_URL` (mismo criterio que `VITE_API_BASE_URL` en `api/client.ts`):
  * sirve para probar el rechazo por permisos contra un servidor que cierre con
  * código propio sin tocar el código.
+ *
+ * Sin variable, en el navegador se usa el mismo origen que sirve la página
+ * (`/collab`): detrás del proxy de producción y en desarrollo (Vite lo reenvía
+ * con `ws: true`) llega al servidor de colaboración. `DEFAULT_COLLAB_URL` queda
+ * solo para entornos sin `window` ni `location`.
  */
 export function resolveCollabUrl(): string {
   const configured = import.meta.env.VITE_COLLAB_URL as string | undefined;
   if (configured && configured.length > 0) return configured;
+  const location = typeof window === 'undefined' ? undefined : window.location;
+  if (location?.host) {
+    return `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/collab`;
+  }
   return DEFAULT_COLLAB_URL;
 }
 
@@ -153,7 +162,7 @@ export function hasLocalOnlyContent(doc: Y.Doc, remoteState: Uint8Array): boolea
 }
 
 
-const POSITIONAL_KEYS = new Set(['x', 'y', 'width', 'height', 'parentId']);
+const POSITIONAL_KEYS = new Set(['x', 'y', 'width', 'height', 'parentId', 'type', 'locked']);
 
 type CacheEntry<T> = { version: number; value: T };
 
@@ -1156,7 +1165,12 @@ export class BoardSession {
         }
         continue;
       }
-      // Cambios en tipos anidados (por ejemplo dentro de una columna).
+      // Edición del texto enriquecido (`Y.XmlFragment` en `text`): no cambia el
+      // layout y el observador del fragmento ya avisa al elemento, así que aquí
+      // no se hace nada (evita invalidar todo el layout y avisar dos veces por
+      // cada pulsación).
+      if (event.path.length > 1 && event.path[1] === 'text') continue;
+      // Otros tipos anidados (por ejemplo `childrenIds` de una columna).
       if (event.path.length > 0) touched.add(String(event.path[0]));
       layoutChanged = true;
     }

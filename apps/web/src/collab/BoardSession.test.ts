@@ -6,7 +6,7 @@
  * que funcionar aunque la API no esté.
  */
 
-import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import * as Y from 'yjs';
 
@@ -14,7 +14,7 @@ import { addElement, getOrderedElements, localOrigin, moveElements, patchElement
 
 import { writePlainText } from '@/lib/xmlFragment';
 
-import { BoardSession } from './BoardSession';
+import { BoardSession, DEFAULT_COLLAB_URL, resolveCollabUrl } from './BoardSession';
 import { bytesToBase64, loadLocalDocument, saveLocalDocument } from './localPersistence';
 
 beforeAll(() => {
@@ -121,6 +121,123 @@ describe('BoardSession · suscripciones', () => {
     expect(session.getTextBlocks(id)).toBe(session.getTextBlocks(id));
     off();
     session.destroy();
+  });
+});
+
+describe('BoardSession · edición de texto y layout', () => {
+  it('escribir en una nota no invalida el layout y avisa una sola vez al elemento', () => {
+    const session = makeSession();
+    const id = addElement(session.doc, 'note', { x: 0, y: 0, createdBy: 'test' }, localOrigin);
+    const fragment = session.ensureTextFragment(id);
+    if (!fragment) throw new Error('sin fragmento');
+
+    const layoutListener = vi.fn();
+    const elementListener = vi.fn();
+    const offLayout = session.subscribeLayout(layoutListener);
+    const offElement = session.subscribeElement(id, elementListener);
+    const layoutBefore = session.getLayout();
+    const allBefore = session.getAllElements();
+
+    // Una sola transacción, como una pulsación real.
+    writePlainText(fragment, 'hola', localOrigin);
+
+    expect(layoutListener).not.toHaveBeenCalled();
+    expect(session.getLayout()).toBe(layoutBefore);
+    expect(elementListener).toHaveBeenCalledTimes(1);
+    // El contenido sí cambió: las vistas derivadas (búsqueda, lista) se rehacen.
+    expect(session.getAllElements()).not.toBe(allBefore);
+
+    offLayout();
+    offElement();
+    session.destroy();
+  });
+
+  it('mover la misma nota sí invalida el layout', () => {
+    const session = makeSession();
+    const id = addElement(session.doc, 'note', { x: 0, y: 0, createdBy: 'test' }, localOrigin);
+    const fragment = session.ensureTextFragment(id);
+    if (!fragment) throw new Error('sin fragmento');
+    writePlainText(fragment, 'hola');
+
+    const layoutListener = vi.fn();
+    const off = session.subscribeLayout(layoutListener);
+    const layoutBefore = session.getLayout();
+
+    moveElements(session.doc, [{ id, x: 40, y: 24 }], localOrigin);
+
+    expect(layoutListener).toHaveBeenCalledTimes(1);
+    expect(session.getLayout()).not.toBe(layoutBefore);
+    expect(session.getLayout()[0]).toMatchObject({ id, x: 40, y: 24 });
+    off();
+    session.destroy();
+  });
+
+  it('cambiar los hijos de una columna sí invalida el layout', () => {
+    const session = makeSession();
+    const column = addElement(session.doc, 'column', { x: 0, y: 0, createdBy: 'test' }, localOrigin);
+    const child = addElement(session.doc, 'note', { x: 0, y: 0, createdBy: 'test' }, localOrigin);
+
+    const layoutListener = vi.fn();
+    const off = session.subscribeLayout(layoutListener);
+    const layoutBefore = session.getLayout();
+
+    const children = session.doc.getMap<Y.Map<unknown>>('elements').get(column)?.get('childrenIds');
+    if (!(children instanceof Y.Array)) throw new Error('la columna no tiene childrenIds');
+    session.doc.transact(() => {
+      children.push([child]);
+      session.doc.getMap<Y.Map<unknown>>('elements').get(child)?.set('parentId', column);
+    }, localOrigin);
+
+    expect(layoutListener).toHaveBeenCalled();
+    expect(session.getLayout()).not.toBe(layoutBefore);
+    off();
+    session.destroy();
+  });
+});
+
+describe('resolveCollabUrl', () => {
+  const globals = globalThis as unknown as { window?: Record<string, unknown> };
+
+  function withLocation(location: { protocol: string; host: string } | undefined, run: () => void): void {
+    const previous = globals.window;
+    globals.window = { ...previous, location };
+    try {
+      run();
+    } finally {
+      globals.window = previous;
+    }
+  }
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('usa VITE_COLLAB_URL cuando está definida', () => {
+    vi.stubEnv('VITE_COLLAB_URL', 'wss://otro.example/collab');
+    withLocation({ protocol: 'https:', host: 'tablero.example' }, () => {
+      expect(resolveCollabUrl()).toBe('wss://otro.example/collab');
+    });
+  });
+
+  it('deriva wss del origen cuando la página va por https', () => {
+    vi.stubEnv('VITE_COLLAB_URL', '');
+    withLocation({ protocol: 'https:', host: 'tablero.example' }, () => {
+      expect(resolveCollabUrl()).toBe('wss://tablero.example/collab');
+    });
+  });
+
+  it('deriva ws del origen (con puerto) cuando la página va por http', () => {
+    vi.stubEnv('VITE_COLLAB_URL', '');
+    withLocation({ protocol: 'http:', host: 'localhost:5173' }, () => {
+      expect(resolveCollabUrl()).toBe('ws://localhost:5173/collab');
+    });
+  });
+
+  it('sin location (fuera del navegador) cae al servidor local por defecto', () => {
+    vi.stubEnv('VITE_COLLAB_URL', '');
+    withLocation(undefined, () => {
+      expect(resolveCollabUrl()).toBe(DEFAULT_COLLAB_URL);
+    });
   });
 });
 

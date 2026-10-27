@@ -14,24 +14,45 @@
 	# parseo del Caddyfile con "wrong argument count"). Ojo: el default
 	# `{$ACME_EMAIL:...}` sólo se aplica si la variable está **sin definir**;
 	# si viene definida pero vacía, Caddy igual falla. Por eso el compose
-	# mandate `localhost` cuando el usuario no la configuró.
+	# manda `localhost` cuando el usuario no la configuró.
 	email {$ACME_EMAIL:localhost}
 }
 
 {$SITE_ADDRESS} {
 	encode zstd gzip
 
+	# --- Cabeceras de seguridad (todas las respuestas) -----------------------
+	# HSTS sin `includeSubDomains` ni `preload`: el subdominio de DuckDNS no es
+	# nuestro como dominio raíz, y así no se compromete nada más que este host.
+	#
+	# Permissions-Policy: la app graba audio (micrófono), puede usar la cámara
+	# y usa la geolocalización para los mapas, así que se permiten sólo para el
+	# propio origen. No se bloquean con `()`.
+	header {
+		Strict-Transport-Security "max-age=31536000"
+		X-Content-Type-Options "nosniff"
+		Referrer-Policy "strict-origin-when-cross-origin"
+		X-Frame-Options "SAMEORIGIN"
+		Permissions-Policy "camera=(self), microphone=(self), geolocation=(self)"
+	}
+
 	# --- API REST ------------------------------------------------------------
+	# Caddy ≥ 2.5 (la imagen fija caddy:2.8, ver Dockerfile.web) ignora el
+	# `X-Forwarded-For` que mande el cliente, salvo que se configure
+	# `trusted_proxies`: lo sobrescribe con la IP real de la conexión. Por eso
+	# `trustProxy: true` de la API ve la IP verdadera del cliente y no una
+	# falsificada (la usan el límite de peticiones y el registro).
 	handle /api/* {
 		reverse_proxy api:8787
 	}
 
 	# --- Colaboración en tiempo real ----------------------------------------
-	# Hocuspocus sobre el mismo servidor HTTP. Caddyoune el WebSocket sin
+	# Hocuspocus sobre el mismo servidor HTTP. Caddy proxea el WebSocket sin
 	# configuración extra en reverse_proxy.
 	handle /collab {
 		reverse_proxy api:8787 {
-			# Una ida y vuelta deCollaboración no debe quedar esperando.
+			# Una sesión de colaboración es una conexión larga: no debe cortarse
+			# por inactividad.
 			transport http {
 				read_timeout 24h
 				write_timeout 24h
@@ -43,11 +64,31 @@
 		}
 	}
 
+	# --- Recursos con hash ---------------------------------------------------
+	# `/assets/*` lleva el hash del contenido en el nombre (Vite): nunca cambia
+	# bajo la misma URL, así que se cachea un año. Va en su propio `handle`, sin
+	# el fallback de la SPA: un recurso que ya no existe (una versión anterior)
+	# debe dar 404, no un index.html con caché de un año. El matcher `file`
+	# deja la cabecera sólo en las respuestas de archivos que existen.
+	handle /assets/* {
+		root * /srv
+		@found file
+		header @found Cache-Control "public, max-age=31536000, immutable"
+		file_server
+	}
+
 	# --- SPA -----------------------------------------------------------------
 	# `try_files` resuelve cada ruta de la SPA a index.html (tableros anidados,
 	# /p/:slug de tableros publicados, /invite/:token).
+	#
+	# Todo lo demás se revalida (ETag/Last-Modified de `file_server`: una visita
+	# sin cambios cuesta un 304). Eso cubre `/`, `/index.html`, las rutas de la
+	# SPA que caen en index.html, `/sw.js`, `/registerSW.js`,
+	# `/manifest.webmanifest` y `/workbox-*.js`: el HTML y el service worker
+	# tienen que ser siempre los últimos, o una versión nueva no llega.
 	handle {
 		root * /srv
+		header Cache-Control "no-cache"
 		try_files {path} {path}/ /index.html
 		file_server
 	}

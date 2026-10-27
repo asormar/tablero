@@ -4,7 +4,7 @@
  *   POST   /api/assets            multipart (`file` + `boardId?` + `dedupe?`)
  *   GET    /api/assets            listado del usuario (`boardId?`, `type?`)
  *   GET    /api/assets/:id        detalle (`{ asset: AssetSummary }`)
- *   GET    /api/assets/:id/raw    302 a la URL firmada del original (15 min)
+ *   GET    /api/assets/:id/raw    302 a la URL firmada del original (15 min, cacheable)
  *   GET    /api/assets/:id/thumb  302 a la miniatura firmada (o al original)
  *   DELETE /api/assets/:id        borra el archivo y sus objetos (409 si está en uso)
  *
@@ -45,7 +45,7 @@ import {
   uploadAssetSchema,
   type AssetSummary,
 } from '@tablero/shared';
-import type { FastifyInstance, FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 import { prisma } from '../db.js';
 import { env } from '../env.js';
@@ -58,10 +58,10 @@ import { currentUser } from '../lib/session.js';
 import {
   assetKey,
   deleteObject,
-  getPresignedGetUrl,
+  getCacheablePresignedGetUrl,
   putObject,
-  SIGNED_URL_TTL_SECONDS,
   thumbnailKey,
+  type CacheablePresignedUrl,
 } from '../lib/storage.js';
 
 /** Margen sobre el límite antes de rechazar por `Content-Length` (cabeceras del multipart). */
@@ -157,6 +157,22 @@ const INLINE_DANGEROUS_MIME = new Set(['image/svg+xml', 'text/html', 'applicatio
 function isInlineDangerous(mime: string | null | undefined): boolean {
   if (typeof mime !== 'string') return false;
   return INLINE_DANGEROUS_MIME.has(mime.split(';')[0]?.trim().toLowerCase() ?? '');
+}
+
+/**
+ * Redirección (302) a la URL firmada, cacheable por el navegador del usuario.
+ *
+ * La URL es estable dentro de su ventana de firma y `max-age` llega hasta poco
+ * antes de que caduque, así que las miniaturas del lienzo no piden una firma
+ * nueva en cada render. `private` (no la guarda ninguna caché compartida) y
+ * `Vary: Cookie` (otra sesión en el mismo navegador no reutiliza la
+ * redirección de quien sí tenía acceso).
+ */
+function redirectToObject(reply: FastifyReply, signed: CacheablePresignedUrl): void {
+  reply.header('cache-control', `private, max-age=${signed.maxAgeSeconds}`);
+  const vary = String(reply.getHeader('vary') ?? '');
+  if (!/\bcookie\b/i.test(vary)) reply.header('vary', vary ? `${vary}, Cookie` : 'Cookie');
+  reply.redirect(signed.url, 302);
 }
 
 /** Asset del usuario o 404 (ajeno e inexistente son indistinguibles). */
@@ -385,20 +401,18 @@ export async function assetsRoutes(app: FastifyInstance): Promise<void> {
     // SVG y HTML se ejecutan si el navegador los sirve en línea, y este endpoint
     // redirige a la URL firmada del objeto: al abrirlos en una pestaña correrían
     // su `<script>` en el origen del almacenamiento. Se fuerzan como descarga.
-    const url = await getPresignedGetUrl(row.storageKey, SIGNED_URL_TTL_SECONDS, {
+    const signed = await getCacheablePresignedGetUrl(row.storageKey, {
       downloadName: download || isInlineDangerous(row.mime) ? row.originalName : null,
     });
-    reply.header('cache-control', 'private, no-store');
-    reply.redirect(url, 302);
+    redirectToObject(reply, signed);
   });
 
   app.get('/assets/:id/thumb', async (request, reply) => {
     const row = await requireReadableAsset(request);
     // Sin miniatura propia se sirve el original (nunca 404): la web siempre
     // puede pedir esta ruta para previsualizar.
-    const url = await getPresignedGetUrl(row.thumbnailKey ?? row.storageKey, SIGNED_URL_TTL_SECONDS);
-    reply.header('cache-control', 'private, no-store');
-    reply.redirect(url, 302);
+    const signed = await getCacheablePresignedGetUrl(row.thumbnailKey ?? row.storageKey);
+    redirectToObject(reply, signed);
   });
 
   /**

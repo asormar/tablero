@@ -55,6 +55,8 @@ const db = vi.hoisted(() => {
   const boards = new Map<string, BoardRow>();
   const documents = new Map<string, Buffer>();
   const deletedObjects: string[] = [];
+  /** Firmas pedidas al almacenamiento (clave y nombre de descarga forzada). */
+  const signed: { key: string; downloadName: string | null }[] = [];
 
   const boardRow = (id: string, overrides: Partial<BoardRow> = {}): BoardRow => {
     const row: BoardRow = {
@@ -131,6 +133,7 @@ const db = vi.hoisted(() => {
     boards,
     documents,
     deletedObjects,
+    signed,
     boardRow,
     assetRow,
     reset: () => {
@@ -138,6 +141,7 @@ const db = vi.hoisted(() => {
       boards.clear();
       documents.clear();
       deletedObjects.length = 0;
+      signed.length = 0;
     },
   };
 });
@@ -159,7 +163,10 @@ vi.mock('../lib/storage.js', () => ({
     db.deletedObjects.push(key);
   },
   putObject: async () => undefined,
-  getPresignedGetUrl: async () => 'https://minio.example/signed',
+  getCacheablePresignedGetUrl: async (key: string, options: { downloadName?: string | null } = {}) => {
+    db.signed.push({ key, downloadName: options.downloadName ?? null });
+    return { url: `https://minio.example/signed/${key}`, maxAgeSeconds: 540 };
+  },
   headObject: async () => null,
   ensureBucket: async () => true,
   getObjectStream: async () => null,
@@ -207,6 +214,64 @@ beforeEach(() => {
   db.reset();
   collab.live = null;
   db.boardRow('board_uno');
+});
+
+describe('GET /api/assets/:id/raw y /thumb', () => {
+  it('redirige a la URL firmada y deja que el navegador la cachee hasta poco antes de que caduque', async () => {
+    const asset = db.assetRow({ id: 'asset_foto' });
+
+    const app = await buildApp();
+    const raw = await app.inject({ method: 'GET', url: '/api/assets/asset_foto/raw' });
+    expect(raw.statusCode).toBe(302);
+    expect(raw.headers.location).toBe(`https://minio.example/signed/${asset.storageKey}`);
+    expect(raw.headers['cache-control']).toBe('private, max-age=540');
+    expect(raw.headers.vary).toMatch(/cookie/i);
+
+    const thumb = await app.inject({ method: 'GET', url: '/api/assets/asset_foto/thumb' });
+    expect(thumb.statusCode).toBe(302);
+    expect(thumb.headers.location).toBe(`https://minio.example/signed/${asset.thumbnailKey}`);
+    expect(thumb.headers['cache-control']).toBe('private, max-age=540');
+    expect(thumb.headers.vary).toMatch(/cookie/i);
+    await app.close();
+  });
+
+  it('sin miniatura propia /thumb sirve el original', async () => {
+    const asset = db.assetRow({ id: 'asset_sin_thumb', thumbnailKey: null });
+
+    const app = await buildApp();
+    const response = await app.inject({ method: 'GET', url: '/api/assets/asset_sin_thumb/thumb' });
+    expect(response.statusCode).toBe(302);
+    expect(db.signed).toEqual([{ key: asset.storageKey, downloadName: null }]);
+    await app.close();
+  });
+
+  it('una imagen normal se sirve en línea y SVG/HTML siguen forzando la descarga', async () => {
+    db.assetRow({ id: 'asset_png' });
+    db.assetRow({ id: 'asset_svg', mime: 'image/svg+xml', originalName: 'dibujo.svg' });
+    db.assetRow({ id: 'asset_html', mime: 'text/html', originalName: 'pagina.html' });
+
+    const app = await buildApp();
+    await app.inject({ method: 'GET', url: '/api/assets/asset_png/raw' });
+    await app.inject({ method: 'GET', url: '/api/assets/asset_svg/raw' });
+    await app.inject({ method: 'GET', url: '/api/assets/asset_html/raw' });
+    await app.inject({ method: 'GET', url: '/api/assets/asset_png/raw?download=1' });
+
+    expect(db.signed.map((entry) => entry.downloadName)).toEqual([null, 'dibujo.svg', 'pagina.html', 'foto.png']);
+    await app.close();
+  });
+
+  it('un asset ajeno sin acceso por tablero responde 404 y no firma nada', async () => {
+    db.assetRow({ id: 'asset_ajeno', ownerId: 'user_caro' });
+
+    const app = await buildApp();
+    for (const suffix of ['raw', 'thumb']) {
+      const response = await app.inject({ method: 'GET', url: `/api/assets/asset_ajeno/${suffix}` });
+      expect(response.statusCode).toBe(404);
+      expect(response.headers.location).toBeUndefined();
+    }
+    expect(db.signed).toEqual([]);
+    await app.close();
+  });
 });
 
 describe('DELETE /api/assets/:id', () => {

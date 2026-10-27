@@ -284,6 +284,8 @@ const es: Dictionary = {
 
   'toast.region': 'Avisos',
   'toast.close': 'Cerrar aviso',
+  'pwa.updateAvailable': 'Hay una nueva versión disponible',
+  'pwa.reload': 'Recargar',
 };
 
 const en: Dictionary = {
@@ -541,6 +543,8 @@ const en: Dictionary = {
 
   'toast.region': 'Notifications',
   'toast.close': 'Dismiss notification',
+  'pwa.updateAvailable': 'A new version is available',
+  'pwa.reload': 'Reload',
 };
 
 const dictionaries: Record<Language, Dictionary> = { es, en };

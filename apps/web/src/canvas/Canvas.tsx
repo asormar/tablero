@@ -19,6 +19,7 @@ import {
   type HeadingSize,
   type Point,
   type Rect,
+  connectorIntersectsRect,
   isRichTextType,
   moveElements,
   rectFromPoints,
@@ -26,7 +27,7 @@ import {
 } from '@tablero/shared';
 
 import { addElementsToColumn } from '@/canvas/columnCommands';
-import { connectorAtPoint, connectorsInRect, refreshConnectorNodes } from '@/canvas/connectorGeometry';
+import { connectorAtPoint, refreshConnectorNodes, resolveConnectors } from '@/canvas/connectorGeometry';
 import { startConnectorDrag } from '@/canvas/connectorDrag';
 import { ConnectorLayer } from '@/canvas/ConnectorLayer';
 import { highlightColumn, kanbanTargetAt, type KanbanTarget } from '@/canvas/kanbanDrag';
@@ -45,9 +46,11 @@ import { rectOf } from '@/lib/layout';
 import { useAppStore } from '@/state/appStore';
 import { useUiStore } from '@/state/uiStore';
 
-import { canvasPoint, setCanvasRoot, worldFromClient } from './canvasRef';
-import { distanceBetween, midpointOf, pinchPair, pinchScaleFor } from './touchNav';
+import { canvasPoint, invalidateCanvasRect, setCanvasRoot, worldFromClient } from './canvasRef';
+import { type LongPress, createLongPress, distanceBetween, midpointOf, pinchPair, pinchScaleFor } from './touchNav';
 import { ElementLayer } from './ElementLayer';
+import { cancelViewportTween } from './viewportTween';
+import { type WheelBatch, classifyWheel, createWheelAccumulator } from './wheelAccumulator';
 import { CanvasGrid, ConnectorDraftOverlay, DropLineOverlay, GuidesOverlay, MarqueeOverlay } from './Overlays';
 import {
   type DragItem,
@@ -57,6 +60,13 @@ import {
 } from './interactions';
 import type { ResizeDirection } from '@/lib/dragMath';
 import { isSpacePan } from './panMode';
+
+/**
+ * Corta el gesto en curso. Con `notify` además avisa a `onEnd(false)` para que el
+ * gesto se deshaga y la interfaz vuelva a reposo (la pulsación larga lo usa);
+ * sin él solo se sueltan los oyentes.
+ */
+type StopTrack = (notify?: boolean) => void;
 
 type TrackOptions = {
   /** Esc cancela el gesto (arrastres); en paneo y lazo no hace falta. */
@@ -72,7 +82,7 @@ function trackPointer(
   onMove: (event: PointerEvent) => void,
   onEnd: (commit: boolean, event: PointerEvent | null) => void,
   options: TrackOptions = {},
-): () => void {
+): StopTrack {
   let finished = false;
   let last: PointerEvent | null = null;
 
@@ -117,7 +127,13 @@ function trackPointer(
   document.body.classList.add('is-dragging');
   if (options.cursorClass) document.body.classList.add(options.cursorClass);
 
-  return () => {
+  return (notify = false) => {
+    if (notify && !finished) {
+      finished = true;
+      cleanup();
+      onEnd(false, last);
+      return;
+    }
     finished = true;
     cleanup();
   };
@@ -132,7 +148,8 @@ export type CanvasProps = {
 
 export function Canvas({ session, onOpenBoard, readOnly = false }: CanvasProps): JSX.Element {
   const rootRef = useRef<HTMLDivElement | null>(null);
-  const activeTrack = useRef<(() => void) | null>(null);
+  const activeTrack = useRef<StopTrack | null>(null);
+  const longPress = useRef<LongPress<string | null> | null>(null);
   const viewport = useUiStore((state) => state.viewport);
   const interaction = useUiStore((state) => state.interaction);
   const permission = useSessionPermission();
@@ -168,33 +185,48 @@ export function Canvas({ session, onOpenBoard, readOnly = false }: CanvasProps):
     return () => {
       activeTrack.current?.();
       activeTrack.current = null;
+      // La cámara no debe seguir animándose sobre un tablero que ya no está.
+      cancelViewportTween();
     };
   }, []);
 
   // --- Rueda: desplaza; con Ctrl/Cmd hace zoom centrado en el cursor --------
+  // Los deltas se acumulan y se aplican una vez por frame (como el paneo con
+  // arrastre): un trackpad emite varios `wheel` por frame y cada uno re-renderizaba.
   useEffect(() => {
     const node = rootRef.current;
     if (!node) return;
-    const onWheel = (event: WheelEvent): void => {
+    const accumulator = createWheelAccumulator();
+    let frame = 0;
+
+    const apply = (batch: WheelBatch): void => {
       const ui = useUiStore.getState();
-      const point = canvasPoint(event.clientX, event.clientY);
-      const factor = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 100 : 1;
-      const dy = event.deltaY * factor;
-      const dx = event.deltaX * factor;
-      if (event.ctrlKey || event.metaKey) {
-        event.preventDefault();
-        ui.zoomAtPoint(point, ui.viewport.scale * Math.exp(-dy * 0.002));
-        return;
+      if (batch.panX !== 0 || batch.panY !== 0) ui.pan(batch.panX, batch.panY);
+      if (batch.anchor && batch.zoomFactor !== 1) {
+        ui.zoomAtPoint(batch.anchor, useUiStore.getState().viewport.scale * batch.zoomFactor);
       }
+    };
+    const flush = (): void => {
+      frame = 0;
+      const batch = accumulator.take();
+      if (batch) apply(batch);
+    };
+
+    const onWheel = (event: WheelEvent): void => {
       event.preventDefault();
-      if (event.shiftKey && dx === 0) {
-        ui.pan(-dy, 0);
-        return;
-      }
-      ui.pan(-dx, -dy);
+      const intent = classifyWheel(event);
+      const early =
+        intent.kind === 'zoom'
+          ? accumulator.addZoom(intent.factor, canvasPoint(event.clientX, event.clientY))
+          : accumulator.addPan(intent.dx, intent.dy);
+      if (early) apply(early);
+      if (frame === 0) frame = requestAnimationFrame(flush);
     };
     node.addEventListener('wheel', onWheel, { passive: false });
-    return () => node.removeEventListener('wheel', onWheel);
+    return () => {
+      node.removeEventListener('wheel', onWheel);
+      if (frame !== 0) cancelAnimationFrame(frame);
+    };
   }, []);
 
   // --- Pinza táctil: dos dedos acercan y alejan ------------------------------
@@ -206,6 +238,7 @@ export function Canvas({ session, onOpenBoard, readOnly = false }: CanvasProps):
 
     const onDown = (event: PointerEvent): void => {
       if (event.pointerType !== 'touch') return;
+      invalidateCanvasRect();
       points.set(event.pointerId, { x: event.clientX, y: event.clientY });
       const pair = pinchPair([...points.values()]);
       previousDistance = pair ? distanceBetween(pair[0], pair[1]) : 0;
@@ -249,6 +282,52 @@ export function Canvas({ session, onOpenBoard, readOnly = false }: CanvasProps):
       node.removeEventListener('pointermove', onMove);
       node.removeEventListener('pointerup', onUp);
       node.removeEventListener('pointercancel', onUp);
+    };
+  }, []);
+
+  // --- Pulsación larga táctil: abre el menú contextual ------------------------
+  // Un dedo quieto 500 ms (sin moverse más de 8 px) abre el mismo menú que el clic
+  // derecho: el de la tarjeta si el dedo está sobre una, si no el del lienzo. Corta
+  // el paneo o arrastre que ya había empezado y se traga el clic que sigue.
+  useEffect(() => {
+    const node = rootRef.current;
+    if (!node) return undefined;
+    const machine = createLongPress<string | null>({
+      setTimer: (callback, delayMs) => window.setTimeout(callback, delayMs),
+      clearTimer: (handle) => window.clearTimeout(handle as number),
+      onFire: (point, targetId) => {
+        activeTrack.current?.(true);
+        const ui = useUiStore.getState();
+        if (ui.interaction !== 'idle') ui.setInteraction('idle');
+        if (targetId && !ui.selection.includes(targetId)) ui.select([targetId]);
+        ui.setContextMenu({ x: point.x, y: point.y, targetId });
+      },
+    });
+    longPress.current = machine;
+
+    const onDown = (event: PointerEvent): void => {
+      if (event.pointerType === 'touch') machine.touchDown(event.pointerId);
+      else machine.resetSuppression();
+    };
+    const onMove = (event: PointerEvent): void => {
+      if (event.pointerType !== 'touch') return;
+      machine.move(event.pointerId, { x: event.clientX, y: event.clientY });
+    };
+    const onEnd = (event: PointerEvent): void => {
+      if (event.pointerType === 'touch') machine.touchUp(event.pointerId);
+    };
+
+    node.addEventListener('pointerdown', onDown);
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onEnd);
+    window.addEventListener('pointercancel', onEnd);
+    return () => {
+      node.removeEventListener('pointerdown', onDown);
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onEnd);
+      window.removeEventListener('pointercancel', onEnd);
+      machine.cancel();
+      longPress.current = null;
     };
   }, []);
 
@@ -305,9 +384,12 @@ export function Canvas({ session, onOpenBoard, readOnly = false }: CanvasProps):
 
       /**
        * El lazo abarca tarjetas **y** conectores: las flechas entran por su
-       * geometría (`connectorsInRect`), así que un lazo sobre dos tarjetas
-       * también selecciona la flecha que las une y `Supr` borra todo junto.
+       * geometría, así que un lazo sobre dos tarjetas también selecciona la
+       * flecha que las une y `Supr` borra todo junto. La geometría se resuelve una
+       * sola vez al empezar: durante el lazo las tarjetas no se mueven y repetirlo
+       * por frame obligaba a medir todas las flechas desde el DOM.
        */
+      const resolvedConnectors = resolveConnectors(session, session.getLayout());
       activeTrack.current = trackPointer(
         (event) => {
           latest = canvasPoint(event.clientX, event.clientY);
@@ -318,7 +400,9 @@ export function Canvas({ session, onOpenBoard, readOnly = false }: CanvasProps):
             const rect: Rect = rectFromPoints(startWorld, screenToWorld(state.viewport, latest));
             state.setMarquee(rect);
             const hits = idsInRect(session.getLayout(), rect);
-            const connectorHits = connectorsInRect(session, rect).map((connector) => connector.id);
+            const connectorHits = resolvedConnectors
+              .filter((item) => connectorIntersectsRect(item.geometry, rect))
+              .map((item) => item.connector.id);
             const next = additive ? [...new Set([...base, ...hits])] : hits;
             const nextConnectors = additive ? [...new Set([...baseConnectors, ...connectorHits])] : connectorHits;
             const key = next.join('|') + '#' + nextConnectors.join('|');
@@ -497,6 +581,8 @@ export function Canvas({ session, onOpenBoard, readOnly = false }: CanvasProps):
     (event: React.PointerEvent<HTMLDivElement>) => {
       const target = event.target as HTMLElement;
       if (target.closest('[contenteditable="true"], input, textarea, select')) return;
+      // Cada gesto vuelve a medir el lienzo una vez (el rectángulo se cachea).
+      invalidateCanvasRect();
       if (event.button === 1) event.preventDefault();
       if (event.button !== 0 && event.button !== 1) return;
 
@@ -537,6 +623,12 @@ export function Canvas({ session, onOpenBoard, readOnly = false }: CanvasProps):
           startResize(id, direction, startPoint);
           return;
         }
+      }
+
+      // Pulsación larga táctil (menú contextual). Las zonas interactivas (dibujo,
+      // mapa, tabla…) la usan para sus propios gestos, así que no la arman.
+      if (event.pointerType === 'touch' && !target.closest('[data-interactive]')) {
+        longPress.current?.arm(event.pointerId, { x: event.clientX, y: event.clientY }, elementEl?.dataset.elementId ?? null);
       }
 
       if (!elementEl) {
@@ -641,6 +733,13 @@ export function Canvas({ session, onOpenBoard, readOnly = false }: CanvasProps):
     ui.setContextMenu({ x: event.clientX, y: event.clientY, targetId: id });
   }, []);
 
+  /** Tras una pulsación larga cumplida, el clic que el navegador sintetiza al soltar no vale. */
+  const handleClickCapture = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    if (!longPress.current?.consumeClick()) return;
+    event.preventDefault();
+    event.stopPropagation();
+  }, []);
+
   // --- Soltado de herramientas y de archivos desde el sistema ---------------
 
   const [fileDragOver, setFileDragOver] = useState(false);
@@ -709,7 +808,10 @@ export function Canvas({ session, onOpenBoard, readOnly = false }: CanvasProps):
         .join(' ')}
       data-canvas-editable={editable ? 'yes' : 'no'}
       data-canvas-comment-mode={canComment && commentPinMode ? 'pin' : 'off'}
+      // iOS no debe mostrar su propio menú de pulsación larga sobre enlaces e imágenes.
+      style={{ WebkitTouchCallout: 'none' }}
       onPointerDown={handlePointerDown}
+      onClickCapture={handleClickCapture}
       onDoubleClick={handleDoubleClick}
       onContextMenu={handleContextMenu}
       onDragOver={handleDragOver}

@@ -12,6 +12,7 @@
 import { Suspense, lazy, useMemo } from 'react';
 
 import { Workspace } from '@/app/Workspace';
+import { ToastHost } from '@/chrome/ToastHost';
 import { parseRoute } from '@/lib/routes';
 import { useAppStore } from '@/state/appStore';
 
@@ -43,6 +44,17 @@ function LoadingFallback(): JSX.Element {
 }
 
 export function App(): JSX.Element {
+  // Los avisos viven en la raíz: así también se ven en la vista pública, en la
+  // invitación y en el panel de acceso, no solo en el espacio de trabajo.
+  return (
+    <>
+      <RoutedScreen />
+      <ToastHost />
+    </>
+  );
+}
+
+function RoutedScreen(): JSX.Element {
   const route = useMemo(() => parseRoute(window.location.pathname), []);
 
   if (route.kind === 'public') {

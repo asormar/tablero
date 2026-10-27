@@ -477,66 +477,27 @@
 
 /* --- Compartir y publicar -------------------------------------------------- */
 
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 70;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgb(0 0 0 / 32%);
-}
-
 /*
- * Los diálogos de esta fase usan su propio envoltorio (`.modal-backdrop`), así
- * que estas reglas van acotadas a él: un `.modal` suelto sigue siendo el fondo
- * centrado de `global.css` (lo usan las once superficies de las fases 1–4:
- * historial, atajos, plantillas, captura, ajustes…). Sin el acotado, la tarjeta
- * de acá se aplicaba también a esos diálogos y quedaban sin fondo, sin centrado
- * y con una tarjeta dentro de otra.
+ * Compartir, publicar y actividad usan el diálogo único (`chrome/Modal.tsx`):
+ * velo y tarjeta salen de `.modal` / `.modal__panel` en `global.css`. Acá solo
+ * va lo propio de estos tres: ancho de la tarjeta y cuerpo en columna.
  */
-.modal-backdrop .modal {
-  /* Devuelve la tarjeta al flujo del envoltorio (el `position: fixed; inset: 0`
-     de la clase base la clavaba en la esquina): el envoltorio es quien centra. */
-  position: static;
-  display: block;
-  width: min(560px, 92vw);
-  max-height: 86vh;
-  padding: 0;
-  overflow: auto;
-  border: 1px solid var(--border, #e0e0dc);
-  border-radius: 12px;
-  background: var(--surface, #fff);
-  color: var(--text, #2b2b28);
-  box-shadow: 0 18px 48px rgb(0 0 0 / 28%);
+@media (min-width: 761px) {
+  .share-dialog,
+  .publish-panel,
+  .activity-panel {
+    width: min(560px, 100%);
+    max-height: min(86vh, 100%);
+  }
 }
 
-.modal-backdrop .modal__head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--border, #e0e0dc);
-}
-
-.modal-backdrop .modal__title {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 0;
-  font-size: 14px;
-  font-weight: 700;
-}
-
-.modal-backdrop .modal__head .icon-button:last-child {
-  margin-left: auto;
-}
-
-.modal-backdrop .modal__body {
-  padding: 12px 14px;
+.share-dialog .modal__body,
+.publish-panel .modal__body,
+.activity-panel .modal__body {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  padding: 12px 14px;
 }
 
 .share-dialog__role,
@@ -1131,4 +1092,281 @@
 
 .invite-card__primary {
   justify-content: center;
+}
+
+/* ===========================================================================
+   Avisos (toasts)
+
+   Pila fija abajo y al centro, por encima de los diálogos (`--z-toast`). Entrada
+   de 200 ms con opacidad y 8 px de desplazamiento; salida de 150 ms. Con
+   `prefers-reduced-motion` solo queda un fundido corto (≤ 120 ms).
+   =========================================================================== */
+
+.toast-stack {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  z-index: var(--z-toast, 100);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: min(560px, calc(100% - 32px));
+  transform: translateX(-50%);
+  /* La pila no puede tapar el lienzo: solo los avisos reciben clics. */
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: 100%;
+  padding: 9px 9px 9px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-pop);
+  color: var(--text);
+  pointer-events: auto;
+  animation: toast-in 200ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1));
+}
+
+.toast.is-leaving {
+  animation: toast-out 150ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)) forwards;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes toast-out {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+.toast__icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  height: 20px;
+  color: var(--accent);
+}
+
+.toast--success .toast__icon {
+  color: var(--sync-ok);
+}
+
+.toast--error .toast__icon {
+  color: var(--danger);
+}
+
+.toast--error {
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+}
+
+.toast__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding-top: 1px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.toast__action {
+  flex: 0 0 auto;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.toast__action:hover {
+  background: var(--accent-strong);
+}
+
+.toast__close {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  color: var(--text-faint);
+}
+
+.toast__close:hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+@media (max-width: 760px) {
+  /* En el móvil la barra de herramientas ocupa el borde inferior. */
+  .toast-stack {
+    bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    animation: toast-fade-in 120ms linear;
+  }
+
+  .toast.is-leaving {
+    animation: toast-fade-out 100ms linear forwards;
+  }
+
+  @keyframes toast-fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes toast-fade-out {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+}
+
+/* ===========================================================================
+   Estado vacío (`chrome/EmptyState.tsx`)
+   =========================================================================== */
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 28px 12px;
+  text-align: center;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-ui);
+}
+
+.empty-state--compact {
+  gap: 6px;
+  padding: 18px 12px;
+}
+
+.empty-state__icon {
+  display: grid;
+  place-items: center;
+  color: var(--text-faint);
+}
+
+.empty-state__title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.empty-state__text {
+  margin: 0;
+  max-width: 34ch;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.empty-state__action {
+  margin-top: 6px;
+}
+
+/* ===========================================================================
+   Barra superior: menú «Más» (≤ 1024 px)
+
+   En ventanas estrechas la barra solo deja a la vista buscar, deshacer/rehacer,
+   compartir y el usuario; lo demás vive en este menú (`TopBarOverflow`). El menú
+   hereda `.menu` / `.menu__item` (fijo, anclado al botón por script).
+   =========================================================================== */
+
+.topbar__more {
+  display: inline-flex;
+  align-items: center;
+}
+
+.topbar__more-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 10px 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-ui);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: 12.5px;
+  transition: border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+
+.topbar__more-button:hover,
+.topbar__more-button.is-active {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.topbar__more-badge {
+  display: inline-grid;
+  place-items: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.topbar__more-menu {
+  min-width: 248px;
+  max-width: min(320px, calc(100vw - 16px));
+  overflow-y: auto;
+}
+
+.topbar__more-menu .menu__item.is-active {
+  color: var(--accent);
+}
+
+.topbar__more-menu .menu__item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+@media (max-width: 760px) {
+  /* En el móvil el botón se queda en el icono: no hay sitio para el texto. */
+  .topbar__more-text {
+    display: none;
+  }
+
+  .topbar__more-button {
+    padding: 0 8px;
+  }
 }

@@ -427,12 +427,11 @@
   display: block;
   height: 100%;
   background: var(--accent);
-  /* Progreso con `--p` (0–1) y `transform`; el `width` en línea del TSX actual
-     sigue funcionando hasta que ponga `--p`. */
+  /* Progreso con `--p` (0–1) y `transform`, que no recalcula el layout. */
   width: 100%;
   transform: scaleX(var(--p, 1));
   transform-origin: left;
-  transition: transform var(--dur) var(--ease-out), width var(--dur) var(--ease-out);
+  transition: transform var(--dur) var(--ease-out);
 }
 
 .todo__progress-label {

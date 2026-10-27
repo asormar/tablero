@@ -16,6 +16,7 @@ import { degradationMessage, isMissingEndpoint } from '@/api/degraded';
 import { login, register } from '@/api/boards';
 import { resumeAfterAuth } from '@/app/boardService';
 import { ROLE_DESCRIPTIONS, ROLE_LABELS } from '@/collab/roles';
+import { formatDate } from '@/lib/formatDate';
 import { appUrl } from '@/lib/routes';
 import { useNoindex } from '@/lib/noindex';
 import { useAppStore } from '@/state/appStore';
@@ -159,7 +160,7 @@ export function AcceptInvitePage({ token }: { token: string }): JSX.Element {
         </p>
         <p className="invite-card__meta">
           Invitación para <strong>{invitation.email}</strong>
-          {invitation.expiresAt ? ` · caduca el ${new Date(invitation.expiresAt).toLocaleDateString('es')}` : ''}
+          {invitation.expiresAt ? ` · caduca el ${formatDate(invitation.expiresAt)}` : ''}
         </p>
 
         {alreadyAccepted ? (

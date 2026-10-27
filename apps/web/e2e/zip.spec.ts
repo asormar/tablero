@@ -44,7 +44,7 @@ test.describe('copia de seguridad', () => {
 
     const importedBoardId = boardIdFromUrl(app);
     expect(importedBoardId).not.toBe(account.rootBoardId);
-    await expect(app.locator('.notice')).toContainText('Importado:');
+    await expect(app.locator('.toast')).toContainText('Importado:');
     await expect(app.locator('[data-element-id]').filter({ hasText: marker })).toBeVisible({ timeout: 20_000 });
 
     // El tablero importado está en el servidor con el contenido del respaldo.

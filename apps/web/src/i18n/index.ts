@@ -49,8 +49,8 @@ const es: Dictionary = {
   'common.offline': 'La API no responde: se muestra lo que hay en este navegador.',
 
   'topbar.boardTitleAria': 'Título del tablero',
-  'topbar.undo': 'Deshacer (Ctrl+Z)',
-  'topbar.redo': 'Rehacer (Ctrl+Shift+Z)',
+  'topbar.undo': 'Deshacer ({{shortcut}})',
+  'topbar.redo': 'Rehacer ({{shortcut}})',
   'topbar.historyGroup': 'Historial',
   'topbar.fit': 'Ajustar a pantalla (Shift+1)',
   'topbar.unsorted': 'Sin ordenar',
@@ -58,9 +58,10 @@ const es: Dictionary = {
   'topbar.boards': 'Tableros (favoritos y recientes)',
   'topbar.tasks': 'Tareas (vista global)',
   'topbar.shortcuts': 'Atajos de teclado (?)',
-  'topbar.search': 'Buscar (Ctrl+K)',
+  'topbar.search': 'Buscar ({{shortcut}})',
   'topbar.settings': 'Ajustes',
   'topbar.menu': 'Más acciones',
+  'topbar.more': 'Más',
   'topbar.history': 'Historial de versiones',
   'topbar.export': 'Exportar…',
   'topbar.import': 'Importar…',
@@ -85,7 +86,7 @@ const es: Dictionary = {
   'palette.results': 'Resultados',
   'palette.actions': 'Acciones',
   'palette.empty': 'Sin resultados.',
-  'palette.emptyHint': 'Probá con otra palabra o cambiá el filtro de tipo.',
+  'palette.emptyHint': 'Prueba con otra palabra o cambia el filtro de tipo.',
   'palette.searching': 'Buscando…',
   'palette.resultCount': '{{count}} resultados',
   'palette.offline': 'La búsqueda del servidor no está disponible; se buscó solo en este tablero.',
@@ -158,7 +159,7 @@ const es: Dictionary = {
   'import.title': 'Importar',
   'import.hint': 'ZIP de copia de seguridad, Markdown o CSV. También un lote de imágenes.',
   'import.pick': 'Elegir archivo…',
-  'import.drop': 'Arrastrá el archivo acá',
+  'import.drop': 'Arrastra el archivo aquí',
   'import.target': 'Tablero destino',
   'import.targetCurrent': 'El tablero actual',
   'import.working': 'Importando…',
@@ -207,7 +208,7 @@ const es: Dictionary = {
 
   'capture.title': 'Captura rápida',
   'capture.hint': 'Va a «Sin ordenar», sin salir del tablero actual.',
-  'capture.placeholder': 'Escribí una nota y Enter…',
+  'capture.placeholder': 'Escribe una nota y Enter…',
   'capture.save': 'Guardar nota',
   'capture.saving': 'Guardando la nota…',
   'capture.saved': 'Nota guardada en «Sin ordenar».',
@@ -281,6 +282,11 @@ const es: Dictionary = {
   'type.line': 'Línea',
   'type.map': 'Mapa',
   'type.commentPin': 'Comentario',
+
+  'toast.region': 'Avisos',
+  'toast.close': 'Cerrar aviso',
+  'pwa.updateAvailable': 'Hay una nueva versión disponible',
+  'pwa.reload': 'Recargar',
 };
 
 const en: Dictionary = {
@@ -303,8 +309,8 @@ const en: Dictionary = {
   'common.offline': 'The API is not responding: showing what is in this browser.',
 
   'topbar.boardTitleAria': 'Board title',
-  'topbar.undo': 'Undo (Ctrl+Z)',
-  'topbar.redo': 'Redo (Ctrl+Shift+Z)',
+  'topbar.undo': 'Undo ({{shortcut}})',
+  'topbar.redo': 'Redo ({{shortcut}})',
   'topbar.historyGroup': 'History',
   'topbar.fit': 'Fit to screen (Shift+1)',
   'topbar.unsorted': 'Unsorted',
@@ -312,9 +318,10 @@ const en: Dictionary = {
   'topbar.boards': 'Boards (favorites and recent)',
   'topbar.tasks': 'Tasks (global view)',
   'topbar.shortcuts': 'Keyboard shortcuts (?)',
-  'topbar.search': 'Search (Ctrl+K)',
+  'topbar.search': 'Search ({{shortcut}})',
   'topbar.settings': 'Settings',
   'topbar.menu': 'More actions',
+  'topbar.more': 'More',
   'topbar.history': 'Version history',
   'topbar.export': 'Export…',
   'topbar.import': 'Import…',
@@ -535,6 +542,11 @@ const en: Dictionary = {
   'type.line': 'Line',
   'type.map': 'Map',
   'type.commentPin': 'Comment',
+
+  'toast.region': 'Notifications',
+  'toast.close': 'Dismiss notification',
+  'pwa.updateAvailable': 'A new version is available',
+  'pwa.reload': 'Reload',
 };
 
 const dictionaries: Record<Language, Dictionary> = { es, en };

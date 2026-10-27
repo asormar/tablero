@@ -22,12 +22,12 @@ const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 function messageFor(error: unknown): string {
   if (error instanceof ApiError) {
-    if (error.isOffline) return 'No se pudo contactar con el servidor. Probá de nuevo en un momento.';
+    if (error.isOffline) return 'No se pudo contactar con el servidor. Prueba de nuevo en un momento.';
     if (error.status === 401) return 'Email o contraseña incorrectos.';
-    if (error.status === 409) return 'Ya existe una cuenta con ese email. Probá entrar.';
+    if (error.status === 409) return 'Ya existe una cuenta con ese email. Prueba a entrar.';
     return error.message;
   }
-  return 'Algo salió mal. Probá de nuevo.';
+  return 'Algo salió mal. Prueba de nuevo.';
 }
 
 export function AuthPanel(): JSX.Element {
@@ -56,15 +56,15 @@ export function AuthPanel(): JSX.Element {
     const trimmedEmail = email.trim();
     setError(null);
     if (!EMAIL_RE.test(trimmedEmail)) {
-      setError('Escribí un email válido.');
+      setError('Escribe un email válido.');
       return;
     }
     if (mode === 'register' && name.trim().length === 0) {
-      setError('Escribí tu nombre.');
+      setError('Escribe tu nombre.');
       return;
     }
     if (password.length === 0) {
-      setError('Escribí tu contraseña.');
+      setError('Escribe tu contraseña.');
       return;
     }
     if (mode === 'register' && password.length < MIN_PASSWORD) {
@@ -147,7 +147,7 @@ export function AuthPanel(): JSX.Element {
                 autoComplete="name"
                 value={name}
                 onChange={(event) => setName(event.target.value)}
-                placeholder="Cómo te llamás"
+                placeholder="Cómo te llamas"
                 disabled={pending}
               />
             </label>

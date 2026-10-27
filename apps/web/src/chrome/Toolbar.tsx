@@ -48,6 +48,7 @@ import { can as canCapability, capabilityRefusal } from '@/collab/roles';
 import { useSessionPermission } from '@/collab/SessionContext';
 import { DEFAULT_SIZES } from '@tablero/shared';
 import { pickFiles } from '@/lib/filePicker';
+import { shortcutLabel } from '@/lib/platform';
 import { isDevBuild } from '@/lib/renderStats';
 import { useAppStore } from '@/state/appStore';
 import { useUiStore } from '@/state/uiStore';
@@ -312,7 +313,7 @@ export function Toolbar({ session }: ToolbarProps): JSX.Element {
           <button
             type="button"
             className="toolbar__tool"
-            title="Generar 300 notas de prueba (Ctrl+Shift+Alt+N)"
+            title={`Generar 300 notas de prueba (${shortcutLabel('N', { shift: true, alt: true })})`}
             aria-label="Generar 300 notas de prueba"
             onClick={addTestNotes}
           >

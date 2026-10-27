@@ -16,6 +16,7 @@ import { signOut } from '@/app/sessionActions';
 import { isSignedIn, userInitial, userLabel } from '@/lib/userMenu';
 import { useAppStore } from '@/state/appStore';
 
+import { handleMenuKeyDown } from './menuKeyboard';
 import { useOutsideClose } from './useOutsideClose';
 
 /** Separación entre el botón y el menú. */
@@ -28,6 +29,7 @@ export function UserMenu(): JSX.Element {
   const [anchor, setAnchor] = useState<{ top: number; right: number } | null>(null);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   const firstItemRef = useRef<HTMLButtonElement | null>(null);
+  const menuRef = useRef<HTMLDivElement | null>(null);
   const close = (): void => {
     setOpen(false);
     buttonRef.current?.focus();
@@ -74,12 +76,14 @@ export function UserMenu(): JSX.Element {
 
       {open ? (
         <div
+          ref={menuRef}
           className="menu user-menu"
           role="menu"
           aria-label="Cuenta"
           data-user-menu
           style={anchor ? { top: anchor.top, right: anchor.right } : undefined}
           onPointerDown={(event) => event.stopPropagation()}
+          onKeyDown={(event) => void handleMenuKeyDown(event, menuRef.current)}
         >
           <div className="user-menu__head">
             <span className="user-menu__avatar" aria-hidden="true">

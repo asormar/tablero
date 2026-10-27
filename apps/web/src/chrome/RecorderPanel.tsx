@@ -174,7 +174,7 @@ export function RecorderPanel({ session }: { session: BoardSession }): JSX.Eleme
         <div className="recorder__body">
           <span className="recorder__timer">{formatDuration(elapsed)}</span>
           <div className="recorder__meter" aria-hidden="true">
-            <span style={{ width: `${Math.round(Math.min(1, level * 1.4) * 100)}%` }} />
+            <span style={{ ['--p' as string]: Math.min(1, level * 1.4) }} />
           </div>
           <p className="recorder__hint">
             {phase === 'recording'

@@ -26,9 +26,12 @@ import {
   notificationTarget,
   unreadCount,
 } from '@/lib/notificationsView';
+import { toast } from '@/lib/toast';
 import { useAppStore } from '@/state/appStore';
 import { usePanelsStore } from '@/state/panelsStore';
 import { useUiStore } from '@/state/uiStore';
+
+import { EmptyState } from './EmptyState';
 
 const POLL_MS = 30_000;
 
@@ -108,6 +111,16 @@ export function useNotifications(enabled: boolean): NotificationsState {
   return { items, unread, loading, missing, error, refresh };
 }
 
+/**
+ * Contador de no leídas para quien no pinta la campana (la barra superior en
+ * modo compacto, donde la campana vive dentro del menú «Más»). Con `enabled`
+ * en `false` no consulta la API: el contador lo sigue calculando la campana.
+ */
+export function useUnreadNotifications(enabled: boolean): number {
+  const { items, unread } = useNotifications(enabled);
+  return unread ?? unreadCount(items);
+}
+
 export function NotificationBell({ enabled = true }: { enabled?: boolean }): JSX.Element {
   const open = usePanelsStore((state) => state.notificationsOpen);
   const { items, unread } = useNotifications(enabled);
@@ -138,7 +151,6 @@ export function NotificationsPanel({ enabled = true }: { enabled?: boolean }): J
   const setOpen = usePanelsStore((state) => state.setNotificationsOpen);
   const { items, unread, loading, missing, error, refresh } = useNotifications(enabled);
   const [filter, setFilter] = useState<'unread' | 'all'>('all');
-  const setNotice = useAppStore((state) => state.setNotice);
 
   const shown = useMemo(() => filterNotifications(items, filter), [items, filter]);
   const count = unread ?? unreadCount(items);
@@ -162,7 +174,7 @@ export function NotificationsPanel({ enabled = true }: { enabled?: boolean }): J
       await markNotificationsRead(null);
       refresh(true);
     } catch (cause) {
-      setNotice(degradationMessage(cause, 'Marcar como leídas'));
+      toast.error(degradationMessage(cause, 'Marcar como leídas'));
     }
   };
 
@@ -222,9 +234,17 @@ export function NotificationsPanel({ enabled = true }: { enabled?: boolean }): J
       {error && !missing ? <p className="notification-panel__warning">{error}</p> : null}
 
       {shown.length === 0 ? (
-        <p className="notification-panel__empty" data-notification-empty>
-          <BellOff size={13} /> {filter === 'unread' ? 'No hay notificaciones sin leer.' : 'No hay notificaciones.'}
-        </p>
+        <EmptyState
+          compact
+          icon={<BellOff size={20} />}
+          title={filter === 'unread' ? 'Todo al día' : 'Sin notificaciones'}
+          text={
+            filter === 'unread'
+              ? 'No tienes notificaciones sin leer.'
+              : 'Aquí aparecerán las menciones, los comentarios y las invitaciones.'
+          }
+          data-notification-empty
+        />
       ) : (
         <ul className="notification-panel__list" data-notification-list={shown.length}>
           {shown.map((notification) => (

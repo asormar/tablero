@@ -21,9 +21,12 @@ import { worldFromClient } from '@/canvas/canvasRef';
 import { BoardSession } from '@/collab/BoardSession';
 import { useExternalSessionLayout, useSession } from '@/collab/SessionContext';
 import { pullElements, transferFailureMessage } from '@/lib/boardTransfer';
+import { toast } from '@/lib/toast';
 import { isSignedIn } from '@/lib/userMenu';
 import { blocksToPlainText } from '@/lib/textBlocks';
 import { useAppStore } from '@/state/appStore';
+
+import { EmptyState } from './EmptyState';
 
 type DragState = { id: string; label: string; x: number; y: number } | null;
 
@@ -66,7 +69,7 @@ export function UnorderedPanelBody(): JSX.Element {
       setError(
         isSignedIn(useAppStore.getState().user)
           ? 'El servidor no responde: la bandeja «Sin ordenar» no está disponible.'
-          : 'La bandeja vive en el servidor: entrá con tu cuenta para verla.',
+          : 'La bandeja vive en el servidor: entra con tu cuenta para verla.',
       );
       return undefined;
     }
@@ -105,14 +108,13 @@ export function UnorderedPanelBody(): JSX.Element {
     setBusy(true);
     void pullElements(session, [elementId], currentSession, { world })
       .then((result) => {
-        const store = useAppStore.getState();
         if (result.failure) {
-          store.setNotice(transferFailureMessage(result.failure));
+          toast.error(transferFailureMessage(result.failure));
           return;
         }
-        store.setNotice('Se movió 1 tarjeta al tablero actual.');
+        toast.success('Se movió 1 tarjeta al tablero actual.');
       })
-      .catch(() => useAppStore.getState().setNotice('No se pudo mover la tarjeta de la bandeja.'))
+      .catch(() => toast.error('No se pudo mover la tarjeta de la bandeja.'))
       .finally(() => setBusy(false));
   };
 
@@ -174,7 +176,7 @@ export function UnorderedPanelBody(): JSX.Element {
         <span className="unsorted__count" title="Elementos en la bandeja">
           {items.length}
         </span>
-        <span className="unsorted__hint">Arrastrá una tarjeta al lienzo para traerla a este tablero.</span>
+        <span className="unsorted__hint">Arrastra una tarjeta al lienzo para traerla a este tablero.</span>
         <button
           type="button"
           className="icon-button icon-button--small"
@@ -192,15 +194,11 @@ export function UnorderedPanelBody(): JSX.Element {
         </p>
       ) : null}
       {board && items.length === 0 ? (
-        <div className="panel__empty">
-          <span className="panel__empty-icon" aria-hidden="true">
-            <Inbox size={26} />
-          </span>
-          <p className="panel__empty-title">Nada sin ordenar</p>
-          <p className="panel__empty-text">
-            Las tarjetas que mandes a «Sin ordenar» aparecen acá, listas para arrastrarlas a cualquier tablero.
-          </p>
-        </div>
+        <EmptyState
+          icon={<Inbox size={26} />}
+          title="Nada sin ordenar"
+          text="Las tarjetas que mandes a «Sin ordenar» aparecen aquí, listas para arrastrarlas a cualquier tablero."
+        />
       ) : null}
 
       <ul className="unsorted__list">

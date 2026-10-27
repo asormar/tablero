@@ -242,7 +242,7 @@ export function CropEditor({ session }: { session: BoardSession }): JSX.Element 
             Recorte: {source ? `${source.width} × ${source.height} px de ${natural?.width} × ${natural?.height}` : '—'}
           </span>
           <span className="crop-editor__hint">
-            Arrastrá para mover o dibujar el recorte; el original no se modifica.
+            Arrastra para mover o dibujar el recorte; el original no se modifica.
           </span>
         </footer>
       </div>

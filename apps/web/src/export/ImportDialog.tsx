@@ -9,7 +9,7 @@
 
 import { useMemo, useRef, useState } from 'react';
 
-import { Loader2, Upload, X } from 'lucide-react';
+import { Loader2, Upload } from 'lucide-react';
 
 import { type TableData, todoItemsFromDelimited, tableFromDelimited } from '@tablero/shared';
 
@@ -18,9 +18,10 @@ import { createElementAt, viewportCenter } from '@/canvas/commands';
 import { attachFilesToBoard } from '@/canvas/uploadController';
 import type { BoardSession } from '@/collab/BoardSession';
 import { useT } from '@/i18n';
+import { Modal } from '@/chrome/Modal';
+import { toast } from '@/lib/toast';
 import { useAppStore } from '@/state/appStore';
 import { usePanelsStore } from '@/state/panelsStore';
-import { useFocusTrap } from '@/hooks/useFocusTrap';
 
 import {
   type ImportKind,
@@ -41,7 +42,6 @@ export function ImportDialog({
   onOpenBoard(boardId: string): void;
 }): JSX.Element | null {
   const open = usePanelsStore((state) => state.importOpen);
-  const trapRef = useFocusTrap<HTMLDivElement>(open);
   const t = useT();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -67,13 +67,11 @@ export function ImportDialog({
         useAppStore.getState().upsertBoard(summary.board);
         close();
         onOpenBoard(summary.board.id);
-        useAppStore
-          .getState()
-          .setNotice(
-            t('import.done', {
-              summary: `${summary.board.title}${summary.assets > 0 ? ` · ${summary.assets} archivo(s)` : ''}`,
-            }),
-          );
+        toast.success(
+          t('import.done', {
+            summary: `${summary.board.title}${summary.assets > 0 ? ` · ${summary.assets} archivo(s)` : ''}`,
+          }),
+        );
         return;
       }
 
@@ -85,7 +83,7 @@ export function ImportDialog({
           init: { title: titleFromFileName(file.name) },
           text: plain,
         });
-        useAppStore.getState().setNotice(t('import.done', { summary: file.name }));
+        toast.success(t('import.done', { summary: file.name }));
         close();
         return;
       }
@@ -106,14 +104,14 @@ export function ImportDialog({
             init: { table },
           });
         }
-        useAppStore.getState().setNotice(t('import.done', { summary: file.name }));
+        toast.success(t('import.done', { summary: file.name }));
         close();
         return;
       }
 
       if (kind === 'image') {
         await attachFilesToBoard(session, [file], { world: viewportCenter(), columnId: null });
-        useAppStore.getState().setNotice(t('import.done', { summary: file.name }));
+        toast.success(t('import.done', { summary: file.name }));
         close();
         return;
       }
@@ -128,72 +126,68 @@ export function ImportDialog({
   };
 
   return (
-    <div className="modal" role="dialog" aria-modal="true" aria-label={t('import.title')}>
-      <div className="modal__panel import" ref={trapRef}>
-        <div className="modal__head">
-          <h2 className="modal__title">{t('import.title')}</h2>
-          {busy ? <Loader2 size={14} className="spin" /> : null}
-          <button type="button" className="icon-button" title={t('common.close')} onClick={close}>
-            <X size={15} />
-          </button>
-        </div>
-        <div className="modal__body import__body">
-          <p className="sr-only" role="status" data-import-status>
-            {busy ? t('import.working') : ''}
-          </p>
-          <p className="import__hint">{t('import.hint')}</p>
-          <div
-            className="import__drop"
-            data-import-drop
-            onDragOver={(event) => event.preventDefault()}
-            onDrop={(event) => {
-              event.preventDefault();
-              const file = event.dataTransfer.files[0];
-              if (file) void handleFile(file);
-            }}
+    <Modal
+      title={t('import.title')}
+      onClose={close}
+      panelClassName="import"
+      headActions={busy ? <Loader2 size={14} className="spin" /> : null}
+    >
+      <div className="modal__body import__body">
+        <p className="sr-only" role="status" data-import-status>
+          {busy ? t('import.working') : ''}
+        </p>
+        <p className="import__hint">{t('import.hint')}</p>
+        <div
+          className="import__drop"
+          data-import-drop
+          onDragOver={(event) => event.preventDefault()}
+          onDrop={(event) => {
+            event.preventDefault();
+            const file = event.dataTransfer.files[0];
+            if (file) void handleFile(file);
+          }}
+        >
+          <Upload size={18} aria-hidden="true" />
+          <p>{t('import.drop')}</p>
+          <button
+            type="button"
+            className="button button--primary"
+            data-import-pick
+            disabled={busy}
+            onClick={() => inputRef.current?.click()}
           >
-            <Upload size={18} aria-hidden="true" />
-            <p>{t('import.drop')}</p>
-            <button
-              type="button"
-              className="button button--primary"
-              data-import-pick
-              disabled={busy}
-              onClick={() => inputRef.current?.click()}
-            >
-              {t('import.pick')}
-            </button>
-            <input
-              ref={inputRef}
-              type="file"
-              accept={ACCEPT}
-              hidden
-              data-import-input
-              onChange={(event) => {
-                const file = event.target.files?.[0];
-                if (file) void handleFile(file);
-                event.target.value = '';
-              }}
-            />
-          </div>
-
-          <label className="field">
-            <span className="field__label">{t('import.target')}</span>
-            <select
-              className="field__input"
-              value={target}
-              data-import-target
-              onChange={(event) => setTarget(event.target.value === 'root' ? 'root' : 'current')}
-            >
-              <option value="current">{t('import.targetCurrent')}</option>
-              <option value="root">{t('app.untitledBoard') === 'Untitled board' ? 'Root' : 'Nivel raíz'}</option>
-            </select>
-          </label>
-          <p className="import__note">{t('import.markdownAsDocument')}</p>
-          {busy ? <p className="import__status">{t('import.working')}</p> : null}
-          {error ? <p className="import__error">{error}</p> : null}
+            {t('import.pick')}
+          </button>
+          <input
+            ref={inputRef}
+            type="file"
+            accept={ACCEPT}
+            hidden
+            data-import-input
+            onChange={(event) => {
+              const file = event.target.files?.[0];
+              if (file) void handleFile(file);
+              event.target.value = '';
+            }}
+          />
         </div>
+
+        <label className="field">
+          <span className="field__label">{t('import.target')}</span>
+          <select
+            className="field__input"
+            value={target}
+            data-import-target
+            onChange={(event) => setTarget(event.target.value === 'root' ? 'root' : 'current')}
+          >
+            <option value="current">{t('import.targetCurrent')}</option>
+            <option value="root">{t('app.untitledBoard') === 'Untitled board' ? 'Root' : 'Nivel raíz'}</option>
+          </select>
+        </label>
+        <p className="import__note">{t('import.markdownAsDocument')}</p>
+        {busy ? <p className="import__status">{t('import.working')}</p> : null}
+        {error ? <p className="import__error">{error}</p> : null}
       </div>
-    </div>
+    </Modal>
   );
 }

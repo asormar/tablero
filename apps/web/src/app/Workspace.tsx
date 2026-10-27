@@ -8,8 +8,6 @@
 
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 
-import { X } from 'lucide-react';
-
 import { fitToScreen, focusElementInView } from '@/canvas/commands';
 import { Canvas } from '@/canvas/Canvas';
 import { FlashEffect } from '@/canvas/FlashEffect';
@@ -38,6 +36,7 @@ import { usePaste } from '@/hooks/usePaste';
 import { usePhase4Shortcuts } from '@/hooks/usePhase4Shortcuts';
 import { useShareTarget } from '@/hooks/useShareTarget';
 import { useShortcuts } from '@/hooks/useShortcuts';
+import { toast } from '@/lib/toast';
 import { purgeExpiredTrash } from '@/lib/trashActions';
 import { useAppStore, boardById } from '@/state/appStore';
 import { usePanelsStore } from '@/state/panelsStore';
@@ -282,8 +281,6 @@ function WorkspaceShell({
 
   const status = useSessionStatus();
   const setSyncState = useAppStore((state) => state.setSyncState);
-  const notice = useAppStore((state) => state.notice);
-  const setNotice = useAppStore((state) => state.setNotice);
   const viewerId = useUiStore((state) => state.viewerId);
   const cropTargetId = useUiStore((state) => state.cropTargetId);
   const recorderOpen = useUiStore((state) => state.recorderOpen);
@@ -315,11 +312,11 @@ function WorkspaceShell({
       const pending = sessionStorage.getItem(RELOAD_NOTICE_KEY);
       if (!pending) return;
       sessionStorage.removeItem(RELOAD_NOTICE_KEY);
-      setNotice(pending);
+      toast.success(pending);
     } catch {
       // sin sessionStorage no hay aviso pendiente
     }
-  }, [setNotice]);
+  }, []);
 
   const createBlankBoard = useCallback((): void => {
     const parent = useAppStore.getState().currentBoardId;
@@ -471,19 +468,6 @@ function WorkspaceShell({
       ) : null}
 
       <BoardEffects session={session} boardId={boardId} />
-      {notice ? (
-        <div className="notice" role="status">
-          <span className="notice__text">{notice}</span>
-          <button
-            type="button"
-            className="notice__close"
-            title="Descartar aviso"
-            onClick={() => setNotice(null)}
-          >
-            <X size={13} />
-          </button>
-        </div>
-      ) : null}
     </div>
   );
 }

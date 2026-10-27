@@ -18,8 +18,11 @@ import { fetchTrashBoards, purgeTrashedBoard, restoreTrashedBoard } from '@/api/
 import type { BoardSession } from '@/collab/BoardSession';
 import { useSession, useTrashedElements } from '@/collab/SessionContext';
 import { blocksToPlainText } from '@/lib/textBlocks';
+import { toast } from '@/lib/toast';
 import { emptyTrashForever, purgeExpiredTrash, restoreTrashedElements } from '@/lib/trashActions';
 import { useAppStore } from '@/state/appStore';
+
+import { EmptyState } from './EmptyState';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -92,7 +95,7 @@ export function TrashPanelBody(): JSX.Element {
 
   const restore = (id: string): void => {
     const restored = restoreTrashedElements(session, [id]);
-    if (restored.length > 0) useAppStore.getState().setNotice('Se restauró 1 elemento.');
+    if (restored.length > 0) toast.success('Se restauró 1 elemento.');
   };
 
   const emptyElements = (): void => {
@@ -100,7 +103,7 @@ export function TrashPanelBody(): JSX.Element {
     setBusy(true);
     void emptyTrashForever(session)
       .then((ids) => {
-        useAppStore.getState().setNotice(
+        toast.success(
           ids.length === 1 ? 'Se borró 1 elemento para siempre.' : `Se borraron ${ids.length} elementos para siempre.`,
         );
         setConfirming(null);
@@ -114,10 +117,10 @@ export function TrashPanelBody(): JSX.Element {
     void restoreTrashedBoard(id)
       .then((board) => {
         useAppStore.getState().upsertBoard(board);
-        useAppStore.getState().setNotice(`Se restauró «${board.title}».`);
+        toast.success(`Se restauró «${board.title}».`);
         setRevision((value) => value + 1);
       })
-      .catch(() => useAppStore.getState().setNotice('No se pudo restaurar el tablero.'))
+      .catch(() => toast.error('No se pudo restaurar el tablero.'))
       .finally(() => setBusy(false));
   };
 
@@ -126,11 +129,11 @@ export function TrashPanelBody(): JSX.Element {
     setBusy(true);
     void purgeTrashedBoard(id)
       .then(() => {
-        useAppStore.getState().setNotice('Se borró el tablero para siempre.');
+        toast.success('Se borró el tablero para siempre.');
         setConfirming(null);
         setRevision((value) => value + 1);
       })
-      .catch(() => useAppStore.getState().setNotice('No se pudo borrar el tablero.'))
+      .catch(() => toast.error('No se pudo borrar el tablero.'))
       .finally(() => setBusy(false));
   };
 
@@ -153,7 +156,13 @@ export function TrashPanelBody(): JSX.Element {
         </header>
 
         {elements.length === 0 ? (
-          <p className="trash__empty">No hay elementos en la papelera.</p>
+          <EmptyState
+            compact
+            icon={<Trash2 size={22} />}
+            title="La papelera está vacía"
+            text="Lo que borres de este tablero aparece aquí durante 30 días."
+            data-trash-empty="elements"
+          />
         ) : (
           <ul className="trash__list">
             {elements.map((element) => (
@@ -203,7 +212,15 @@ export function TrashPanelBody(): JSX.Element {
             <Loader2 size={12} className="spin" /> Leyendo…
           </p>
         ) : null}
-        {boards && boards.length === 0 ? <p className="trash__empty">No hay tableros en la papelera.</p> : null}
+        {boards && boards.length === 0 ? (
+          <EmptyState
+            compact
+            icon={<Archive size={22} />}
+            title="Sin tableros en la papelera"
+            text="Los tableros que borres se pueden restaurar desde aquí."
+            data-trash-empty="boards"
+          />
+        ) : null}
 
         {boards && boards.length > 0 ? (
           <ul className="trash__list">

@@ -62,8 +62,26 @@ export default defineConfig({
         // Caché de la aplicación (precache del build). La API y la colaboración
         // quedan afuera a propósito: son datos vivos y van siempre a la red.
         globPatterns: ['**/*.{js,css,html,png,svg,woff,woff2}'],
+        // Los chunks pesados que solo usan algunas tarjetas (PDF, editor de texto
+        // y mapas) no se descargan en la primera visita: se cachean al usarlos
+        // por primera vez (regla de `runtimeCaching`, más abajo).
+        globIgnores: ['**/assets/vendor-pdf-*', '**/assets/vendor-editor-*', '**/assets/vendor-leaflet-*'],
         navigateFallback: '/index.html',
-        navigateFallbackDenylist: [/^\/api\//, /^\/collab\//],
+        navigateFallbackDenylist: [/^\/api(\/|$)/, /^\/collab(\/|$)/],
+        runtimeCaching: [
+          {
+            // JS y CSS con hash del mismo origen que no están en el precache: al
+            // llevar el hash en el nombre, su contenido nunca cambia.
+            urlPattern: ({ url, sameOrigin }: { url: URL; sameOrigin: boolean }) =>
+              sameOrigin && url.pathname.startsWith('/assets/') && /\.(?:js|css)$/.test(url.pathname),
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'tablero-assets',
+              expiration: { maxEntries: 60, maxAgeSeconds: 60 * 60 * 24 * 30 },
+              cacheableResponse: { statuses: [200] },
+            },
+          },
+        ],
         cleanupOutdatedCaches: true,
         clientsClaim: true,
         skipWaiting: true,
@@ -124,7 +142,9 @@ export default defineConfig({
   },
   build: {
     target: 'es2022',
-    sourcemap: true,
+    // Mapas de fuente para depurar errores en producción sin que el navegador
+    // los pida (el bundle no lleva el comentario `sourceMappingURL`).
+    sourcemap: 'hidden',
     rollupOptions: {
       output: {
         /**

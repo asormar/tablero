@@ -9,7 +9,7 @@ import { Maximize2, Minus, Plus } from 'lucide-react';
 
 import { formatZoom } from '@tablero/shared';
 
-import { fitToScreen } from '@/canvas/commands';
+import { animateZoomStep, animateZoomTo, fitToScreen } from '@/canvas/commands';
 import type { BoardSession } from '@/collab/BoardSession';
 import { useUiStore } from '@/state/uiStore';
 
@@ -30,7 +30,7 @@ export function ZoomControl({ session }: { session: BoardSession }): JSX.Element
         className="zoom__button"
         title="Alejar (−)"
         aria-label="Alejar (−)"
-        onClick={() => useUiStore.getState().zoomStep(-1, anchor)}
+        onClick={() => animateZoomStep(-1, anchor)}
       >
         <Minus size={14} />
       </button>
@@ -39,7 +39,7 @@ export function ZoomControl({ session }: { session: BoardSession }): JSX.Element
         className="zoom__value"
         title="Restablecer al 100 % (Ctrl+0)"
         aria-label="Restablecer al 100 % (Ctrl+0)"
-        onClick={() => useUiStore.getState().zoomAtPoint(anchor, 1)}
+        onClick={() => animateZoomTo(1, anchor)}
       >
         {formatZoom(scale)}
       </button>
@@ -48,7 +48,7 @@ export function ZoomControl({ session }: { session: BoardSession }): JSX.Element
         className="zoom__button"
         title="Acercar (+)"
         aria-label="Acercar (+)"
-        onClick={() => useUiStore.getState().zoomStep(1, anchor)}
+        onClick={() => animateZoomStep(1, anchor)}
       >
         <Plus size={14} />
       </button>
@@ -58,7 +58,7 @@ export function ZoomControl({ session }: { session: BoardSession }): JSX.Element
         className="zoom__button"
         title="Ajustar a pantalla (Shift+1)"
         aria-label="Ajustar a pantalla (Shift+1)"
-        onClick={() => fitToScreen(session)}
+        onClick={() => fitToScreen(session, true)}
       >
         <Maximize2 size={14} />
       </button>

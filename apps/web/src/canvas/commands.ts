@@ -40,6 +40,8 @@ import {
   serializeForClipboard,
   snapPointToGrid,
   trashElements,
+  zoomAt,
+  zoomToStep,
 } from '@tablero/shared';
 
 import { useAppStore } from '@/state/appStore';
@@ -73,6 +75,8 @@ import {
 import type { BoardSession } from '@/collab/BoardSession';
 import { reportBoardActivity } from '@/collab/activityBridge';
 import { capabilityRefusal } from '@/collab/roles';
+
+import { animateViewportTo, pendingViewport } from './viewportTween';
 
 const DEFAULT_NOTE_HEIGHT = 120;
 
@@ -555,22 +559,43 @@ export function focusElementInView(session: BoardSession, id: string): boolean {
   return true;
 }
 
-export function fitToScreen(session: BoardSession): void {
+/**
+ * Encaja todo el tablero en pantalla. Por defecto salta de golpe (lo usan la
+ * carga del tablero y la impresión, que necesitan la vista final ya); con
+ * `animate` la cámara se desliza hasta el encuadre.
+ */
+export function fitToScreen(session: BoardSession, animate = false): void {
   const ui = useUiStore.getState();
   const bounds = session.bounds(ui.measuredHeights);
-  ui.zoomToFit(fitRect(bounds, ui.canvasSize, { padding: 96, maxScale: 1.5 }));
+  const target = fitRect(bounds, ui.canvasSize, { padding: 96, maxScale: 1.5 });
+  if (animate) animateViewportTo(target);
+  else ui.zoomToFit(target);
+}
+
+function viewportCenterPoint(): Point {
+  const { canvasSize } = useUiStore.getState();
+  return { x: canvasSize.width / 2, y: canvasSize.height / 2 };
+}
+
+/**
+ * Zoom animado alrededor de un punto de pantalla. Parte del destino pendiente si
+ * ya hay una transición en curso, así pulsar `+` varias veces seguidas encadena
+ * los pasos (1 → 1,25 → 1,5…) en lugar de repetir el primero.
+ */
+export function animateZoomTo(scale: number, anchor: Point = viewportCenterPoint()): void {
+  animateViewportTo(zoomAt(pendingViewport(), anchor, scale), { anchor });
+}
+
+export function animateZoomStep(direction: 1 | -1, anchor: Point = viewportCenterPoint()): void {
+  animateViewportTo(zoomToStep(pendingViewport(), anchor, direction), { anchor });
 }
 
 export function zoomTo100(): void {
-  const ui = useUiStore.getState();
-  const anchor = { x: ui.canvasSize.width / 2, y: ui.canvasSize.height / 2 };
-  ui.zoomAtPoint(anchor, 1);
+  animateZoomTo(1);
 }
 
 export function zoomToStepFromKey(direction: 1 | -1): void {
-  const ui = useUiStore.getState();
-  const anchor = { x: ui.canvasSize.width / 2, y: ui.canvasSize.height / 2 };
-  ui.zoomStep(direction, anchor);
+  animateZoomStep(direction);
 }
 
 /** Centro del viewport en coordenadas de mundo. */

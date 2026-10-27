@@ -16,6 +16,7 @@ import { type Rect } from '@tablero/shared';
 
 import { fitRect } from '@tablero/shared';
 
+import { SLIDE_TWEEN_MS, animateViewportTo, cancelViewportTween } from '@/canvas/viewportTween';
 import { useSession, useSessionElements } from '@/collab/SessionContext';
 import { useT } from '@/i18n';
 import { readingOrder } from '@/lib/readingOrder';
@@ -102,7 +103,7 @@ export function PresentationMode({
     if (slide.kind === 'zone') {
       const rect = slideBounds(slide);
       const ui = useUiStore.getState();
-      ui.setViewport(fitRect(rect, ui.canvasSize, { padding: 80, maxScale: 1.4 }));
+      animateViewportTo(fitRect(rect, ui.canvasSize, { padding: 80, maxScale: 1.4 }), { duration: SLIDE_TWEEN_MS });
       setMissing(false);
       return;
     }
@@ -113,11 +114,20 @@ export function PresentationMode({
     const timer = setTimeout(() => {
       const ui = useUiStore.getState();
       const bounds = session.bounds(ui.measuredHeights);
-      ui.zoomToFit(fitRect(bounds as Rect, ui.canvasSize, { padding: 96, maxScale: 1.2 }));
+      animateViewportTo(fitRect(bounds as Rect, ui.canvasSize, { padding: 96, maxScale: 1.2 }), {
+        duration: SLIDE_TWEEN_MS,
+      });
       setMissing(false);
     }, 260);
     return () => clearTimeout(timer);
   }, [open, slide, session, onOpenBoard]);
+
+  // Al salir de la presentación la cámara se queda donde esté: no debe seguir
+  // deslizándose por debajo.
+  useEffect(() => {
+    if (!open) return undefined;
+    return () => cancelViewportTween();
+  }, [open]);
 
   useEffect(() => {
     if (!open) return;

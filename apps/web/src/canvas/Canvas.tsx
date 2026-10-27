@@ -49,6 +49,7 @@ import { useUiStore } from '@/state/uiStore';
 import { canvasPoint, invalidateCanvasRect, setCanvasRoot, worldFromClient } from './canvasRef';
 import { distanceBetween, midpointOf, pinchPair, pinchScaleFor } from './touchNav';
 import { ElementLayer } from './ElementLayer';
+import { cancelViewportTween } from './viewportTween';
 import { type WheelBatch, classifyWheel, createWheelAccumulator } from './wheelAccumulator';
 import { CanvasGrid, ConnectorDraftOverlay, DropLineOverlay, GuidesOverlay, MarqueeOverlay } from './Overlays';
 import {
@@ -170,6 +171,8 @@ export function Canvas({ session, onOpenBoard, readOnly = false }: CanvasProps):
     return () => {
       activeTrack.current?.();
       activeTrack.current = null;
+      // La cámara no debe seguir animándose sobre un tablero que ya no está.
+      cancelViewportTween();
     };
   }, []);
 

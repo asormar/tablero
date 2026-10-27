@@ -1,11 +1,13 @@
 /**
  * Geometría de los conectores en el lienzo.
  *
- * La curva se recalcula a partir de los rectángulos **vivos** de las tarjetas:
- * se prefiere el rectángulo del DOM (que ya incluye el `transform` de un
- * arrastre en curso) y, si la tarjeta no está montada por la virtualización, el
- * del layout. De ahí que las flechas sigan a las tarjetas: no guardan posición,
- * se recalculan en cada frame del gesto.
+ * La curva se recalcula a partir de los rectángulos de las tarjetas. Para los
+ * gestos (arrastre, lazo, clic) se usan los rectángulos **vivos**: se prefiere el
+ * del DOM (que ya incluye el `transform` de un arrastre en curso) y, si la
+ * tarjeta no está montada por la virtualización, el del layout. De ahí que las
+ * flechas sigan a las tarjetas: no guardan posición, se recalculan en cada frame
+ * del gesto. Para pintar la capa (`ConnectorLayer`) se usa el modo estático: el
+ * layout en coordenadas de mundo, que no cambian al desplazarse ni al hacer zoom.
  */
 
 import {
@@ -40,19 +42,62 @@ function domRectOf(node: HTMLElement, scale: number, offset: Point): Rect {
   };
 }
 
+export type RectResolverOptions = {
+  /**
+   * `true` (por defecto): el DOM de la tarjeta manda, porque ya incluye el
+   * `transform` de un arrastre en curso. `false`: las tarjetas del layout se
+   * resuelven solo por sus coordenadas de mundo (más la altura medida), sin
+   * leer el DOM; así el resultado no depende del viewport y un paneo o un zoom
+   * no obliga a recalcular nada.
+   */
+  live?: boolean;
+};
+
 /**
- * Índice de rectángulos: primero el DOM de la tarjeta (exacto y al día durante
- * un arrastre), después el layout (tarjetas virtualizadas fuera de pantalla).
+ * Índice de rectángulos. En modo vivo, primero el DOM de la tarjeta (exacto y al
+ * día durante un arrastre) y después el layout (tarjetas virtualizadas fuera de
+ * pantalla). En modo estático, primero el layout; el DOM solo cubre lo que el
+ * layout no trae: los hijos de una columna, que ubica el flujo de la columna y
+ * no tienen posición de mundo en el documento.
  */
-export function createRectResolver(layout: readonly ElementLayout[], measured?: ReadonlyMap<string, number>): RectResolver {
+export function createRectResolver(
+  layout: readonly ElementLayout[],
+  measured?: ReadonlyMap<string, number>,
+  options: RectResolverOptions = {},
+): RectResolver {
+  const live = options.live ?? true;
   const index = new Map<string, Rect>();
   for (const item of layout) index.set(item.id, rectOf(item, measured));
   const { viewport } = useUiStore.getState();
-  return (id: string) => {
+  const fromDom = (id: string): Rect | null => {
     const node = getNode(id);
-    if (node) return domRectOf(node, viewport.scale, { x: viewport.x, y: viewport.y });
-    return index.get(id) ?? null;
+    return node ? domRectOf(node, viewport.scale, { x: viewport.x, y: viewport.y }) : null;
   };
+  if (live) return (id: string) => fromDom(id) ?? index.get(id) ?? null;
+  return (id: string) => index.get(id) ?? fromDom(id);
+}
+
+/**
+ * ¿Algún extremo apunta a un hijo de columna? Esos rectángulos salen del DOM, así
+ * que dependen del viewport (la capa tiene que recalcular al desplazarse).
+ */
+export function hasColumnChildEndpoints(
+  session: BoardSession,
+  connectors: readonly Connector[],
+  layout: readonly ElementLayout[],
+): boolean {
+  if (connectors.length === 0) return false;
+  let known: Set<string> | null = null;
+  for (const connector of connectors) {
+    for (const endpoint of [connector.from, connector.to]) {
+      const id = endpoint.elementId;
+      if (!id) continue;
+      if (!known) known = new Set(layout.map((item) => item.id));
+      if (known.has(id)) continue;
+      if (session.getElement(id)?.parentId) return true;
+    }
+  }
+  return false;
 }
 
 /** Geometría de un conector con los rectángulos ya resueltos. */

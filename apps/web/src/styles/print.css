@@ -14,7 +14,7 @@
   html[data-print='board'] .ctxbar,
   html[data-print='board'] .zoom,
   html[data-print='board'] .perf,
-  html[data-print='board'] .notice,
+  html[data-print='board'] .toast-stack,
   html[data-print='board'] .modal,
   html[data-print='board'] .board-search,
   html[data-print='board'] .list-view,

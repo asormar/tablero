@@ -1502,62 +1502,6 @@ summary:focus-visible,
   background: var(--border);
 }
 
-/* --- Aviso ---------------------------------------------------------------- */
-
-.notice {
-  position: fixed;
-  left: 50%;
-  bottom: 18px;
-  z-index: 70;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  max-width: min(560px, calc(100% - 48px));
-  padding: 9px 9px 9px 14px;
-  background: var(--surface);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  box-shadow: var(--shadow-pop);
-  transform: translateX(-50%);
-  animation: notice-in var(--dur-slow) var(--ease);
-  /* El aviso no puede tapar el lienzo: solo su botón de cerrar recibe clics. */
-  pointer-events: none;
-}
-
-@keyframes notice-in {
-  from {
-    opacity: 0;
-    transform: translate(-50%, 8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateX(-50%);
-  }
-}
-
-.notice__text {
-  font-size: 12.5px;
-  color: var(--text-muted);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.notice__close {
-  display: grid;
-  place-items: center;
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  color: var(--text-faint);
-  pointer-events: auto;
-}
-
-.notice__close:hover {
-  background: var(--surface-3);
-  color: var(--text);
-}
-
 /* ===========================================================================
    Acceso (entrar o crear cuenta)
    =========================================================================== */

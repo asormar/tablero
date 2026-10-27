@@ -1132,3 +1132,161 @@
 .invite-card__primary {
   justify-content: center;
 }
+
+/* ===========================================================================
+   Avisos (toasts)
+
+   Pila fija abajo y al centro, por encima de los diálogos (`--z-toast`). Entrada
+   de 200 ms con opacidad y 8 px de desplazamiento; salida de 150 ms. Con
+   `prefers-reduced-motion` solo queda un fundido corto (≤ 120 ms).
+   =========================================================================== */
+
+.toast-stack {
+  position: fixed;
+  left: 50%;
+  bottom: 18px;
+  z-index: var(--z-toast, 100);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: min(560px, calc(100% - 32px));
+  transform: translateX(-50%);
+  /* La pila no puede tapar el lienzo: solo los avisos reciben clics. */
+  pointer-events: none;
+}
+
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  max-width: 100%;
+  padding: 9px 9px 9px 12px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: var(--shadow-pop);
+  color: var(--text);
+  pointer-events: auto;
+  animation: toast-in 200ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1));
+}
+
+.toast.is-leaving {
+  animation: toast-out 150ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1)) forwards;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@keyframes toast-out {
+  from {
+    opacity: 1;
+    transform: none;
+  }
+  to {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+.toast__icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  height: 20px;
+  color: var(--accent);
+}
+
+.toast--success .toast__icon {
+  color: var(--sync-ok);
+}
+
+.toast--error .toast__icon {
+  color: var(--danger);
+}
+
+.toast--error {
+  border-color: color-mix(in srgb, var(--danger) 45%, var(--border));
+}
+
+.toast__text {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding-top: 1px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.toast__action {
+  flex: 0 0 auto;
+  height: 24px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.toast__action:hover {
+  background: var(--accent-strong);
+}
+
+.toast__close {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  color: var(--text-faint);
+}
+
+.toast__close:hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+@media (max-width: 760px) {
+  /* En el móvil la barra de herramientas ocupa el borde inferior. */
+  .toast-stack {
+    bottom: calc(76px + env(safe-area-inset-bottom, 0px));
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .toast {
+    animation: toast-fade-in 120ms linear;
+  }
+
+  .toast.is-leaving {
+    animation: toast-fade-out 100ms linear forwards;
+  }
+
+  @keyframes toast-fade-in {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+
+  @keyframes toast-fade-out {
+    from {
+      opacity: 1;
+    }
+    to {
+      opacity: 0;
+    }
+  }
+}

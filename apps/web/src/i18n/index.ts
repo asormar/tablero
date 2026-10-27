@@ -281,6 +281,9 @@ const es: Dictionary = {
   'type.line': 'Línea',
   'type.map': 'Mapa',
   'type.commentPin': 'Comentario',
+
+  'toast.region': 'Avisos',
+  'toast.close': 'Cerrar aviso',
 };
 
 const en: Dictionary = {
@@ -535,6 +538,9 @@ const en: Dictionary = {
   'type.line': 'Line',
   'type.map': 'Map',
   'type.commentPin': 'Comment',
+
+  'toast.region': 'Notifications',
+  'toast.close': 'Dismiss notification',
 };
 
 const dictionaries: Record<Language, Dictionary> = { es, en };

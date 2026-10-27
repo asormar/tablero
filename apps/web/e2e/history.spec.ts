@@ -54,7 +54,7 @@ test.describe('historial', () => {
 
     // La restauración recarga la página y avisa con el cartel de estado.
     await waitForWorkspace(app);
-    await expect(app.locator('.notice')).toContainText('Versión restaurada');
+    await expect(app.locator('.toast')).toContainText('Versión restaurada');
 
     // Las dos notas volvieron (la borrada, incluida).
     await expect(cardById(app, removedId)).toBeVisible({ timeout: 20_000 });

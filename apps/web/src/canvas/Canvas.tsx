@@ -19,6 +19,7 @@ import {
   type HeadingSize,
   type Point,
   type Rect,
+  connectorIntersectsRect,
   isRichTextType,
   moveElements,
   rectFromPoints,
@@ -26,7 +27,7 @@ import {
 } from '@tablero/shared';
 
 import { addElementsToColumn } from '@/canvas/columnCommands';
-import { connectorAtPoint, connectorsInRect, refreshConnectorNodes } from '@/canvas/connectorGeometry';
+import { connectorAtPoint, refreshConnectorNodes, resolveConnectors } from '@/canvas/connectorGeometry';
 import { startConnectorDrag } from '@/canvas/connectorDrag';
 import { ConnectorLayer } from '@/canvas/ConnectorLayer';
 import { highlightColumn, kanbanTargetAt, type KanbanTarget } from '@/canvas/kanbanDrag';
@@ -45,7 +46,7 @@ import { rectOf } from '@/lib/layout';
 import { useAppStore } from '@/state/appStore';
 import { useUiStore } from '@/state/uiStore';
 
-import { canvasPoint, setCanvasRoot, worldFromClient } from './canvasRef';
+import { canvasPoint, invalidateCanvasRect, setCanvasRoot, worldFromClient } from './canvasRef';
 import { distanceBetween, midpointOf, pinchPair, pinchScaleFor } from './touchNav';
 import { ElementLayer } from './ElementLayer';
 import { type WheelBatch, classifyWheel, createWheelAccumulator } from './wheelAccumulator';
@@ -220,6 +221,7 @@ export function Canvas({ session, onOpenBoard, readOnly = false }: CanvasProps):
 
     const onDown = (event: PointerEvent): void => {
       if (event.pointerType !== 'touch') return;
+      invalidateCanvasRect();
       points.set(event.pointerId, { x: event.clientX, y: event.clientY });
       const pair = pinchPair([...points.values()]);
       previousDistance = pair ? distanceBetween(pair[0], pair[1]) : 0;
@@ -319,9 +321,12 @@ export function Canvas({ session, onOpenBoard, readOnly = false }: CanvasProps):
 
       /**
        * El lazo abarca tarjetas **y** conectores: las flechas entran por su
-       * geometría (`connectorsInRect`), así que un lazo sobre dos tarjetas
-       * también selecciona la flecha que las une y `Supr` borra todo junto.
+       * geometría, así que un lazo sobre dos tarjetas también selecciona la
+       * flecha que las une y `Supr` borra todo junto. La geometría se resuelve una
+       * sola vez al empezar: durante el lazo las tarjetas no se mueven y repetirlo
+       * por frame obligaba a medir todas las flechas desde el DOM.
        */
+      const resolvedConnectors = resolveConnectors(session, session.getLayout());
       activeTrack.current = trackPointer(
         (event) => {
           latest = canvasPoint(event.clientX, event.clientY);
@@ -332,7 +337,9 @@ export function Canvas({ session, onOpenBoard, readOnly = false }: CanvasProps):
             const rect: Rect = rectFromPoints(startWorld, screenToWorld(state.viewport, latest));
             state.setMarquee(rect);
             const hits = idsInRect(session.getLayout(), rect);
-            const connectorHits = connectorsInRect(session, rect).map((connector) => connector.id);
+            const connectorHits = resolvedConnectors
+              .filter((item) => connectorIntersectsRect(item.geometry, rect))
+              .map((item) => item.connector.id);
             const next = additive ? [...new Set([...base, ...hits])] : hits;
             const nextConnectors = additive ? [...new Set([...baseConnectors, ...connectorHits])] : connectorHits;
             const key = next.join('|') + '#' + nextConnectors.join('|');
@@ -511,6 +518,8 @@ export function Canvas({ session, onOpenBoard, readOnly = false }: CanvasProps):
     (event: React.PointerEvent<HTMLDivElement>) => {
       const target = event.target as HTMLElement;
       if (target.closest('[contenteditable="true"], input, textarea, select')) return;
+      // Cada gesto vuelve a medir el lienzo una vez (el rectángulo se cachea).
+      invalidateCanvasRect();
       if (event.button === 1) event.preventDefault();
       if (event.button !== 0 && event.button !== 1) return;
 

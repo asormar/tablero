@@ -34,14 +34,41 @@ type Row = {
   updatedAt: Date;
 };
 
+type BoardWhere = {
+  OR?: BoardWhere[];
+  ownerId?: string | { not: string };
+  id?: { in: string[] };
+  parentBoardId?: { in: string[] };
+  members?: { some: { userId: string } };
+};
+
 const db = vi.hoisted(() => {
   const boards = new Map<string, Row>();
   const members = new Map<string, { boardId: string; userId: string; role: BoardRole }>();
   const key = (boardId: string, userId: string): string => `${boardId}:${userId}`;
 
+  const matchesWhere = (row: Row, where: BoardWhere | undefined): boolean => {
+    if (!where) return true;
+    if (where.OR) return where.OR.some((clause) => matchesWhere(row, clause));
+    if (typeof where.ownerId === 'string' && row.ownerId !== where.ownerId) return false;
+    if (typeof where.ownerId === 'object' && row.ownerId === where.ownerId.not) return false;
+    if (where.id && !where.id.in.includes(row.id)) return false;
+    if (where.parentBoardId && !(row.parentBoardId !== null && where.parentBoardId.in.includes(row.parentBoardId))) {
+      return false;
+    }
+    if (where.members) {
+      const userId = where.members.some.userId;
+      if (![...members.values()].some((member) => member.boardId === row.id && member.userId === userId)) return false;
+    }
+    return true;
+  };
+
   const prisma = {
     board: {
-      findMany: async () => [...boards.values()].map((row) => ({ ...row })),
+      // Interpreta los `where` de `loadBoardAccess` (carga acotada): propios o con
+      // membresía, hijos de un lote de padres y ancestros por id.
+      findMany: async ({ where }: { where?: BoardWhere } = {}) =>
+        [...boards.values()].filter((row) => matchesWhere(row, where)).map((row) => ({ ...row })),
       findUnique: async ({ where }: { where: { id: string } }) => {
         const row = boards.get(where.id);
         return row ? { ...row } : null;
@@ -132,12 +159,14 @@ describe('resolveBoardAccess: matriz de permisos', () => {
     }
   });
 
-  it('un usuario ajeno no tiene ningún rol y la resolución no filtra la existencia', async () => {
+  it('un usuario ajeno no tiene ningún rol y la resolución no revela el tablero', async () => {
+    // La carga acotada no lee tableros sin relación con el usuario: la resolución
+    // sale igual que para un id inexistente (y la API responde 404 en ambos casos).
     const resolution = await resolveBoardAccess('user_zeta', 'proyecto');
     expect(resolution.role).toBe('none');
     expect(resolution.allowed).toBe(false);
-    expect(resolution.exists).toBe(true);
-    expect(resolution.board?.title).toBe('Proyecto');
+    expect(resolution.exists).toBe(false);
+    expect(resolution.board).toBeNull();
 
     await expect(async () => requireBoardView(resolution)).rejects.toThrow(/no existe o no tenés acceso/);
     const missing = await resolveBoardAccess('user_zeta', 'no-existe');

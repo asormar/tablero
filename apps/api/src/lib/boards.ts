@@ -1,10 +1,11 @@
 /**
  * Acceso a tableros: árbol, roles efectivos y proyección a `BoardSummary`.
  *
- * El árbol se carga entero (select acotado) porque una cuenta personal maneja
- * cientos de tableros y así se resuelven herencia de roles, migas de pan y
- * conteos sin consultas por nodo. Si el volumen creciera, el reemplazo natural
- * es una CTE recursiva en Postgres.
+ * Se carga el árbol que alcanza al usuario (select acotado, ver
+ * `loadBoardAccess`): una cuenta personal maneja cientos de tableros y así se
+ * resuelven herencia de roles, migas de pan y conteos sin consultas por nodo.
+ * Los tableros de otros usuarios sin relación con él no se leen. Si el volumen
+ * creciera, el reemplazo natural es una CTE recursiva en Postgres.
  */
 
 import type { BoardSummary, BoardRole, EffectiveRole } from '@tablero/shared';
@@ -220,15 +221,89 @@ export class BoardAccess {
   }
 }
 
+/** Tamaño de los lotes `IN (...)` al bajar por el árbol (acota los parámetros por consulta). */
+const TREE_BATCH_SIZE = 500;
+
+function chunk<T>(items: T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let index = 0; index < items.length; index += size) chunks.push(items.slice(index, index + size));
+  return chunks;
+}
+
+/**
+ * Carga solo los tableros que pueden tener que ver con el usuario:
+ *
+ * 1. Raíces de acceso: los que posee y aquellos donde es miembro.
+ * 2. Descendientes de esas raíces (el rol se hereda hacia abajo, así que todo
+ *    tablero con rol es raíz o descendiente de una raíz). Se baja nivel a nivel
+ *    con lotes `parentBoardId IN (...)`; los hijos propios no se piden porque ya
+ *    vinieron en el paso 1.
+ * 3. Ancestros de todo lo anterior (migas de pan y `trashedAncestorOf`): son
+ *    tableros ajenos sin rol, pero el árbol resuelve la cadena hasta la raíz.
+ *
+ * Los tableros de otros usuarios sin relación con estos no se leen. El resultado
+ * se ordena por `createdAt`/`id`, igual que antes con el `orderBy` de la consulta.
+ */
 export async function loadBoardAccess(userId: string): Promise<BoardAccess> {
-  const [boards, memberships] = await Promise.all([
-    prisma.board.findMany({
-      select: BOARD_SELECT,
-      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
-    }),
+  const [memberships, rootRows] = await Promise.all([
     prisma.boardMember.findMany({ where: { userId }, select: { boardId: true, role: true } }),
+    prisma.board.findMany({
+      where: { OR: [{ ownerId: userId }, { members: { some: { userId } } }] },
+      select: BOARD_SELECT,
+    }),
   ]);
-  return new BoardAccess(userId, boards as BoardRecord[], memberships);
+
+  const byId = new Map<string, BoardRecord>();
+  for (const row of rootRows as BoardRecord[]) byId.set(row.id, row);
+
+  // Descendientes: cada ronda pide los hijos de lo descubierto en la anterior.
+  let frontier = [...byId.keys()];
+  while (frontier.length > 0) {
+    const parents = new Set(frontier);
+    const batches = await Promise.all(
+      chunk(frontier, TREE_BATCH_SIZE).map((ids) =>
+        prisma.board.findMany({
+          where: { parentBoardId: { in: ids }, ownerId: { not: userId } },
+          select: BOARD_SELECT,
+        }),
+      ),
+    );
+    frontier = [];
+    for (const row of batches.flat() as BoardRecord[]) {
+      if (row.parentBoardId === null || !parents.has(row.parentBoardId) || byId.has(row.id)) continue;
+      byId.set(row.id, row);
+      frontier.push(row.id);
+    }
+  }
+
+  // Ancestros: se sube hasta que cada padre conocido esté cargado.
+  const missingParents = (): string[] => {
+    const missing = new Set<string>();
+    for (const board of byId.values()) {
+      if (board.parentBoardId !== null && !byId.has(board.parentBoardId)) missing.add(board.parentBoardId);
+    }
+    return [...missing];
+  };
+  for (let pending = missingParents(); pending.length > 0; pending = missingParents()) {
+    const batches = await Promise.all(
+      chunk(pending, TREE_BATCH_SIZE).map((ids) =>
+        prisma.board.findMany({ where: { id: { in: ids } }, select: BOARD_SELECT }),
+      ),
+    );
+    const wanted = new Set(pending);
+    let found = 0;
+    for (const row of batches.flat() as BoardRecord[]) {
+      if (!wanted.has(row.id) || byId.has(row.id)) continue;
+      byId.set(row.id, row);
+      found += 1;
+    }
+    if (found === 0) break; // padres que ya no existen: no hay más cadena que subir
+  }
+
+  const boards = [...byId.values()].sort(
+    (a, b) => a.createdAt.getTime() - b.createdAt.getTime() || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0),
+  );
+  return new BoardAccess(userId, boards, memberships);
 }
 
 /**

@@ -1370,17 +1370,18 @@ summary:focus-visible,
   color: var(--text-muted);
 }
 
-/* --- Modal de atajos ------------------------------------------------------ */
+/* --- Diálogo modal (único: `chrome/Modal.tsx`) ---------------------------- */
 
 .modal {
   position: fixed;
   inset: 0;
-  z-index: 80;
+  z-index: var(--z-modal, 80);
   display: grid;
   place-items: center;
   padding: 24px;
+  /* Un solo velo para todos los diálogos. */
   background: rgba(20, 20, 22, 0.45);
-  animation: fade-in var(--dur) var(--ease);
+  animation: fade-in 200ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1));
 }
 
 .modal__panel {
@@ -1391,13 +1392,18 @@ summary:focus-visible,
   background: var(--surface);
   border-radius: 10px;
   box-shadow: var(--shadow-pop);
-  animation: modal-in var(--dur-slow) var(--ease);
+  animation: modal-in 200ms var(--ease-out, cubic-bezier(0.23, 1, 0.32, 1));
+}
+
+/* El foco entra en la tarjeta por código (trampa de foco): sin aro. */
+.modal__panel:focus {
+  outline: none;
 }
 
 @keyframes modal-in {
   from {
     opacity: 0;
-    transform: translateY(8px) scale(0.99);
+    transform: translateY(8px);
   }
   to {
     opacity: 1;
@@ -1409,13 +1415,26 @@ summary:focus-visible,
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 8px;
   padding: 14px 18px;
   border-bottom: 1px solid var(--border);
 }
 
 .modal__title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
   margin: 0;
   font-size: 15px;
+}
+
+.modal__head-actions {
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 4px;
+  margin-left: auto;
 }
 
 .modal__body {
@@ -1424,6 +1443,16 @@ summary:focus-visible,
   gap: 18px 26px;
   padding: 18px;
   overflow-y: auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .modal {
+    animation-duration: 120ms;
+  }
+
+  .modal__panel {
+    animation: fade-in 120ms linear;
+  }
 }
 
 .shortcuts__title {

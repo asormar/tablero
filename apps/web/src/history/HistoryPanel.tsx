@@ -13,14 +13,14 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
-import { History, Loader2, RotateCcw, X } from 'lucide-react';
+import { History, Loader2, RotateCcw } from 'lucide-react';
 
 import { ApiError } from '@/api/client';
 import { useSession } from '@/collab/SessionContext';
 import { useLanguage, useT } from '@/i18n';
+import { Modal } from '@/chrome/Modal';
 import { useAppStore } from '@/state/appStore';
 import { usePanelsStore } from '@/state/panelsStore';
-import { useFocusTrap } from '@/hooks/useFocusTrap';
 
 import { listBoardVersions, restoreBoardVersion } from './api';
 import { RELOAD_NOTICE_KEY } from './reloadNotice';
@@ -30,7 +30,6 @@ export { RELOAD_NOTICE_KEY };
 
 export function HistoryPanel(): JSX.Element | null {
   const open = usePanelsStore((state) => state.historyOpen);
-  const trapRef = useFocusTrap<HTMLDivElement>(open);
   const session = useSession();
   const t = useT();
   const language = useLanguage();
@@ -115,122 +114,117 @@ export function HistoryPanel(): JSX.Element | null {
   };
 
   return (
-    <div className="modal" role="dialog" aria-modal="true" aria-label={t('history.title')}>
-      <div className="modal__panel history" ref={trapRef}>
-        <div className="modal__head">
-          <h2 className="modal__title">
-            <History size={15} aria-hidden="true" /> {t('history.title')}
-          </h2>
-          {loading || restoring ? <Loader2 size={14} className="spin" /> : null}
-          <button type="button" className="icon-button" title={t('common.close')} onClick={close}>
-            <X size={15} />
-          </button>
-        </div>
+    <Modal
+      title={t('history.title')}
+      icon={<History size={15} aria-hidden="true" />}
+      onClose={close}
+      panelClassName="history"
+      headActions={loading || restoring ? <Loader2 size={14} className="spin" /> : null}
+    >
 
-        <div className="modal__body history__body">
-          <p className="sr-only" role="status" data-history-status>
-            {restoring ? t('history.restoring') : loading ? t('history.loading') : ''}
-          </p>
-          <p className="history__hint">{t('history.hint')}</p>
+      <div className="modal__body history__body">
+        <p className="sr-only" role="status" data-history-status>
+          {restoring ? t('history.restoring') : loading ? t('history.loading') : ''}
+        </p>
+        <p className="history__hint">{t('history.hint')}</p>
 
-          {error ? (
-            <div className="history__error" role="alert">
-              <span>{error}</span>
-              <button type="button" className="button" onClick={() => void load()}>
-                {t('common.retry')}
-              </button>
-            </div>
-          ) : null}
+        {error ? (
+          <div className="history__error" role="alert">
+            <span>{error}</span>
+            <button type="button" className="button" onClick={() => void load()}>
+              {t('common.retry')}
+            </button>
+          </div>
+        ) : null}
 
-          {!error && versions.length === 0 && !loading ? (
-            <p className="history__empty">{t('history.empty')}</p>
-          ) : null}
+        {!error && versions.length === 0 && !loading ? (
+          <p className="history__empty">{t('history.empty')}</p>
+        ) : null}
 
-          <div className="history__split">
-            <ul className="history__list" role="listbox" aria-label={t('history.title')}>
-              {versions.map((version, index) => {
-                const delta = versionDelta(versions, index);
-                return (
-                  <li key={version.id}>
-                    <button
-                      type="button"
-                      role="option"
-                      aria-selected={version.id === selected}
-                      className={`history__item${version.id === selected ? ' is-active' : ''}`}
-                      data-version={version.id}
-                      onClick={() => setSelected(version.id)}
-                    >
-                      <span className="history__item-date">{describeSnapshot(version.createdAt, language)}</span>
-                      <span className="history__item-meta">
-                        {t('history.elements', { count: version.elementCount })}
-                        {delta !== null && delta !== 0 ? (
-                          <span className={`history__delta${delta > 0 ? ' is-up' : ' is-down'}`}>
-                            {delta > 0 ? `+${delta}` : delta}
-                          </span>
-                        ) : null}
-                      </span>
-                    </button>
-                  </li>
-                );
-              })}
-            </ul>
-
-            {current ? (
-              <section className="history__preview" aria-label={t('history.preview')}>
-                <h3 className="history__preview-title">{t('history.preview')}</h3>
-                <p className="history__preview-board">{current.title || t('app.untitledBoard')}</p>
-                <dl className="history__facts">
-                  <div>
-                    <dt>{t('history.preview')}</dt>
-                    <dd>{t('history.elements', { count: current.elementCount })}</dd>
-                  </div>
-                  <div>
-                    <dt>{t('history.title')}</dt>
-                    <dd>{describeSnapshot(current.createdAt, language)}</dd>
-                  </div>
-                  {current.sizeBytes !== null ? (
-                    <div>
-                      <dt>{t('history.size', { size: '' }).trim() || 'Tamaño'}</dt>
-                      <dd>{formatSize(current.sizeBytes)}</dd>
-                    </div>
-                  ) : null}
-                </dl>
-
-                {confirming === current.id ? (
-                  <div className="history__confirm" role="alertdialog" aria-label={t('history.restore')}>
-                    <p>{t('history.confirm', { date: describeSnapshot(current.createdAt, language) })}</p>
-                    <div className="history__confirm-actions">
-                      <button type="button" className="button" onClick={() => setConfirming(null)}>
-                        {t('common.cancel')}
-                      </button>
-                      <button
-                        type="button"
-                        className="button button--primary"
-                        disabled={restoring}
-                        data-restore-confirm={current.id}
-                        onClick={() => void restore(current)}
-                      >
-                        {restoring ? t('history.restoring') : t('common.confirm')}
-                      </button>
-                    </div>
-                  </div>
-                ) : (
+        <div className="history__split">
+          <ul className="history__list" role="listbox" aria-label={t('history.title')}>
+            {versions.map((version, index) => {
+              const delta = versionDelta(versions, index);
+              return (
+                <li key={version.id}>
                   <button
                     type="button"
-                    className="button button--primary history__restore"
-                    data-restore={current.id}
-                    disabled={restoring}
-                    onClick={() => setConfirming(current.id)}
+                    role="option"
+                    aria-selected={version.id === selected}
+                    className={`history__item${version.id === selected ? ' is-active' : ''}`}
+                    data-version={version.id}
+                    onClick={() => setSelected(version.id)}
                   >
-                    <RotateCcw size={14} /> {t('history.restore')}
+                    <span className="history__item-date">{describeSnapshot(version.createdAt, language)}</span>
+                    <span className="history__item-meta">
+                      {t('history.elements', { count: version.elementCount })}
+                      {delta !== null && delta !== 0 ? (
+                        <span className={`history__delta${delta > 0 ? ' is-up' : ' is-down'}`}>
+                          {delta > 0 ? `+${delta}` : delta}
+                        </span>
+                      ) : null}
+                    </span>
                   </button>
-                )}
-              </section>
-            ) : null}
-          </div>
+                </li>
+              );
+            })}
+          </ul>
+
+          {current ? (
+            <section className="history__preview" aria-label={t('history.preview')}>
+              <h3 className="history__preview-title">{t('history.preview')}</h3>
+              <p className="history__preview-board">{current.title || t('app.untitledBoard')}</p>
+              <dl className="history__facts">
+                <div>
+                  <dt>{t('history.preview')}</dt>
+                  <dd>{t('history.elements', { count: current.elementCount })}</dd>
+                </div>
+                <div>
+                  <dt>{t('history.title')}</dt>
+                  <dd>{describeSnapshot(current.createdAt, language)}</dd>
+                </div>
+                {current.sizeBytes !== null ? (
+                  <div>
+                    <dt>{t('history.size', { size: '' }).trim() || 'Tamaño'}</dt>
+                    <dd>{formatSize(current.sizeBytes)}</dd>
+                  </div>
+                ) : null}
+              </dl>
+
+              {confirming === current.id ? (
+                <div className="history__confirm" role="alertdialog" aria-label={t('history.restore')}>
+                  <p>{t('history.confirm', { date: describeSnapshot(current.createdAt, language) })}</p>
+                  <div className="history__confirm-actions">
+                    <button type="button" className="button" onClick={() => setConfirming(null)}>
+                      {t('common.cancel')}
+                    </button>
+                    <button
+                      type="button"
+                      className="button button--primary"
+                      disabled={restoring}
+                      data-restore-confirm={current.id}
+                      onClick={() => void restore(current)}
+                    >
+                      {restoring ? t('history.restoring') : t('common.confirm')}
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  className="button button--primary history__restore"
+                  data-restore={current.id}
+                  disabled={restoring}
+                  onClick={() => setConfirming(current.id)}
+                >
+                  <RotateCcw size={14} /> {t('history.restore')}
+                </button>
+              )}
+            </section>
+          ) : null}
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }
 

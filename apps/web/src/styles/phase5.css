@@ -477,66 +477,27 @@
 
 /* --- Compartir y publicar -------------------------------------------------- */
 
-.modal-backdrop {
-  position: fixed;
-  inset: 0;
-  z-index: 70;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgb(0 0 0 / 32%);
-}
-
 /*
- * Los diálogos de esta fase usan su propio envoltorio (`.modal-backdrop`), así
- * que estas reglas van acotadas a él: un `.modal` suelto sigue siendo el fondo
- * centrado de `global.css` (lo usan las once superficies de las fases 1–4:
- * historial, atajos, plantillas, captura, ajustes…). Sin el acotado, la tarjeta
- * de acá se aplicaba también a esos diálogos y quedaban sin fondo, sin centrado
- * y con una tarjeta dentro de otra.
+ * Compartir, publicar y actividad usan el diálogo único (`chrome/Modal.tsx`):
+ * velo y tarjeta salen de `.modal` / `.modal__panel` en `global.css`. Acá solo
+ * va lo propio de estos tres: ancho de la tarjeta y cuerpo en columna.
  */
-.modal-backdrop .modal {
-  /* Devuelve la tarjeta al flujo del envoltorio (el `position: fixed; inset: 0`
-     de la clase base la clavaba en la esquina): el envoltorio es quien centra. */
-  position: static;
-  display: block;
-  width: min(560px, 92vw);
-  max-height: 86vh;
-  padding: 0;
-  overflow: auto;
-  border: 1px solid var(--border, #e0e0dc);
-  border-radius: 12px;
-  background: var(--surface, #fff);
-  color: var(--text, #2b2b28);
-  box-shadow: 0 18px 48px rgb(0 0 0 / 28%);
+@media (min-width: 761px) {
+  .share-dialog,
+  .publish-panel,
+  .activity-panel {
+    width: min(560px, 100%);
+    max-height: min(86vh, 100%);
+  }
 }
 
-.modal-backdrop .modal__head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--border, #e0e0dc);
-}
-
-.modal-backdrop .modal__title {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin: 0;
-  font-size: 14px;
-  font-weight: 700;
-}
-
-.modal-backdrop .modal__head .icon-button:last-child {
-  margin-left: auto;
-}
-
-.modal-backdrop .modal__body {
-  padding: 12px 14px;
+.share-dialog .modal__body,
+.publish-panel .modal__body,
+.activity-panel .modal__body {
   display: flex;
   flex-direction: column;
   gap: 14px;
+  padding: 12px 14px;
 }
 
 .share-dialog__role,

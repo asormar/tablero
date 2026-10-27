@@ -7,14 +7,18 @@
 
 import { useCallback, useEffect, useState } from 'react';
 
-import { Clock, Home, Loader2, Star, X } from 'lucide-react';
+import { Clock, Home, LayoutDashboard, Loader2, Star } from 'lucide-react';
 
 import { type BoardSummary, ROOT_BOARD_TITLE, buildBreadcrumbPath } from '@tablero/shared';
 
 import { listBoards, setBoardFavorite } from '@/api/boards';
+import { createNestedBoard } from '@/app/boardService';
+import { toast } from '@/lib/toast';
 import { useAppStore } from '@/state/appStore';
 import { useUiStore } from '@/state/uiStore';
-import { useFocusTrap } from '@/hooks/useFocusTrap';
+
+import { EmptyState } from './EmptyState';
+import { Modal } from './Modal';
 
 function byRecent(a: BoardSummary, b: BoardSummary): number {
   return (b.updatedAt ?? 0) - (a.updatedAt ?? 0);
@@ -22,7 +26,6 @@ function byRecent(a: BoardSummary, b: BoardSummary): number {
 
 export function BoardsHome({ onOpenBoard }: { onOpenBoard(boardId: string): void }): JSX.Element | null {
   const open = useUiStore((state) => state.homeOpen);
-  const trapRef = useFocusTrap<HTMLDivElement>(open);
   const boards = useAppStore((state) => state.boards);
   const apiOnline = useAppStore((state) => state.apiOnline);
   const [favorites, setFavorites] = useState<BoardSummary[]>([]);
@@ -42,7 +45,7 @@ export function BoardsHome({ onOpenBoard }: { onOpenBoard(boardId: string): void
       setFavorites(local.filter((board) => board.favorited === true).sort(byRecent));
       setRecent([...local].filter((board) => board.trashedAt === null).sort(byRecent));
     } catch {
-      useAppStore.getState().setNotice('No se pudo leer el catálogo de tableros.');
+      toast.error('No se pudo leer el catálogo de tableros.');
     } finally {
       setLoading(false);
     }
@@ -52,15 +55,6 @@ export function BoardsHome({ onOpenBoard }: { onOpenBoard(boardId: string): void
     if (!open) return;
     void refresh();
   }, [open, refresh]);
-
-  useEffect(() => {
-    if (!open) return undefined;
-    const onKey = (event: KeyboardEvent): void => {
-      if (event.key === 'Escape') useUiStore.getState().setHomeOpen(false);
-    };
-    window.addEventListener('keydown', onKey, true);
-    return () => window.removeEventListener('keydown', onKey, true);
-  }, [open]);
 
   if (!open) return null;
 
@@ -77,8 +71,18 @@ export function BoardsHome({ onOpenBoard }: { onOpenBoard(boardId: string): void
       })
       .catch(() => {
         useAppStore.getState().upsertBoard({ ...board, favorited: !next });
-        useAppStore.getState().setNotice('No se pudo cambiar el favorito.');
+        toast.error('No se pudo cambiar el favorito.');
       });
+  };
+
+  /** Crea un tablero en blanco en la raíz y lo abre. */
+  const createBoard = (): void => {
+    void createNestedBoard(null)
+      .then((board) => {
+        close();
+        onOpenBoard(board.id);
+      })
+      .catch(() => toast.error('No se pudo crear el tablero.'));
   };
 
   const pathOf = (board: BoardSummary): string => {
@@ -110,41 +114,47 @@ export function BoardsHome({ onOpenBoard }: { onOpenBoard(boardId: string): void
   );
 
   return (
-    <div className="modal" role="dialog" aria-modal="true" aria-label="Tableros">
-      <div className="modal__panel home" ref={trapRef}>
-        <div className="modal__head">
-          <h2 className="modal__title">
-            <Home size={15} /> Tableros
-          </h2>
-          {loading ? <Loader2 size={14} className="spin" /> : null}
-          <button type="button" className="icon-button" title="Cerrar (Esc)" onClick={close}>
-            <X size={15} />
-          </button>
-        </div>
-        <div className="modal__body home__body">
-          <section className="home__section" aria-label="Favoritos">
-            <h3 className="home__section-title">
-              <Star size={13} /> Favoritos
-            </h3>
-            {favorites.length === 0 ? (
-              <p className="home__empty">Todavía no marcaste ningún tablero con la estrella.</p>
-            ) : (
-              <ul className="home__list">{favorites.map(row)}</ul>
-            )}
-          </section>
+    <Modal
+      title="Tableros"
+      icon={<Home size={15} aria-hidden="true" />}
+      onClose={close}
+      panelClassName="home"
+      headActions={loading ? <Loader2 size={14} className="spin" /> : null}
+    >
+      <div className="modal__body home__body">
+        <section className="home__section" aria-label="Favoritos">
+          <h3 className="home__section-title">
+            <Star size={13} /> Favoritos
+          </h3>
+          {favorites.length === 0 ? (
+            <EmptyState
+              compact
+              icon={<Star size={22} />}
+              title="Sin favoritos"
+              text="Marca un tablero con la estrella para tenerlo siempre a mano."
+            />
+          ) : (
+            <ul className="home__list">{favorites.map(row)}</ul>
+          )}
+        </section>
 
-          <section className="home__section" aria-label="Recientes">
-            <h3 className="home__section-title">
-              <Clock size={13} /> Recientes
-            </h3>
-            {recent.length === 0 ? (
-              <p className="home__empty">Sin tableros para mostrar.</p>
-            ) : (
-              <ul className="home__list">{recent.map(row)}</ul>
-            )}
-          </section>
-        </div>
+        <section className="home__section" aria-label="Recientes">
+          <h3 className="home__section-title">
+            <Clock size={13} /> Recientes
+          </h3>
+          {recent.length === 0 ? (
+            <EmptyState
+              compact
+              icon={<LayoutDashboard size={22} />}
+              title="Todavía no hay tableros"
+              text="Crea el primero para empezar a ordenar tus ideas."
+              action={{ label: 'Crear tablero', onClick: createBoard }}
+            />
+          ) : (
+            <ul className="home__list">{recent.map(row)}</ul>
+          )}
+        </section>
       </div>
-    </div>
+    </Modal>
   );
 }

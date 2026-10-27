@@ -9,24 +9,26 @@
 
 import { useEffect, useState } from 'react';
 
-import { Copy, ExternalLink, Globe, GlobeLock, X } from 'lucide-react';
+import { Copy, ExternalLink, Globe, GlobeLock } from 'lucide-react';
 
 import { reportActivity } from '@/api/activity';
 import { degradationMessage, isMissingEndpoint } from '@/api/degraded';
 import { publishBoard, unpublishBoard, type Publication } from '@/api/sharing';
 import { useSessionPermission } from '@/collab/SessionContext';
 import { capabilityRefusal } from '@/collab/roles';
-import { useFocusTrap } from '@/hooks/useFocusTrap';
+import { formatDateTime } from '@/lib/formatDate';
 import { publicBoardUrl } from '@/lib/routes';
+import { toast } from '@/lib/toast';
 import { writeSystemText } from '@/lib/clipboard';
 import { useAppStore } from '@/state/appStore';
 import { usePanelsStore } from '@/state/panelsStore';
+
+import { Modal } from './Modal';
 
 export function PublishPanel({ boardId }: { boardId: string }): JSX.Element | null {
   const open = usePanelsStore((state) => state.publishOpen);
   const setOpen = usePanelsStore((state) => state.setPublishOpen);
   const board = useAppStore((state) => state.boards.find((item) => item.id === boardId) ?? null);
-  const setNotice = useAppStore((state) => state.setNotice);
   const permission = useSessionPermission();
 
   const [password, setPassword] = useState('');
@@ -37,7 +39,6 @@ export function PublishPanel({ boardId }: { boardId: string }): JSX.Element | nu
   const [copied, setCopied] = useState(false);
   /** Anuncio accesible de las acciones asíncronas (`role=status`). */
   const [status, setStatus] = useState('');
-  const trapRef = useFocusTrap<HTMLDivElement>(open);
 
   const publishedSlug = publication?.slug ?? board?.publishedSlug ?? null;
   const publishedAt = publication?.publishedAt ?? board?.publishedAt ?? null;
@@ -72,7 +73,7 @@ export function PublishPanel({ boardId }: { boardId: string }): JSX.Element | nu
         action: 'board.publish',
         meta: { slug: result.slug, includeSubBoards, hasPassword: result.hasPassword },
       });
-      setNotice(`Tablero publicado en /p/${result.slug} (solo lectura, sin sesión).`);
+      toast.success(`Tablero publicado en /p/${result.slug} (solo lectura, sin sesión).`);
       void copy(publicBoardUrl(result.slug));
     } catch (cause) {
       setError(
@@ -95,7 +96,7 @@ export function PublishPanel({ boardId }: { boardId: string }): JSX.Element | nu
       setPublication({ slug: '', url: null, includeSubBoards, hasPassword: false, publishedAt: null });
       setStatus('El tablero dejó de estar publicado.');
       reportActivity(boardId, { action: 'board.unpublish' });
-      setNotice('El tablero dejó de estar publicado.');
+      toast.success('El tablero dejó de estar publicado.');
     } catch (cause) {
       setError(degradationMessage(cause, 'Dejar de publicar'));
       setStatus('No se pudo dejar de publicar el tablero.');
@@ -109,134 +110,121 @@ export function PublishPanel({ boardId }: { boardId: string }): JSX.Element | nu
     const ok = await writeSystemText(value);
     setCopied(ok);
     setStatus(ok ? 'Enlace copiado al portapapeles.' : 'No se pudo copiar el enlace.');
-    if (!ok) setNotice('El navegador no dejó copiar al portapapeles. Copia el enlace a mano.');
+    if (!ok) toast.error('El navegador no dejó copiar al portapapeles. Copia el enlace a mano.');
   };
 
   return (
-    <div className="modal-backdrop" role="presentation">
-      <div
-        className="modal publish-panel"
-        role="dialog"
-        aria-modal="true"
-        aria-label="Publicar el tablero"
-        data-publish-panel
-        data-publish-state={publishedSlug ? 'published' : 'draft'}
-        ref={trapRef}
-      >
-        <div className="modal__head">
-          <h2 className="modal__title">
-            {publishedSlug ? <Globe size={15} /> : <GlobeLock size={15} />} Publicar «{board?.title ?? 'Tablero'}»
-          </h2>
-          <button type="button" className="icon-button" title="Cerrar" aria-label="Cerrar" data-autofocus onClick={() => setOpen(false)}>
-            <X size={14} />
-          </button>
-        </div>
+    <Modal
+      title={`Publicar «${board?.title ?? 'Tablero'}»`}
+      icon={publishedSlug ? <Globe size={15} aria-hidden="true" /> : <GlobeLock size={15} aria-hidden="true" />}
+      onClose={() => setOpen(false)}
+      panelClassName="publish-panel"
+      panelProps={{ 'data-publish-panel': true, 'data-publish-state': publishedSlug ? 'published' : 'draft' }}
+    >
+      <div className="modal__body">
+        <p className="sr-only" role="status" data-publish-status>
+          {status}
+        </p>
 
-        <div className="modal__body">
-          <p className="sr-only" role="status" data-publish-status>
-            {status}
+        {publishedSlug ? (
+          <p className="publish-panel__banner" data-publish-banner>
+            Este tablero está <strong>publicado</strong>
+            {publishedAt ? ` desde ${formatDateTime(publishedAt)}` : ''}. Cualquiera con el
+            enlace lo puede ver sin cuenta.
           </p>
+        ) : (
+          <p className="publish-panel__hint">
+            La vista pública es de solo lectura y sin socket: se refresca cada 15 segundos.
+          </p>
+        )}
 
-          {publishedSlug ? (
-            <p className="publish-panel__banner" data-publish-banner>
-              Este tablero está <strong>publicado</strong>
-              {publishedAt ? ` desde ${new Date(publishedAt).toLocaleString('es')}` : ''}. Cualquiera con el
-              enlace lo puede ver sin cuenta.
-            </p>
-          ) : (
-            <p className="publish-panel__hint">
-              La vista pública es de solo lectura y sin socket: se refresca cada 15 segundos.
-            </p>
-          )}
+        {refusal ? (
+          <p className="publish-panel__warning" data-publish-refusal>
+            {refusal}
+          </p>
+        ) : null}
+        {error ? (
+          <p className="publish-panel__warning" data-publish-error>
+            {error}
+          </p>
+        ) : null}
 
-          {refusal ? (
-            <p className="publish-panel__warning" data-publish-refusal>
-              {refusal}
-            </p>
+        <label className="publish-panel__field">
+          <span>Enlace público</span>
+          <input
+            className="publish-panel__input"
+            readOnly
+            data-publish-slug
+            value={publishedSlug ? url ?? `/p/${publishedSlug}` : 'Todavía no publicado'}
+          />
+        </label>
+
+        <label className="publish-panel__field">
+          <span>Contraseña (opcional)</span>
+          <input
+            className="publish-panel__input"
+            type="password"
+            placeholder={publishedSlug ? 'Déjalo vacío para no cambiarla' : 'Sin contraseña'}
+            data-publish-password
+            value={password}
+            disabled={!!refusal}
+            onChange={(event) => setPassword(event.target.value)}
+          />
+        </label>
+
+        <label className="publish-panel__toggle">
+          <input
+            type="checkbox"
+            data-publish-subboards
+            checked={includeSubBoards}
+            disabled={!!refusal}
+            onChange={(event) => setIncludeSubBoards(event.target.checked)}
+          />
+          <span>Incluir los subtableros (navegables desde la vista pública)</span>
+        </label>
+
+        <div className="publish-panel__actions">
+          <button
+            type="button"
+            className="publish-panel__primary"
+            data-publish-submit
+            disabled={busy || !!refusal}
+            onClick={() => void publish()}
+          >
+            <Globe size={13} /> {publishedSlug ? 'Actualizar publicación' : 'Publicar'}
+          </button>
+          {publishedSlug && url ? (
+            <>
+              <button
+                type="button"
+                className="publish-panel__secondary"
+                data-publish-copy
+                onClick={() => void copy(url)}
+              >
+                <Copy size={13} /> {copied ? 'Copiado' : 'Copiar enlace'}
+              </button>
+              <a
+                className="publish-panel__secondary"
+                data-publish-open
+                href={url}
+                target="_blank"
+                rel="noreferrer"
+              >
+                <ExternalLink size={13} /> Abrir vista pública
+              </a>
+              <button
+                type="button"
+                className="publish-panel__danger"
+                data-publish-unpublish
+                disabled={busy}
+                onClick={() => void unpublish()}
+              >
+                Dejar de publicar
+              </button>
+            </>
           ) : null}
-          {error ? (
-            <p className="publish-panel__warning" data-publish-error>
-              {error}
-            </p>
-          ) : null}
-
-          <label className="publish-panel__field">
-            <span>Enlace público</span>
-            <input
-              className="publish-panel__input"
-              readOnly
-              data-publish-slug
-              value={publishedSlug ? url ?? `/p/${publishedSlug}` : 'Todavía no publicado'}
-            />
-          </label>
-
-          <label className="publish-panel__field">
-            <span>Contraseña (opcional)</span>
-            <input
-              className="publish-panel__input"
-              type="password"
-              placeholder={publishedSlug ? 'Dejá vacío para no cambiarla' : 'Sin contraseña'}
-              data-publish-password
-              value={password}
-              disabled={!!refusal}
-              onChange={(event) => setPassword(event.target.value)}
-            />
-          </label>
-
-          <label className="publish-panel__toggle">
-            <input
-              type="checkbox"
-              data-publish-subboards
-              checked={includeSubBoards}
-              disabled={!!refusal}
-              onChange={(event) => setIncludeSubBoards(event.target.checked)}
-            />
-            <span>Incluir los subtableros (navegables desde la vista pública)</span>
-          </label>
-
-          <div className="publish-panel__actions">
-            <button
-              type="button"
-              className="publish-panel__primary"
-              data-publish-submit
-              disabled={busy || !!refusal}
-              onClick={() => void publish()}
-            >
-              <Globe size={13} /> {publishedSlug ? 'Actualizar publicación' : 'Publicar'}
-            </button>
-            {publishedSlug && url ? (
-              <>
-                <button
-                  type="button"
-                  className="publish-panel__secondary"
-                  data-publish-copy
-                  onClick={() => void copy(url)}
-                >
-                  <Copy size={13} /> {copied ? 'Copiado' : 'Copiar enlace'}
-                </button>
-                <a
-                  className="publish-panel__secondary"
-                  data-publish-open
-                  href={url}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  <ExternalLink size={13} /> Abrir vista pública
-                </a>
-                <button
-                  type="button"
-                  className="publish-panel__danger"
-                  data-publish-unpublish
-                  disabled={busy}
-                  onClick={() => void unpublish()}
-                >
-                  Dejar de publicar
-                </button>
-              </>
-            ) : null}
-          </div>
         </div>
       </div>
-    </div>
+    </Modal>
   );
 }

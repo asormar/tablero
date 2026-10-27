@@ -1296,3 +1296,77 @@
 .empty-state__action {
   margin-top: 6px;
 }
+
+/* ===========================================================================
+   Barra superior: menú «Más» (≤ 1024 px)
+
+   En ventanas estrechas la barra solo deja a la vista buscar, deshacer/rehacer,
+   compartir y el usuario; lo demás vive en este menú (`TopBarOverflow`). El menú
+   hereda `.menu` / `.menu__item` (fijo, anclado al botón por script).
+   =========================================================================== */
+
+.topbar__more {
+  display: inline-flex;
+  align-items: center;
+}
+
+.topbar__more-button {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 28px;
+  padding: 0 10px 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-ui);
+  background: var(--surface-2);
+  color: var(--text-muted);
+  font-size: 12.5px;
+  transition: border-color var(--dur-fast) var(--ease), color var(--dur-fast) var(--ease);
+}
+
+.topbar__more-button:hover,
+.topbar__more-button.is-active {
+  border-color: var(--border-strong);
+  color: var(--text);
+}
+
+.topbar__more-badge {
+  display: inline-grid;
+  place-items: center;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--accent-ink);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.topbar__more-menu {
+  min-width: 248px;
+  max-width: min(320px, calc(100vw - 16px));
+  overflow-y: auto;
+}
+
+.topbar__more-menu .menu__item.is-active {
+  color: var(--accent);
+}
+
+.topbar__more-menu .menu__item:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+@media (max-width: 760px) {
+  /* En el móvil el botón se queda en el icono: no hay sitio para el texto. */
+  .topbar__more-text {
+    display: none;
+  }
+
+  .topbar__more-button {
+    padding: 0 8px;
+  }
+}

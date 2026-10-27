@@ -45,7 +45,8 @@ export function UploadProgressCard({
   width: number;
 }): JSX.Element {
   const percent = Math.round(entry.progress * 100);
-  const style: CSSProperties = { ['--upload-progress' as string]: `${percent}%` };
+  // `--p` (0–1) mueve la barra con `transform` (ver `.upload-card__fill`).
+  const style: CSSProperties = { ['--p' as string]: entry.progress };
 
   // El archivo sigue en memoria mientras la pestaña viva: reintentar no obliga a
   // volver a elegirlo. Si ya no está (recarga de por medio), queda el botón para

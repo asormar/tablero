@@ -183,7 +183,7 @@ export function useShortcuts(session: BoardSession): void {
       // --- Vista --------------------------------------------------------------
       if (event.key === '!' || (event.shiftKey && event.key === '1')) {
         event.preventDefault();
-        fitToScreen(session);
+        fitToScreen(session, true);
         return;
       }
       if (event.key === '+' || event.key === '=' || event.key === '-') {

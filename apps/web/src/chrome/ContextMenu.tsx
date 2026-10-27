@@ -306,7 +306,7 @@ export function ContextMenu({ session }: { session: BoardSession }): JSX.Element
             type="button"
             className="menu__item"
             role="menuitem"
-            onClick={() => run(() => fitToScreen(session))}
+            onClick={() => run(() => fitToScreen(session, true))}
           >
             <Maximize2 size={15} />
             <span>Ajustar a pantalla</span>

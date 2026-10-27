@@ -493,7 +493,7 @@ export function TodoCard({ session, element, simplified }: TodoCardProps): JSX.E
 
       <div className="todo__progress" role="group" aria-label="Progreso">
         <div className="todo__bar" role="progressbar" aria-valuenow={ratio} aria-valuemin={0} aria-valuemax={100}>
-          <span className="todo__bar-fill" style={{ width: `${ratio}%` }} />
+          <span className="todo__bar-fill" style={{ ['--p' as string]: ratio / 100 }} />
         </div>
         <span className="todo__progress-label">{progressLabel(items)}</span>
       </div>

@@ -9,20 +9,56 @@
  * vista pública y la invitación no comparten estado con él (y no deben montarlo).
  */
 
-import { useMemo } from 'react';
+import { Suspense, lazy, useMemo } from 'react';
 
 import { Workspace } from '@/app/Workspace';
-import { AuthPanel } from '@/chrome/AuthPanel';
-import { AcceptInvitePage } from '@/invite/AcceptInvitePage';
 import { parseRoute } from '@/lib/routes';
-import { PublicBoardPage } from '@/public/PublicBoardPage';
 import { useAppStore } from '@/state/appStore';
+
+// Las pantallas que no son el espacio de trabajo (vista pública, invitación y
+// acceso) se descargan solo cuando la ruta o la API las pide.
+const LazyPublicBoardPage = lazy(async () => {
+  const module = await import('@/public/PublicBoardPage');
+  return { default: module.PublicBoardPage };
+});
+const LazyAcceptInvitePage = lazy(async () => {
+  const module = await import('@/invite/AcceptInvitePage');
+  return { default: module.AcceptInvitePage };
+});
+const LazyAuthPanel = lazy(async () => {
+  const module = await import('@/chrome/AuthPanel');
+  return { default: module.AuthPanel };
+});
+
+/** Pantalla de carga mientras llega el chunk (misma pieza que el arranque del tablero). */
+function LoadingFallback(): JSX.Element {
+  return (
+    <div className="boot" role="status">
+      <div className="boot__card">
+        <span className="boot__spinner" aria-hidden="true" />
+        <p className="boot__text">Cargando…</p>
+      </div>
+    </div>
+  );
+}
 
 export function App(): JSX.Element {
   const route = useMemo(() => parseRoute(window.location.pathname), []);
 
-  if (route.kind === 'public') return <PublicBoardPage slug={route.slug} />;
-  if (route.kind === 'invite') return <AcceptInvitePage token={route.token} />;
+  if (route.kind === 'public') {
+    return (
+      <Suspense fallback={<LoadingFallback />}>
+        <LazyPublicBoardPage slug={route.slug} />
+      </Suspense>
+    );
+  }
+  if (route.kind === 'invite') {
+    return (
+      <Suspense fallback={<LoadingFallback />}>
+        <LazyAcceptInvitePage token={route.token} />
+      </Suspense>
+    );
+  }
 
   // El panel de acceso solo aparece cuando la API está viva y pide sesión. Sin
   // servidor no tiene sentido pedir credenciales: la app arranca en local.
@@ -31,5 +67,10 @@ export function App(): JSX.Element {
 
 function WorkspaceOrAuth(): JSX.Element {
   const authRequired = useAppStore((state) => state.authRequired);
-  return authRequired ? <AuthPanel /> : <Workspace />;
+  if (!authRequired) return <Workspace />;
+  return (
+    <Suspense fallback={<LoadingFallback />}>
+      <LazyAuthPanel />
+    </Suspense>
+  );
 }

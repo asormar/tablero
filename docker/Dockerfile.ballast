@@ -1,0 +1,17 @@
+# Lastre de memoria para la VM de Oracle (ver docs/deploy.md, "Inactividad").
+#
+# Reserva BALLAST_MB de memoria residente y se queda dormido: tras reservar las
+# páginas una sola vez no consume CPU ni red. Se usa Python (imagen oficial,
+# multi-arquitectura: arm64 en Oracle Ampere A1, amd64 en el portátil) en vez de
+# `stress-ng` porque `stress-ng --vm --vm-keep` vuelve a escribir la memoria en
+# bucle y gasta un núcleo entero; aquí el comportamiento es exactamente el que
+# se lee: rellenar una vez y dormir.
+FROM python:3.13-alpine
+
+COPY ballast.py /ballast.py
+
+# Sin root: el lastre no necesita ningún privilegio.
+USER 65534:65534
+
+# `-u`: salida sin búfer, para ver el mensaje de reserva en `docker logs`.
+CMD ["python", "-u", "/ballast.py"]

@@ -4,9 +4,12 @@
 #
 # La configuración sale de `docker/.env.prod` (copiar de `.env.prod.example`).
 # El almacenamiento de archivos va a Cloudflare R2: el bucket se crea desde el
-# panel de Cloudflare, no desde acá (por eso no hay servicio de objetos acá).
+# panel de Cloudflare, no desde aquí (por eso no hay servicio de objetos aquí).
 #
 # Solo Caddy publica puertos. La API y la base quedan en la red interna.
+#
+# El servicio `ballast` mantiene memoria residente a propósito para que Oracle
+# no considere ociosa la VM (ver docs/deploy.md). Se desactiva con BALLAST_MB=0.
 
 name: tablero
 
@@ -17,8 +20,27 @@ services:
     restart: unless-stopped
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-tablero}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?definí POSTGRES_PASSWORD en docker/.env.prod}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?defina POSTGRES_PASSWORD en docker/.env.prod}
       POSTGRES_DB: ${POSTGRES_DB:-tablero}
+    # Ajustes para una VM de 12 GB compartida con la API y Caddy: la base se
+    # queda con 1 GB de buffers y le dice al planificador que el sistema
+    # operativo cachea unos 4 GB más. `work_mem` es por operación (y por
+    # conexión), así que se mantiene modesto.
+    command:
+      - postgres
+      - -c
+      - shared_buffers=1GB
+      - -c
+      - effective_cache_size=4GB
+      - -c
+      - work_mem=16MB
+      - -c
+      - maintenance_work_mem=256MB
+      - -c
+      - checkpoint_completion_target=0.9
+    # Los segmentos de memoria dinámica (consultas en paralelo) usan /dev/shm,
+    # que en Docker es de sólo 64 MB por defecto.
+    shm_size: 256mb
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -45,9 +67,9 @@ services:
       HOST: '0.0.0.0'
       DATABASE_URL: postgresql://${POSTGRES_USER:-tablero}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-tablero}?schema=public
       # Debe coincidir exactamente con el origen del navegador: la guarda CSRF
-      # rechaza toda petición mutante que no venga de acá.
+      # rechaza toda petición mutante que no venga de aquí.
       APP_ORIGIN: https://${SITE_ADDRESS}
-      SESSION_SECRET: ${SESSION_SECRET:?definí SESSION_SECRET (32+ caracteres) en docker/.env.prod}
+      SESSION_SECRET: ${SESSION_SECRET:?defina SESSION_SECRET (32+ caracteres) en docker/.env.prod}
       # Cloudflare R2: `auto` es obligatorio y el direccionamiento por ruta va
       # en false (R2 usa virtual-hosted).
       S3_ENDPOINT: https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com
@@ -57,6 +79,9 @@ services:
       S3_REGION: auto
       S3_FORCE_PATH_STYLE: 'false'
       MAX_UPLOAD_MB: ${MAX_UPLOAD_MB:-500}
+      # Sólo lo lee `apps/api/scripts/r2-setup.ts` (regla de caducidad de
+      # `backups/` en R2); el servidor de la API lo ignora.
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
       GEOCODE_USER_AGENT: ${GEOCODE_USER_AGENT:-TableroBot/0.1 (+https://github.com/asormar/tablero)}
     expose:
       - '8787'
@@ -70,7 +95,7 @@ services:
     depends_on:
       - api
     environment:
-      SITE_ADDRESS: ${SITE_ADDRESS:?definí SITE_ADDRESS (el dominio) en docker/.env.prod}
+      SITE_ADDRESS: ${SITE_ADDRESS:?defina SITE_ADDRESS (el dominio) en docker/.env.prod}
       # Caddy sólo acepta `email <valor>`: una variable de entorno **definida
       # pero vacía** no activa el default de `{$ACME_EMAIL:...}` y el Caddyfile
       # deja de parsear. Por eso el compose no manda una cadena vacía, sino el
@@ -85,6 +110,31 @@ services:
       # Let's Encrypt agota el límite de tasa.
       - caddy-data:/data
       - caddy-config:/config
+
+  # Lastre de memoria. Oracle da por ociosa una instancia A1 si en 7 días el
+  # percentil 95 de CPU, la red *y la memoria* quedan por debajo del 20%; como
+  # basta con que una de las tres supere el umbral, se mantiene la memoria por
+  # encima (~2,4 GB de 12). Reserva las páginas una sola vez y duerme: CPU ~0.
+  ballast:
+    build:
+      context: .
+      dockerfile: Dockerfile.ballast
+    container_name: tablero-ballast
+    restart: unless-stopped
+    environment:
+      # 0 desactiva el lastre (el contenedor queda dormido sin reservar nada).
+      BALLAST_MB: ${BALLAST_MB:-3000}
+    # Un poco por encima de BALLAST_MB (Python y el contenedor ocupan unas
+    # decenas de MB). Si BALLAST_MB sube, subir también BALLAST_LIMIT_MB; el
+    # script se recorta solo al límite del cgroup en vez de morir por OOM.
+    mem_limit: ${BALLAST_LIMIT_MB:-3200}m
+    # Sin intercambio: la memoria del lastre tiene que ser RAM de verdad.
+    memswap_limit: ${BALLAST_LIMIT_MB:-3200}m
+    # Si el sistema se queda corto de memoria, el kernel sacrifica primero el
+    # lastre y no la base de datos.
+    oom_score_adj: 900
+    cpus: 0.1
+    read_only: true
 
 volumes:
   postgres-data:

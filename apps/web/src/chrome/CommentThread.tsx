@@ -38,6 +38,8 @@ import { useOutsideClose } from '@/chrome/useOutsideClose';
 import { useAppStore } from '@/state/appStore';
 import { useUiStore } from '@/state/uiStore';
 
+import { EmptyState } from './EmptyState';
+
 export type CommentComposerProps = {
   session: BoardSession;
   boardId: string;
@@ -456,7 +458,12 @@ export function CommentPopover({ session, boardId }: { session: BoardSession; bo
           <CommentThreadView key={thread.root.id} session={session} boardId={boardId} thread={thread} />
         ))}
         {!pinDraft && openThreads.length === 0 ? (
-          <p className="comment-popover__empty">Todavía no hay comentarios en esta tarjeta.</p>
+          <EmptyState
+            compact
+            icon={<MessageSquare size={20} />}
+            title="Sin comentarios"
+            text="Escribe el primero abajo para empezar la conversación."
+          />
         ) : null}
         <CommentComposer
           session={session}

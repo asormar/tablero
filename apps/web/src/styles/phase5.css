@@ -1290,3 +1290,48 @@
     }
   }
 }
+
+/* ===========================================================================
+   Estado vacío (`chrome/EmptyState.tsx`)
+   =========================================================================== */
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  padding: 28px 12px;
+  text-align: center;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-ui);
+}
+
+.empty-state--compact {
+  gap: 6px;
+  padding: 18px 12px;
+}
+
+.empty-state__icon {
+  display: grid;
+  place-items: center;
+  color: var(--text-faint);
+}
+
+.empty-state__title {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.empty-state__text {
+  margin: 0;
+  max-width: 34ch;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.empty-state__action {
+  margin-top: 6px;
+}

@@ -22,6 +22,7 @@ import { useSessionElement, useSessionPermission } from '@/collab/SessionContext
 import { ElementContent } from '@/elements/ElementContent';
 import { useT } from '@/i18n';
 import { cardAriaLabel } from '@/lib/a11y';
+import { markEnterPlayed, shouldPlayEnter } from '@/lib/enterAnimation';
 import { countElementRender, isDevBuild } from '@/lib/renderStats';
 import { noteSurface } from '@/lib/smartPaste';
 import { blocksToPlainText } from '@/lib/textBlocks';
@@ -66,6 +67,13 @@ function CanvasElementViewBase(props: CanvasElementViewProps): JSX.Element | nul
   const permission = useSessionPermission();
   const readOnly = !canCapability(permission.role, 'edit');
   const ref = useRef<HTMLDivElement | null>(null);
+  const enterRef = useRef<boolean | null>(null);
+
+  // La anotación se hace al confirmar el montaje (no en el render, que React
+  // puede repetir en desarrollo) para que el primer render sí vea la tarjeta nueva.
+  useLayoutEffect(() => {
+    if (enterRef.current) markEnterPlayed(id);
+  });
 
   useLayoutEffect(() => {
     const node = ref.current;
@@ -98,9 +106,11 @@ function CanvasElementViewBase(props: CanvasElementViewProps): JSX.Element | nul
   if (readOnly) classes.push('is-readonly');
   // «Sin marco»: la imagen se muestra sola, sin tarjeta alrededor.
   if (element.type === 'image' && element.frameless) classes.push('is-frameless');
-  // Animación de entrada solo en tarjetas recién creadas (no al virtualizar).
-  const isNew = element.createdAt > 0 && Date.now() - element.createdAt < 320;
-  if (isNew) classes.push('is-new');
+  // Animación de entrada de una sola vez: se decide al montar y la clase se
+  // conserva mientras viva el nodo (quitarla y ponerla la reiniciaría). Un
+  // remontaje posterior (virtualización, cambio de tablero) no la repite.
+  if (enterRef.current === null) enterRef.current = shouldPlayEnter(id, element.createdAt, Date.now());
+  if (enterRef.current) classes.push('is-new');
 
   const hasSurface = Boolean(element.hex) || (element.color !== undefined && element.color !== 'none');
   if (hasSurface) {

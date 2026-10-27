@@ -520,9 +520,9 @@ export function createCollabServer(options: { log?: (message: string) => void } 
       try {
         // Los comentarios viven en el documento: acá se extraen a su tabla.
         const comments = await syncBoardComments(documentName, document);
-        if (comments.upserted > 0 || comments.removed > 0) {
+        if (comments.written > 0 || comments.removed > 0) {
           log(
-            `collab: ${documentName} comentarios → ${comments.upserted} filas` +
+            `collab: ${documentName} comentarios → ${comments.written} filas` +
               `${comments.removed > 0 ? `, ${comments.removed} borradas` : ''}` +
               `${comments.mentions > 0 ? `, ${comments.mentions} menciones` : ''}`,
           );

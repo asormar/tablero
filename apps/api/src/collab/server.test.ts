@@ -113,7 +113,7 @@ const db = vi.hoisted(() => {
         return row;
       },
     },
-    searchIndex: { deleteMany: async () => ({ count: 0 }), upsert: async () => ({}) },
+    searchIndex: { findMany: async () => [], deleteMany: async () => ({ count: 0 }), upsert: async () => ({}) },
     // La sincronización de comentarios valida los autores contra `User`.
     user: {
       findMany: async ({ where }: { where: { id: { in: string[] } } }) => where.id.in.map((id) => ({ id })),

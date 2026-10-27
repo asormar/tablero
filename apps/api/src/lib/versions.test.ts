@@ -67,6 +67,7 @@ const db = vi.hoisted(() => {
       },
     },
     searchIndex: {
+      findMany: async () => [],
       deleteMany: async () => ({ count: 0 }),
       upsert: async () => ({}),
     },

@@ -160,6 +160,8 @@ const db = vi.hoisted(() => {
       },
     },
     searchIndex: {
+      findMany: async ({ where }: { where: { boardId: string } }) =>
+        [...searchRows.values()].filter((row) => row.boardId === where.boardId).map((row) => ({ ...row })),
       deleteMany: async ({ where }: { where: { boardId: string; elementId?: { notIn: string[] } } }) => {
         for (const [key, row] of [...searchRows]) {
           if (row.boardId !== where.boardId) continue;

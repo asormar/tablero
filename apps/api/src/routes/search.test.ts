@@ -57,6 +57,7 @@ const db = vi.hoisted(() => {
       },
     },
     searchIndex: {
+      findMany: async () => [],
       deleteMany: async () => ({ count: 0 }),
       upsert: async ({ where }: { where: { boardId_elementId: { boardId: string; elementId: string } } }) => {
         indexed.push(where.boardId_elementId);

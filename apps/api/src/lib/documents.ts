@@ -119,13 +119,41 @@ export function collectSearchEntries(doc: Y.Doc): SearchEntry[] {
  * Refresca `SearchIndex` para un tablero a partir de su documento.
  * Se llama tras cada persistencia de Hocuspocus; los fallos no deben tumbar
  * la persistencia, así que el llamador los captura.
+ *
+ * Una persistencia se repite cada pocos segundos mientras se edita y casi nunca
+ * cambia más que un puñado de elementos, así que se lee el índice del tablero
+ * una vez y solo se escribe lo que difiere: filas nuevas o con otro tipo/texto,
+ * y borrado de las que ya no están. Sin cambios no hay ninguna escritura.
+ * Devuelve la cantidad de elementos indexados (no la de escritos).
  */
 export async function syncSearchIndex(boardId: string, doc: Y.Doc): Promise<number> {
   const entries = collectSearchEntries(doc);
   const ids = entries.map((entry) => entry.elementId);
+  const stored = new Map(
+    (
+      await prisma.searchIndex.findMany({
+        where: { boardId },
+        select: { elementId: true, elementType: true, text: true, textNorm: true },
+      })
+    ).map((row) => [row.elementId, row]),
+  );
+
+  const keep = new Set(ids);
+  const hasStale = [...stored.keys()].some((elementId) => !keep.has(elementId));
+  const changed = entries.filter((entry) => {
+    const current = stored.get(entry.elementId);
+    return (
+      current === undefined ||
+      current.elementType !== entry.elementType ||
+      current.text !== entry.text ||
+      current.textNorm !== entry.textNorm
+    );
+  });
+  if (!hasStale && changed.length === 0) return entries.length;
+
   await prisma.$transaction([
-    prisma.searchIndex.deleteMany({ where: { boardId, elementId: { notIn: ids } } }),
-    ...entries.map((entry) =>
+    ...(hasStale ? [prisma.searchIndex.deleteMany({ where: { boardId, elementId: { notIn: ids } } })] : []),
+    ...changed.map((entry) =>
       prisma.searchIndex.upsert({
         where: { boardId_elementId: { boardId, elementId: entry.elementId } },
         create: {

@@ -87,15 +87,66 @@ export function commentRowsFromDoc(boardId: string, doc: Y.Doc): ExtractedCommen
  * a `User`) o una respuesta cuyo hilo padre no está en el documento (FK propia
  * de `parentCommentId`). Un documento manipulado (o una cuenta borrada) no
  * puede tumbar la sincronización.
+ *
+ * Los autores solo se consultan para las filas que **no están** ya en la tabla
+ * (`storedIds`): una fila guardada tiene un autor válido (la FK borra en
+ * cascada los comentarios de una cuenta eliminada).
  */
-async function withoutDanglingReferences(rows: ExtractedCommentRow[]): Promise<ExtractedCommentRow[]> {
+async function withoutDanglingReferences(
+  rows: ExtractedCommentRow[],
+  storedIds: ReadonlySet<string>,
+): Promise<ExtractedCommentRow[]> {
   if (rows.length === 0) return rows;
-  const authorIds = [...new Set(rows.map((row) => row.authorId))];
-  const authors = await prisma.user.findMany({ where: { id: { in: authorIds } }, select: { id: true } });
+  const unchecked = rows.filter((row) => !storedIds.has(row.id));
+  const authorIds = [...new Set(unchecked.map((row) => row.authorId))];
+  const authors =
+    authorIds.length > 0 ? await prisma.user.findMany({ where: { id: { in: authorIds } }, select: { id: true } }) : [];
   const known = new Set(authors.map((author) => author.id));
   const commentIds = new Set(rows.map((row) => row.id));
   return rows.filter(
-    (row) => known.has(row.authorId) && (row.parentCommentId === null || commentIds.has(row.parentCommentId)),
+    (row) =>
+      (storedIds.has(row.id) || known.has(row.authorId)) &&
+      (row.parentCommentId === null || commentIds.has(row.parentCommentId)),
+  );
+}
+
+/** Campos de la fila guardada con los que se decide si el comentario cambió. */
+type StoredCommentRow = Pick<
+  ExtractedCommentRow,
+  'id' | 'elementId' | 'body' | 'x' | 'y' | 'resolvedAt' | 'resolvedBy'
+> & { mentions: unknown };
+
+const STORED_COMMENT_SELECT = {
+  id: true,
+  elementId: true,
+  body: true,
+  x: true,
+  y: true,
+  resolvedAt: true,
+  resolvedBy: true,
+  mentions: true,
+} as const;
+
+function sameInstant(a: Date | null, b: Date | null): boolean {
+  return (a?.getTime() ?? null) === (b?.getTime() ?? null);
+}
+
+/**
+ * ¿La fila guardada ya refleja el comentario del documento? Compara exactamente
+ * lo que escribe el `update` del upsert (el autor, el hilo padre y la fecha de
+ * creación no cambian nunca).
+ */
+function isUpToDate(stored: StoredCommentRow, row: ExtractedCommentRow): boolean {
+  const storedMentions = Array.isArray(stored.mentions) ? stored.mentions : [];
+  return (
+    stored.elementId === row.elementId &&
+    stored.body === row.body &&
+    stored.x === row.x &&
+    stored.y === row.y &&
+    sameInstant(stored.resolvedAt, row.resolvedAt) &&
+    stored.resolvedBy === row.resolvedBy &&
+    storedMentions.length === row.mentions.length &&
+    storedMentions.every((mention, index) => mention === row.mentions[index])
   );
 }
 
@@ -103,6 +154,16 @@ async function withoutDanglingReferences(rows: ExtractedCommentRow[]): Promise<E
  * Sincroniza la tabla con el documento: upsert de lo que hay y borrado de lo
  * que ya no está. Como los ids de las filas son los del documento, borrar un
  * hilo o una respuesta en el documento los borra también de la tabla.
+ *
+ * Corre en cada persistencia (cada 2-10 s de edición), así que solo trabaja
+ * sobre lo que cambió: una sola lectura de las filas guardadas, y solo se
+ * escriben (y notifican) los comentarios nuevos o modificados. Sin cambios, no
+ * hay ninguna escritura. `upserted` sigue siendo el total de comentarios
+ * sincronizados; `written` es cuántos se escribieron en esta pasada.
+ *
+ * Las notificaciones son idempotentes por (comentario, usuario), así que un
+ * comentario editado no duplica su aviso; el de un comentario sin cambios no se
+ * reevalúa (ya se evaluó cuando se escribió).
  *
  * El documento es del cliente y no siempre está bien formado, así que la
  * sincronización **nunca lanza** por un comentario raro:
@@ -116,13 +177,23 @@ async function withoutDanglingReferences(rows: ExtractedCommentRow[]): Promise<E
 export async function syncBoardComments(
   boardId: string,
   doc: Y.Doc,
-): Promise<{ upserted: number; removed: number; mentions: number; replies: number }> {
+): Promise<{ upserted: number; written: number; removed: number; mentions: number; replies: number }> {
   const extracted = commentRowsFromDoc(boardId, doc);
-  const rows = await withoutDanglingReferences(extracted);
+  const stored = new Map<string, StoredCommentRow>(
+    (await prisma.comment.findMany({ where: { boardId }, select: STORED_COMMENT_SELECT })).map((row) => [row.id, row]),
+  );
+  const rows = await withoutDanglingReferences(extracted, new Set(stored.keys()));
   const ids = rows.map((row) => row.id);
-  const removed = await prisma.comment.deleteMany({ where: { boardId, id: { notIn: ids } } });
+  const keep = new Set(ids);
+  const hasStale = [...stored.keys()].some((id) => !keep.has(id));
+  const removed = hasStale ? await prisma.comment.deleteMany({ where: { boardId, id: { notIn: ids } } }) : { count: 0 };
 
-  for (const row of rows) {
+  const changed = rows.filter((row) => {
+    const current = stored.get(row.id);
+    return current === undefined || !isUpToDate(current, row);
+  });
+
+  for (const row of changed) {
     await prisma.comment.upsert({
       where: { id: row.id },
       create: {
@@ -151,9 +222,13 @@ export async function syncBoardComments(
     });
   }
 
-  const replies = await notifyCommentReplies(boardId, rows);
-  const mentions = await notifyCommentMentions(boardId, rows);
-  return { upserted: rows.length, removed: removed.count, mentions, replies };
+  if (changed.length === 0) {
+    return { upserted: rows.length, written: 0, removed: removed.count, mentions: 0, replies: 0 };
+  }
+  // Las respuestas buscan su raíz entre todas las filas; solo se avisa de las que cambiaron.
+  const replies = await notifyCommentReplies(boardId, rows, new Set(changed.map((row) => row.id)));
+  const mentions = await notifyCommentMentions(boardId, changed);
+  return { upserted: rows.length, written: changed.length, removed: removed.count, mentions, replies };
 }
 
 /**
@@ -263,8 +338,13 @@ export async function notifyCommentMentions(boardId: string, rows: ExtractedComm
  * clave distinta produce dos avisos: es intencional, son dos hechos (te
  * respondieron y te mencionaron).
  */
-export async function notifyCommentReplies(boardId: string, rows: ExtractedCommentRow[]): Promise<number> {
-  const replies = rows.filter((row) => row.parentCommentId !== null);
+export async function notifyCommentReplies(
+  boardId: string,
+  rows: ExtractedCommentRow[],
+  /** Si se indica, solo se avisa de las respuestas con estos ids (la raíz se busca en `rows`). */
+  onlyIds?: ReadonlySet<string>,
+): Promise<number> {
+  const replies = rows.filter((row) => row.parentCommentId !== null && (!onlyIds || onlyIds.has(row.id)));
   if (replies.length === 0) return 0;
   const roots = new Map(rows.filter((row) => row.parentCommentId === null).map((row) => [row.id, row]));
   let created = 0;

@@ -88,7 +88,7 @@ const db = vi.hoisted(() => {
         return { boardId: where.boardId, yjsState: bytes, updatedAt: new Date() };
       },
     },
-    searchIndex: { deleteMany: async () => ({ count: 0 }), upsert: async () => ({}) },
+    searchIndex: { findMany: async () => [], deleteMany: async () => ({ count: 0 }), upsert: async () => ({}) },
     $transaction: async (arg: unknown) =>
       Array.isArray(arg) ? Promise.all(arg) : (arg as (tx: unknown) => Promise<unknown>)(prisma),
   };

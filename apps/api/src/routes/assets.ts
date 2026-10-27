@@ -3,8 +3,9 @@
  *
  *   POST   /api/assets            multipart (`file` + `boardId?` + `dedupe?`)
  *   GET    /api/assets            listado del usuario (`boardId?`, `type?`)
+ *   GET    /api/assets?ids=a,b    resúmenes por lotes (máx. 100): los legibles, el resto se omite
  *   GET    /api/assets/:id        detalle (`{ asset: AssetSummary }`)
- *   GET    /api/assets/:id/raw    302 a la URL firmada del original (15 min)
+ *   GET    /api/assets/:id/raw    302 a la URL firmada del original (15 min, cacheable)
  *   GET    /api/assets/:id/thumb  302 a la miniatura firmada (o al original)
  *   DELETE /api/assets/:id        borra el archivo y sus objetos (409 si está en uso)
  *
@@ -45,7 +46,7 @@ import {
   uploadAssetSchema,
   type AssetSummary,
 } from '@tablero/shared';
-import type { FastifyInstance, FastifyRequest } from 'fastify';
+import type { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 
 import { prisma } from '../db.js';
 import { env } from '../env.js';
@@ -58,10 +59,10 @@ import { currentUser } from '../lib/session.js';
 import {
   assetKey,
   deleteObject,
-  getPresignedGetUrl,
+  getCacheablePresignedGetUrl,
   putObject,
-  SIGNED_URL_TTL_SECONDS,
   thumbnailKey,
+  type CacheablePresignedUrl,
 } from '../lib/storage.js';
 
 /** Margen sobre el límite antes de rechazar por `Content-Length` (cabeceras del multipart). */
@@ -159,6 +160,22 @@ function isInlineDangerous(mime: string | null | undefined): boolean {
   return INLINE_DANGEROUS_MIME.has(mime.split(';')[0]?.trim().toLowerCase() ?? '');
 }
 
+/**
+ * Redirección (302) a la URL firmada, cacheable por el navegador del usuario.
+ *
+ * La URL es estable dentro de su ventana de firma y `max-age` llega hasta poco
+ * antes de que caduque, así que las miniaturas del lienzo no piden una firma
+ * nueva en cada render. `private` (no la guarda ninguna caché compartida) y
+ * `Vary: Cookie` (otra sesión en el mismo navegador no reutiliza la
+ * redirección de quien sí tenía acceso).
+ */
+function redirectToObject(reply: FastifyReply, signed: CacheablePresignedUrl): void {
+  reply.header('cache-control', `private, max-age=${signed.maxAgeSeconds}`);
+  const vary = String(reply.getHeader('vary') ?? '');
+  if (!/\bcookie\b/i.test(vary)) reply.header('vary', vary ? `${vary}, Cookie` : 'Cookie');
+  reply.redirect(signed.url, 302);
+}
+
 /** Asset del usuario o 404 (ajeno e inexistente son indistinguibles). */
 async function requireOwnAsset(request: FastifyRequest): Promise<Asset> {
   const user = currentUser(request);
@@ -184,6 +201,53 @@ async function requireReadableAsset(request: FastifyRequest): Promise<Asset> {
     if (resolveBoardAccessFrom(access, row.boardId).allowed) return row;
   }
   throw notFound('El archivo no existe', 'asset_not_found');
+}
+
+/** Tope de ids por petición del resumen por lotes (`GET /api/assets?ids=`). */
+export const MAX_ASSET_BATCH_IDS = 100;
+
+/**
+ * Ids de `?ids=a,b,c` (también acepta `ids=a&ids=b`): sin vacíos ni repetidos,
+ * en el orden recibido. Más de `MAX_ASSET_BATCH_IDS` o un id con forma inválida
+ * es un 400: el cliente trocea, así que un exceso es un error de uso.
+ */
+function parseBatchIds(raw: unknown): string[] {
+  const text = Array.isArray(raw) ? raw.map(String).join(',') : typeof raw === 'string' ? raw : '';
+  const ids = [...new Set(text.split(',').map((id) => id.trim()).filter((id) => id.length > 0))];
+  if (ids.length > MAX_ASSET_BATCH_IDS) {
+    throw badRequest(`Se admiten como máximo ${MAX_ASSET_BATCH_IDS} ids por petición`, 'too_many_ids', {
+      max: MAX_ASSET_BATCH_IDS,
+    });
+  }
+  for (const id of ids) assetIdParamSchema.parse({ id });
+  return ids;
+}
+
+/**
+ * Resúmenes de los archivos **legibles** entre `ids`, con la misma regla que
+ * `GET /api/assets/:id` (`requireReadableAsset`): el propietario o alguien con
+ * acceso al tablero asociado. Los ids ajenos o inexistentes se omiten sin
+ * distinguirlos. El resultado respeta el orden pedido.
+ */
+async function readableAssetSummaries(userId: string, ids: string[]): Promise<AssetSummary[]> {
+  if (ids.length === 0) return [];
+  const rows = await prisma.asset.findMany({ where: { id: { in: ids } } });
+  // El árbol de tableros solo se carga si algún archivo es de otra persona.
+  let access: Awaited<ReturnType<typeof loadBoardAccess>> | null = null;
+  const readable = new Map<string, Asset>();
+  for (const row of rows) {
+    if (row.ownerId === userId) {
+      readable.set(row.id, row);
+      continue;
+    }
+    if (!row.boardId) continue;
+    access ??= await loadBoardAccess(userId);
+    if (resolveBoardAccessFrom(access, row.boardId).allowed) readable.set(row.id, row);
+  }
+  return ids.flatMap((id) => {
+    const row = readable.get(id);
+    return row ? [toAssetSummary(row)] : [];
+  });
 }
 
 type ReceivedUpload = {
@@ -357,6 +421,13 @@ export async function assetsRoutes(app: FastifyInstance): Promise<void> {
 
   app.get('/assets', async (request) => {
     const user = currentUser(request);
+    // `?ids=a,b,c`: resumen de varios archivos en una petición (la web pide los
+    // metadatos de todas las tarjetas de un tablero a la vez). Va antes del
+    // listado: con `ids` no se aplican los filtros `boardId`/`type`.
+    const rawIds = request.query ? (request.query as Record<string, unknown>)['ids'] : undefined;
+    if (rawIds !== undefined) {
+      return { assets: await readableAssetSummaries(user.id, parseBatchIds(rawIds)) };
+    }
     const query = listAssetsSchema.parse(request.query ?? {});
     if (query.boardId) {
       const access = await loadBoardAccess(user.id);
@@ -385,20 +456,18 @@ export async function assetsRoutes(app: FastifyInstance): Promise<void> {
     // SVG y HTML se ejecutan si el navegador los sirve en línea, y este endpoint
     // redirige a la URL firmada del objeto: al abrirlos en una pestaña correrían
     // su `<script>` en el origen del almacenamiento. Se fuerzan como descarga.
-    const url = await getPresignedGetUrl(row.storageKey, SIGNED_URL_TTL_SECONDS, {
+    const signed = await getCacheablePresignedGetUrl(row.storageKey, {
       downloadName: download || isInlineDangerous(row.mime) ? row.originalName : null,
     });
-    reply.header('cache-control', 'private, no-store');
-    reply.redirect(url, 302);
+    redirectToObject(reply, signed);
   });
 
   app.get('/assets/:id/thumb', async (request, reply) => {
     const row = await requireReadableAsset(request);
     // Sin miniatura propia se sirve el original (nunca 404): la web siempre
     // puede pedir esta ruta para previsualizar.
-    const url = await getPresignedGetUrl(row.thumbnailKey ?? row.storageKey, SIGNED_URL_TTL_SECONDS);
-    reply.header('cache-control', 'private, no-store');
-    reply.redirect(url, 302);
+    const signed = await getCacheablePresignedGetUrl(row.thumbnailKey ?? row.storageKey);
+    redirectToObject(reply, signed);
   });
 
   /**

@@ -9,11 +9,17 @@
  * siempre «Error 413/500» perdiendo el motivo real.
  */
 
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { assetRoutes } from '@tablero/shared';
 
-import { uploadAsset, uploadErrorMessage, assetApiPath } from './assets';
+import {
+  assetApiPath,
+  fetchAssetSummaries,
+  resetAssetBatchSupport,
+  uploadAsset,
+  uploadErrorMessage,
+} from './assets';
 import { API_BASE_URL, ApiError } from './client';
 
 describe('assetApiPath', () => {
@@ -146,5 +152,138 @@ describe('uploadAsset', () => {
       expect(asset.url).toBe(assetRoutes.raw('a1'));
       expect(asset.originalName).toBe('foto.png');
     });
+  });
+});
+
+/** Respuesta JSON de la API para el `fetch` simulado. */
+function jsonResponse(status: number, body: unknown): Response {
+  return new Response(JSON.stringify(body), { status, headers: { 'content-type': 'application/json' } });
+}
+
+const summary = (id: string) => ({
+  id,
+  type: 'image',
+  mime: 'image/png',
+  size: 10,
+  width: 1,
+  height: 1,
+  duration: null,
+  originalName: `${id}.png`,
+  createdAt: 1,
+  url: assetRoutes.raw(id),
+  thumbnailUrl: assetRoutes.thumb(id),
+});
+
+/** URL pedida por una llamada del `fetch` simulado. */
+const requestedUrl = (call: unknown[]): string => String(call[0]);
+/** Ids de una URL de lote (`/api/assets?ids=a%2Cb`). */
+const batchIds = (url: string): string[] =>
+  (new URL(url, 'http://localhost').searchParams.get('ids') ?? '').split(',');
+
+describe('fetchAssetSummaries (resumen por lotes)', () => {
+  const fetchMock = vi.fn<(url: string, init?: RequestInit) => Promise<Response>>();
+
+  beforeEach(() => {
+    resetAssetBatchSupport();
+    fetchMock.mockReset();
+    vi.stubGlobal('fetch', fetchMock);
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('pide todos los ids en una sola petición y marca como inexistentes los que el servidor omite', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { assets: [summary('a'), summary('c')] }));
+
+    const results = await fetchAssetSummaries(['a', 'b', 'c', 'a']);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const url = requestedUrl(fetchMock.mock.calls[0]!);
+    expect(url.startsWith(assetApiPath(assetRoutes.collection))).toBe(true);
+    expect(batchIds(url)).toEqual(['a', 'b', 'c']);
+    expect(results.get('a')).toMatchObject({ asset: { id: 'a', originalName: 'a.png' } });
+    expect(results.get('b')).toEqual({ asset: null });
+    expect(results.get('c')).toMatchObject({ asset: { id: 'c' } });
+  });
+
+  it('ignora lo que el servidor devuelva sin que se haya pedido', async () => {
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { assets: [summary('a'), summary('otro')] }));
+
+    const results = await fetchAssetSummaries(['a']);
+
+    expect([...results.keys()]).toEqual(['a']);
+  });
+
+  it('con 404 (servidor sin el lote) recurre al detalle por id y lo recuerda', async () => {
+    fetchMock.mockImplementation(async (url) => {
+      if (url.includes('ids=')) return jsonResponse(404, { error: 'Not found', code: 'not_found' });
+      if (url.endsWith('/assets/a')) return jsonResponse(200, { asset: summary('a') });
+      return jsonResponse(404, { error: 'El archivo no existe', code: 'asset_not_found' });
+    });
+
+    const first = await fetchAssetSummaries(['a', 'b']);
+    expect(first.get('a')).toMatchObject({ asset: { id: 'a' } });
+    expect(first.get('b')).toEqual({ asset: null });
+    // 1 intento de lote + 2 detalles.
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+
+    fetchMock.mockClear();
+    await fetchAssetSummaries(['a']);
+    // Ya se sabe que no hay lote: va directo al detalle.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(requestedUrl(fetchMock.mock.calls[0]!).endsWith('/assets/a')).toBe(true);
+  });
+
+  it('405 y 501 también cuentan como «todavía no está» (degraded.ts)', async () => {
+    for (const status of [405, 501]) {
+      resetAssetBatchSupport();
+      fetchMock.mockReset();
+      fetchMock.mockImplementation(async (url) =>
+        url.includes('ids=') ? jsonResponse(status, { error: 'no' }) : jsonResponse(200, { asset: summary('a') }),
+      );
+      const results = await fetchAssetSummaries(['a']);
+      expect(results.get('a')).toMatchObject({ asset: { id: 'a' } });
+    }
+  });
+
+  it('un fallo del servidor (5xx) llega como error a cada id y no activa el respaldo', async () => {
+    fetchMock.mockResolvedValue(jsonResponse(500, { error: 'boom', code: 'internal_error' }));
+
+    const results = await fetchAssetSummaries(['a', 'b']);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    for (const id of ['a', 'b']) {
+      const result = results.get(id);
+      expect(result && 'error' in result).toBe(true);
+    }
+    // El lote sigue disponible para la próxima vez.
+    fetchMock.mockResolvedValueOnce(jsonResponse(200, { assets: [summary('a')] }));
+    const retry = await fetchAssetSummaries(['a']);
+    expect(retry.get('a')).toMatchObject({ asset: { id: 'a' } });
+  });
+
+  it('con la red caída también devuelve el error por id en vez de lanzar', async () => {
+    fetchMock.mockRejectedValue(new TypeError('Failed to fetch'));
+
+    const results = await fetchAssetSummaries(['a']);
+
+    const result = results.get('a');
+    expect(result && 'error' in result).toBe(true);
+    expect(result && 'error' in result && (result.error as ApiError).isOffline).toBe(true);
+  });
+
+  it('un id con coma no se manda en `ids=` (iría partido): usa el detalle', async () => {
+    fetchMock.mockImplementation(async (url) =>
+      url.includes('ids=') ? jsonResponse(200, { assets: [summary('a')] }) : jsonResponse(200, { asset: summary('x,y') }),
+    );
+
+    const results = await fetchAssetSummaries(['a', 'x,y']);
+
+    expect(results.get('a')).toMatchObject({ asset: { id: 'a' } });
+    expect(results.get('x,y')).toMatchObject({ asset: { id: 'x,y' } });
+    const urls = fetchMock.mock.calls.map(requestedUrl);
+    expect(urls.filter((url) => url.includes('ids='))).toHaveLength(1);
+    expect(batchIds(urls.find((url) => url.includes('ids='))!)).toEqual(['a']);
   });
 });

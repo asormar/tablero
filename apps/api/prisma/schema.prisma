@@ -315,7 +315,10 @@ model Template {
 
 /// Índice de búsqueda por elemento (texto plano). La columna `tsv` la calcula
 /// Postgres (`to_tsvector('spanish', text)`, columna generada con índice GIN) y
-/// la API solo escribe `text`.
+/// la API solo escribe `text`. Sobre `textNorm` hay un índice GIN trigram
+/// (`pg_trgm`, `gin_trgm_ops`) que Prisma no sabe declarar: vive solo en la
+/// migración, igual que el GIN de `tsv`. No hay índice sobre `text`: un btree no
+/// admite entradas de más de ~2,7 kB y `text` llega a 8000 caracteres.
 model SearchIndex {
   boardId       String
   elementId     String
@@ -331,7 +334,6 @@ model SearchIndex {
 
   @@id([boardId, elementId])
   @@index([elementType])
-  @@index([text])
 }
 
 /// Instantánea del documento Yjs de un tablero (§7.5 del plan): el historial de

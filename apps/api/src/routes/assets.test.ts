@@ -55,6 +55,10 @@ const db = vi.hoisted(() => {
   const boards = new Map<string, BoardRow>();
   const documents = new Map<string, Buffer>();
   const deletedObjects: string[] = [];
+  /** Firmas pedidas al almacenamiento (clave y nombre de descarga forzada). */
+  const signed: { key: string; downloadName: string | null }[] = [];
+  /** Lecturas del árbol de tableros (el resumen por lotes solo las hace si hace falta). */
+  const boardReads = { count: 0 };
 
   const boardRow = (id: string, overrides: Partial<BoardRow> = {}): BoardRow => {
     const row: BoardRow = {
@@ -108,13 +112,18 @@ const db = vi.hoisted(() => {
         const row = assets.get(where.id);
         return row ? { ...row } : null;
       },
+      findMany: async ({ where }: { where: { id: { in: string[] } } }) =>
+        [...assets.values()].filter((row) => where.id.in.includes(row.id)).map((row) => ({ ...row })),
       delete: async ({ where }: { where: { id: string } }) => {
         assets.delete(where.id);
         return { id: where.id };
       },
     },
     board: {
-      findMany: async () => [...boards.values()].map((row) => ({ ...row })),
+      findMany: async () => {
+        boardReads.count += 1;
+        return [...boards.values()].map((row) => ({ ...row }));
+      },
     },
     boardMember: { findMany: async () => [] },
     boardDocument: {
@@ -131,6 +140,8 @@ const db = vi.hoisted(() => {
     boards,
     documents,
     deletedObjects,
+    signed,
+    boardReads,
     boardRow,
     assetRow,
     reset: () => {
@@ -138,6 +149,8 @@ const db = vi.hoisted(() => {
       boards.clear();
       documents.clear();
       deletedObjects.length = 0;
+      signed.length = 0;
+      boardReads.count = 0;
     },
   };
 });
@@ -159,7 +172,10 @@ vi.mock('../lib/storage.js', () => ({
     db.deletedObjects.push(key);
   },
   putObject: async () => undefined,
-  getPresignedGetUrl: async () => 'https://minio.example/signed',
+  getCacheablePresignedGetUrl: async (key: string, options: { downloadName?: string | null } = {}) => {
+    db.signed.push({ key, downloadName: options.downloadName ?? null });
+    return { url: `https://minio.example/signed/${key}`, maxAgeSeconds: 540 };
+  },
   headObject: async () => null,
   ensureBucket: async () => true,
   getObjectStream: async () => null,
@@ -207,6 +223,154 @@ beforeEach(() => {
   db.reset();
   collab.live = null;
   db.boardRow('board_uno');
+});
+
+describe('GET /api/assets/:id/raw y /thumb', () => {
+  it('redirige a la URL firmada y deja que el navegador la cachee hasta poco antes de que caduque', async () => {
+    const asset = db.assetRow({ id: 'asset_foto' });
+
+    const app = await buildApp();
+    const raw = await app.inject({ method: 'GET', url: '/api/assets/asset_foto/raw' });
+    expect(raw.statusCode).toBe(302);
+    expect(raw.headers.location).toBe(`https://minio.example/signed/${asset.storageKey}`);
+    expect(raw.headers['cache-control']).toBe('private, max-age=540');
+    expect(raw.headers.vary).toMatch(/cookie/i);
+
+    const thumb = await app.inject({ method: 'GET', url: '/api/assets/asset_foto/thumb' });
+    expect(thumb.statusCode).toBe(302);
+    expect(thumb.headers.location).toBe(`https://minio.example/signed/${asset.thumbnailKey}`);
+    expect(thumb.headers['cache-control']).toBe('private, max-age=540');
+    expect(thumb.headers.vary).toMatch(/cookie/i);
+    await app.close();
+  });
+
+  it('sin miniatura propia /thumb sirve el original', async () => {
+    const asset = db.assetRow({ id: 'asset_sin_thumb', thumbnailKey: null });
+
+    const app = await buildApp();
+    const response = await app.inject({ method: 'GET', url: '/api/assets/asset_sin_thumb/thumb' });
+    expect(response.statusCode).toBe(302);
+    expect(db.signed).toEqual([{ key: asset.storageKey, downloadName: null }]);
+    await app.close();
+  });
+
+  it('una imagen normal se sirve en línea y SVG/HTML siguen forzando la descarga', async () => {
+    db.assetRow({ id: 'asset_png' });
+    db.assetRow({ id: 'asset_svg', mime: 'image/svg+xml', originalName: 'dibujo.svg' });
+    db.assetRow({ id: 'asset_html', mime: 'text/html', originalName: 'pagina.html' });
+
+    const app = await buildApp();
+    await app.inject({ method: 'GET', url: '/api/assets/asset_png/raw' });
+    await app.inject({ method: 'GET', url: '/api/assets/asset_svg/raw' });
+    await app.inject({ method: 'GET', url: '/api/assets/asset_html/raw' });
+    await app.inject({ method: 'GET', url: '/api/assets/asset_png/raw?download=1' });
+
+    expect(db.signed.map((entry) => entry.downloadName)).toEqual([null, 'dibujo.svg', 'pagina.html', 'foto.png']);
+    await app.close();
+  });
+
+  it('un asset ajeno sin acceso por tablero responde 404 y no firma nada', async () => {
+    db.assetRow({ id: 'asset_ajeno', ownerId: 'user_caro' });
+
+    const app = await buildApp();
+    for (const suffix of ['raw', 'thumb']) {
+      const response = await app.inject({ method: 'GET', url: `/api/assets/asset_ajeno/${suffix}` });
+      expect(response.statusCode).toBe(404);
+      expect(response.headers.location).toBeUndefined();
+    }
+    expect(db.signed).toEqual([]);
+    await app.close();
+  });
+});
+
+describe('GET /api/assets?ids= (resumen por lotes)', () => {
+  const idsOf = (response: { json: () => unknown }): string[] =>
+    (response.json() as { assets: { id: string }[] }).assets.map((asset) => asset.id);
+
+  it('devuelve los archivos propios con la misma forma que el detalle y en el orden pedido', async () => {
+    db.assetRow({ id: 'asset_a' });
+    db.assetRow({ id: 'asset_b', mime: 'application/pdf', type: 'file', originalName: 'doc.pdf', thumbnailKey: null });
+    db.assetRow({ id: 'asset_c' });
+
+    const app = await buildApp();
+    const batch = await app.inject({ method: 'GET', url: '/api/assets?ids=asset_c,asset_a,asset_b' });
+    expect(batch.statusCode).toBe(200);
+    expect(idsOf(batch)).toEqual(['asset_c', 'asset_a', 'asset_b']);
+
+    // Misma forma que `GET /api/assets/:id` para cada archivo.
+    for (const asset of (batch.json() as { assets: { id: string }[] }).assets) {
+      const single = await app.inject({ method: 'GET', url: `/api/assets/${asset.id}` });
+      expect(single.json()).toEqual({ asset });
+    }
+    // Un PDF sin miniatura no tiene `thumbnailUrl` (como en el detalle).
+    expect((batch.json() as { assets: { id: string; thumbnailUrl: string | null }[] }).assets[2]!.thumbnailUrl).toBeNull();
+    // Todo era propio: no hizo falta cargar el árbol de tableros.
+    expect(db.boardReads.count).toBe(0);
+    await app.close();
+  });
+
+  it('omite sin distinguir los ids inexistentes y los de archivos ajenos sin acceso', async () => {
+    db.assetRow({ id: 'asset_mio' });
+    db.assetRow({ id: 'asset_ajeno', ownerId: 'user_caro' });
+    db.boardRow('board_de_caro', { ownerId: 'user_caro' });
+    db.assetRow({ id: 'asset_ajeno_en_su_tablero', ownerId: 'user_caro', boardId: 'board_de_caro' });
+
+    const app = await buildApp();
+    const response = await app.inject({
+      method: 'GET',
+      url: '/api/assets?ids=asset_ajeno,asset_mio,no_existe,asset_ajeno_en_su_tablero',
+    });
+    expect(response.statusCode).toBe(200);
+    expect(idsOf(response)).toEqual(['asset_mio']);
+    await app.close();
+  });
+
+  it('incluye un archivo ajeno si el usuario tiene acceso a su tablero (igual que el detalle)', async () => {
+    // `board_uno` es de Ana: sus miembros suben archivos ahí y ella debe verlos.
+    db.assetRow({ id: 'asset_de_caro', ownerId: 'user_caro', boardId: 'board_uno' });
+
+    const app = await buildApp();
+    const batch = await app.inject({ method: 'GET', url: '/api/assets?ids=asset_de_caro' });
+    expect(idsOf(batch)).toEqual(['asset_de_caro']);
+    const single = await app.inject({ method: 'GET', url: '/api/assets/asset_de_caro' });
+    expect(single.statusCode).toBe(200);
+    await app.close();
+  });
+
+  it('ignora vacíos y repetidos; sin ids devuelve una lista vacía', async () => {
+    db.assetRow({ id: 'asset_a' });
+
+    const app = await buildApp();
+    const repeated = await app.inject({ method: 'GET', url: '/api/assets?ids=asset_a,,asset_a, asset_a ,' });
+    expect(idsOf(repeated)).toEqual(['asset_a']);
+
+    const empty = await app.inject({ method: 'GET', url: '/api/assets?ids=' });
+    expect(empty.statusCode).toBe(200);
+    expect(empty.json()).toEqual({ assets: [] });
+    await app.close();
+  });
+
+  it('acepta hasta 100 ids y rechaza más con 400 `too_many_ids`', async () => {
+    const ids = Array.from({ length: 101 }, (_, index) => `asset_${index}`);
+    db.assetRow({ id: 'asset_0' });
+
+    const app = await buildApp();
+    const ok = await app.inject({ method: 'GET', url: `/api/assets?ids=${ids.slice(0, 100).join(',')}` });
+    expect(ok.statusCode).toBe(200);
+    expect(idsOf(ok)).toEqual(['asset_0']);
+
+    const tooMany = await app.inject({ method: 'GET', url: `/api/assets?ids=${ids.join(',')}` });
+    expect(tooMany.statusCode).toBe(400);
+    expect(tooMany.json()).toMatchObject({ code: 'too_many_ids' });
+    await app.close();
+  });
+
+  it('un id con forma inválida es un 400, no una consulta', async () => {
+    const app = await buildApp();
+    const response = await app.inject({ method: 'GET', url: `/api/assets?ids=${'x'.repeat(65)}` });
+    expect(response.statusCode).toBe(400);
+    await app.close();
+  });
 });
 
 describe('DELETE /api/assets/:id', () => {

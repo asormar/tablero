@@ -29,6 +29,25 @@ import { env } from '../env.js';
 export const SIGNED_URL_TTL_SECONDS = 15 * 60;
 
 /**
+ * Ventana en la que se cuantiza la hora de firma (5 min): dentro de la misma
+ * ventana un objeto produce **la misma** URL, así el navegador puede reutilizar
+ * la redirección y los bytes ya descargados. Con un TTL de 15 min, toda URL
+ * entregada es válida al menos 10 min más.
+ */
+export const SIGNING_WINDOW_SECONDS = 5 * 60;
+
+/** Margen que se resta a la caducidad al calcular el `max-age` de la redirección. */
+export const SIGNED_URL_CACHE_MARGIN_SECONDS = 60;
+
+/**
+ * `Cache-Control` de los objetos al subirlos. Las claves son inmutables: llevan
+ * un id aleatorio por archivo (`assets/<dueño>/<assetId>.<ext>`) y un archivo
+ * nuevo nunca reutiliza una clave, así que los bytes de una URL no cambian.
+ * `private`: son archivos de usuario, no contenido para cachés compartidas.
+ */
+export const OBJECT_CACHE_CONTROL = 'private, max-age=31536000, immutable';
+
+/**
  * MinIO (y cualquier S3 autoalojado) exige direccionamiento por ruta:
  * `http://host/bucket/clave` en vez de `http://bucket.host/clave`.
  * R2 usa virtual-hosted, así que `forcePathStyle` sale de la configuración
@@ -123,6 +142,7 @@ export async function putObject(
       Key: key,
       Body: body,
       ContentType: contentType,
+      CacheControl: OBJECT_CACHE_CONTROL,
       ...(contentLength !== undefined ? { ContentLength: contentLength } : {}),
     }),
   );
@@ -131,6 +151,8 @@ export async function putObject(
 export type SignedUrlOptions = {
   /** Fuerza la descarga con el nombre original (`Content-Disposition: attachment`). */
   downloadName?: string | null;
+  /** Hora de firma (por defecto, ahora). La caducidad cuenta desde ella. */
+  signingDate?: Date;
 };
 
 /** URL firmada de lectura (GET). Nunca se persiste: se genera por petición. */
@@ -144,7 +166,42 @@ export async function getPresignedGetUrl(
     Key: key,
     ...(options.downloadName ? { ResponseContentDisposition: contentDisposition(options.downloadName) } : {}),
   });
-  return getSignedUrl(s3, command, { expiresIn: ttlSeconds });
+  return getSignedUrl(s3, command, {
+    expiresIn: ttlSeconds,
+    ...(options.signingDate ? { signingDate: options.signingDate } : {}),
+  });
+}
+
+/**
+ * Ventana de firma vigente en `now`: hora de firma cuantizada y momento en que
+ * caducan las URLs firmadas con ella.
+ */
+export function signingWindow(now: number = Date.now()): { signingDate: Date; expiresAt: number } {
+  const windowMs = SIGNING_WINDOW_SECONDS * 1000;
+  const start = Math.floor(now / windowMs) * windowMs;
+  return { signingDate: new Date(start), expiresAt: start + SIGNED_URL_TTL_SECONDS * 1000 };
+}
+
+export type CacheablePresignedUrl = {
+  url: string;
+  /** Segundos que el navegador puede reutilizar la URL (caducidad menos el margen). */
+  maxAgeSeconds: number;
+};
+
+/**
+ * URL firmada de lectura **estable por ventana** (ver `SIGNING_WINDOW_SECONDS`),
+ * con los segundos que la redirección puede cachearse sin que el navegador llegue
+ * a seguir una URL caducada.
+ */
+export async function getCacheablePresignedGetUrl(
+  key: string,
+  options: Omit<SignedUrlOptions, 'signingDate'> = {},
+  now: number = Date.now(),
+): Promise<CacheablePresignedUrl> {
+  const { signingDate, expiresAt } = signingWindow(now);
+  const url = await getPresignedGetUrl(key, SIGNED_URL_TTL_SECONDS, { ...options, signingDate });
+  const maxAgeSeconds = Math.max(0, Math.floor((expiresAt - now) / 1000) - SIGNED_URL_CACHE_MARGIN_SECONDS);
+  return { url, maxAgeSeconds };
 }
 
 /** `Content-Disposition` con respaldo ASCII y `filename*` UTF-8. */

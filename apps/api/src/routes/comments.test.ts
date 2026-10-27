@@ -14,7 +14,17 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import Fastify, { type FastifyInstance } from 'fastify';
 import { ZodError } from 'zod';
-import { addComment, addElement, createBoardDoc, formatZodError, readComments, removeElements } from '@tablero/shared';
+import {
+  addComment,
+  addElement,
+  createBoardDoc,
+  formatZodError,
+  readComments,
+  removeComment,
+  removeElements,
+  resolveComment,
+  updateCommentBody,
+} from '@tablero/shared';
 import * as Y from 'yjs';
 
 import { HttpError } from '../lib/errors.js';
@@ -25,6 +35,8 @@ const db = vi.hoisted(() => {
   const members = new Map<string, { boardId: string; userId: string; role: string }>();
   const comments = new Map<string, Record<string, unknown>>();
   const notifications: Record<string, unknown>[] = [];
+  /** Escrituras a la tabla `Comment` (la sincronización solo debe tocar lo que cambió). */
+  const writes = { upsert: [] as string[], deleteMany: 0 };
   let counter = 0;
 
   const board = (id: string, overrides: Record<string, unknown> = {}) => {
@@ -96,6 +108,7 @@ const db = vi.hoisted(() => {
     },
     comment: {
       deleteMany: async ({ where }: { where: { boardId: string; id?: { notIn: string[] } } }) => {
+        writes.deleteMany += 1;
         let count = 0;
         for (const [id, row] of comments) {
           if (row.boardId !== where.boardId) continue;
@@ -106,6 +119,7 @@ const db = vi.hoisted(() => {
         return { count };
       },
       upsert: async ({ where, create, update }: { where: { id: string }; create: Record<string, unknown>; update: Record<string, unknown> }) => {
+        writes.upsert.push(where.id);
         const existing = comments.get(where.id);
         const row = existing ? { ...existing, ...update } : { ...create, id: where.id };
         comments.set(where.id, row);
@@ -148,6 +162,7 @@ const db = vi.hoisted(() => {
     members,
     comments,
     notifications,
+    writes,
     prisma,
     board,
     users,
@@ -158,6 +173,8 @@ const db = vi.hoisted(() => {
       members.clear();
       comments.clear();
       notifications.length = 0;
+      writes.upsert.length = 0;
+      writes.deleteMany = 0;
       counter = 0;
     },
   };
@@ -177,6 +194,7 @@ vi.mock('../lib/session.js', async (importOriginal) => {
 });
 
 const { commentsRoutes } = await import('./comments.js');
+const { syncBoardComments } = await import('../lib/comments.js');
 
 async function buildApp(): Promise<FastifyInstance> {
   const app = Fastify({ logger: false });
@@ -435,5 +453,146 @@ describe('DELETE /api/comments/:id', () => {
     expect(response.statusCode).toBe(403);
     expect(response.json().code).toBe('forbidden_comment');
     await app.close();
+  });
+});
+
+describe('syncBoardComments: solo escribe y notifica lo que cambió', () => {
+  /** Documento con una nota y un comentario raíz de Ana que menciona a Beto. */
+  function threadDoc(): { doc: Y.Doc; cardId: string; rootId: string } {
+    const doc = createBoardDoc();
+    const cardId = addElement(doc, 'note', { createdBy: 'user_ana', x: 0, y: 0 }, 'test');
+    const rootId = addComment(
+      doc,
+      { elementId: cardId, authorId: 'user_ana', authorName: 'Ana', body: 'Para @beto', mentions: ['user_beto'] },
+      'test',
+    );
+    return { doc, cardId, rootId };
+  }
+
+  const notificationsOf = (kind: string) => db.notifications.filter((row) => row.kind === kind);
+
+  it('sin cambios la segunda pasada no escribe nada ni notifica', async () => {
+    const { doc } = threadDoc();
+
+    const first = await syncBoardComments('proyecto', doc);
+    expect(first).toMatchObject({ upserted: 1, written: 1, removed: 0, mentions: 1 });
+    expect(db.writes.upsert).toHaveLength(1);
+    expect(notificationsOf('mention')).toHaveLength(1);
+
+    db.writes.upsert.length = 0;
+    const second = await syncBoardComments('proyecto', doc);
+    expect(second).toMatchObject({ upserted: 1, written: 0, removed: 0, mentions: 0, replies: 0 });
+    expect(db.writes.upsert).toEqual([]);
+    expect(db.writes.deleteMany).toBe(0);
+    expect(notificationsOf('mention')).toHaveLength(1);
+  });
+
+  it('solo se escribe el comentario editado o nuevo, no el resto', async () => {
+    const { doc, cardId, rootId } = threadDoc();
+    const otherId = addComment(
+      doc,
+      { elementId: cardId, authorId: 'user_beto', authorName: 'Beto', body: 'Otro hilo', mentions: [] },
+      'test',
+    );
+    await syncBoardComments('proyecto', doc);
+    db.writes.upsert.length = 0;
+
+    updateCommentBody(doc, otherId, 'Otro hilo, editado', 'test');
+    const edited = await syncBoardComments('proyecto', doc);
+    expect(edited.written).toBe(1);
+    expect(db.writes.upsert).toEqual([otherId]);
+    expect(db.comments.get(otherId)).toMatchObject({ body: 'Otro hilo, editado' });
+
+    db.writes.upsert.length = 0;
+    expect(resolveComment(doc, rootId, true, 'user_ana', 'test')).toBe(true);
+    const afterResolve = await syncBoardComments('proyecto', doc);
+    expect(afterResolve.written).toBe(1);
+    expect(db.writes.upsert).toEqual([rootId]);
+    expect(db.comments.get(rootId)?.resolvedBy).toBe('user_ana');
+
+    db.writes.upsert.length = 0;
+    const freshId = addComment(
+      doc,
+      { elementId: cardId, authorId: 'user_ana', authorName: 'Ana', body: 'Nuevo', mentions: [] },
+      'test',
+    );
+    await syncBoardComments('proyecto', doc);
+    expect(db.writes.upsert).toEqual([freshId]);
+  });
+
+  it('una mención se notifica una sola vez aunque el comentario se edite o se resincronice', async () => {
+    const { doc, rootId } = threadDoc();
+    await syncBoardComments('proyecto', doc);
+    await syncBoardComments('proyecto', doc);
+    expect(notificationsOf('mention')).toHaveLength(1);
+
+    // Editar el texto manteniendo la mención: la fila se reescribe, el aviso no se duplica.
+    updateCommentBody(doc, rootId, 'Para @beto, con más contexto', 'test');
+    const edited = await syncBoardComments('proyecto', doc);
+    expect(edited).toMatchObject({ written: 1, mentions: 0 });
+    expect(notificationsOf('mention')).toHaveLength(1);
+
+    // Añadir otra mención en la edición sí genera el aviso nuevo (y solo ese).
+    updateCommentBody(doc, rootId, 'Para @beto y @caro', 'test');
+    const widened = await syncBoardComments('proyecto', doc);
+    expect(widened.mentions).toBe(1);
+    expect(notificationsOf('mention').map((row) => row.userId).sort()).toEqual(['user_beto', 'user_caro']);
+  });
+
+  it('avisa de una respuesta nueva al autor de la raíz sin reevaluar las anteriores', async () => {
+    const { doc, cardId, rootId } = threadDoc();
+    await syncBoardComments('proyecto', doc);
+
+    const replyId = addComment(
+      doc,
+      { parentId: rootId, elementId: cardId, authorId: 'user_beto', authorName: 'Beto', body: 'Visto', mentions: [] },
+      'test',
+    );
+    const withReply = await syncBoardComments('proyecto', doc);
+    expect(withReply).toMatchObject({ written: 1, replies: 1 });
+    expect(notificationsOf('reply')).toHaveLength(1);
+    expect(notificationsOf('reply')[0]).toMatchObject({ userId: 'user_ana', actorId: 'user_beto' });
+
+    // Resolver la raíz la reescribe y la respuesta hereda la marca: ningún aviso nuevo.
+    resolveComment(doc, rootId, true, 'user_ana', 'test');
+    const afterResolve = await syncBoardComments('proyecto', doc);
+    expect(afterResolve.replies).toBe(0);
+    expect(notificationsOf('reply')).toHaveLength(1);
+    expect(db.comments.get(replyId)?.resolvedAt).toBeInstanceOf(Date);
+  });
+
+  it('borra de la tabla lo que ya no está en el documento (y solo entonces llama a deleteMany)', async () => {
+    const { doc, cardId, rootId } = threadDoc();
+    const otherId = addComment(
+      doc,
+      { elementId: cardId, authorId: 'user_ana', authorName: 'Ana', body: 'Otro', mentions: [] },
+      'test',
+    );
+    await syncBoardComments('proyecto', doc);
+    expect(db.writes.deleteMany).toBe(0);
+
+    removeComment(doc, rootId, 'test');
+    const result = await syncBoardComments('proyecto', doc);
+    expect(result).toMatchObject({ upserted: 1, written: 0, removed: 1 });
+    expect(db.writes.deleteMany).toBe(1);
+    expect(db.comments.has(rootId)).toBe(false);
+    expect(db.comments.has(otherId)).toBe(true);
+  });
+
+  it('un autor inexistente se ignora en cada pasada (nunca llega a la tabla)', async () => {
+    const doc = createBoardDoc();
+    const cardId = addElement(doc, 'note', { createdBy: 'user_ana', x: 0, y: 0 }, 'test');
+    addComment(
+      doc,
+      { elementId: cardId, authorId: 'user_fantasma', authorName: 'Fantasma', body: 'Hola', mentions: [] },
+      'test',
+    );
+
+    for (let pass = 0; pass < 2; pass += 1) {
+      const result = await syncBoardComments('proyecto', doc);
+      expect(result).toMatchObject({ upserted: 0, written: 0 });
+    }
+    expect(db.comments.size).toBe(0);
+    expect(db.writes.upsert).toEqual([]);
   });
 });

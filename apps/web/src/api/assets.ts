@@ -4,6 +4,7 @@
  * Contrato de la API (fase 2):
  *   POST   /api/assets          multipart (`file`, `boardId`) → { asset } 201/200
  *   GET    /api/assets/:id      → { asset }
+ *   GET    /api/assets?ids=a,b  → { assets } (hasta 100; los no legibles se omiten)
  *   GET    /api/assets/:id/raw  → 302 a la URL firmada
  *   GET    /api/assets/:id/thumb→ 302 a la URL firmada
  *   DELETE /api/assets/:id      → 204
@@ -20,6 +21,7 @@ import {
 } from '@tablero/shared';
 
 import { API_BASE_URL, ApiError, apiRequest } from './client';
+import { isMissingEndpoint } from './degraded';
 
 /**
  * Las rutas del contrato compartido ya incluyen `/api` (`assetRoutes.raw(id)`
@@ -170,6 +172,83 @@ export async function fetchAssetSummary(id: string): Promise<AssetSummary | null
     if (error instanceof ApiError && error.isNotFound) return null;
     throw error;
   }
+}
+
+/** Máximo de ids por petición del resumen por lotes (el servidor rechaza más). */
+export const ASSET_BATCH_SIZE = 100;
+
+/** Resultado de un id dentro de un lote: sus metadatos, `null` si no existe/no es legible, o el fallo. */
+export type AssetLookup = { asset: AssetSummary | null } | { error: unknown };
+
+/**
+ * ¿La API de este servidor no tiene el resumen por lotes? Se recuerda tras el
+ * primer 404/405/501 para no repetir una petición que ya se sabe que falla.
+ */
+let batchEndpointMissing = false;
+
+/** Solo para tests: olvida que el servidor no tenía el resumen por lotes. */
+export function resetAssetBatchSupport(): void {
+  batchEndpointMissing = false;
+}
+
+async function lookupOne(id: string): Promise<AssetLookup> {
+  try {
+    return { asset: await fetchAssetSummary(id) };
+  } catch (error) {
+    return { error };
+  }
+}
+
+/**
+ * Metadatos de varios archivos con una sola petición (`GET /api/assets?ids=`).
+ * Admite hasta `ASSET_BATCH_SIZE` ids; el llamador trocea.
+ *
+ * El resultado trae una entrada por id pedido: los que el servidor no devuelve
+ * (inexistentes o sin acceso) quedan en `{ asset: null }`, igual que el 404 del
+ * detalle. Un fallo de la petición entera (red, 5xx) se reparte como `{ error }`
+ * a todos. Si el servidor no conoce el lote (404/405/501, patrón de
+ * `degraded.ts`), se recurre al detalle por id.
+ */
+export async function fetchAssetSummaries(ids: string[]): Promise<Map<string, AssetLookup>> {
+  const unique = [...new Set(ids)];
+  const results = new Map<string, AssetLookup>();
+  // Un id con coma no cabe en `ids=a,b`: va por el detalle.
+  const batchable = unique.filter((id) => !id.includes(','));
+  const single = unique.filter((id) => id.includes(','));
+
+  if (batchable.length > 0) {
+    if (batchEndpointMissing) {
+      single.push(...batchable);
+    } else {
+      try {
+        const payload = await apiRequest<{ assets?: unknown }>(ASSETS_PATH, {
+          query: { ids: batchable.join(',') },
+          timeoutMs: 15000,
+        });
+        const requested = new Set(batchable);
+        const found = new Map<string, AssetSummary>();
+        const list = Array.isArray(payload?.assets) ? payload.assets : [];
+        for (const raw of list) {
+          const asset = toAssetSummary(raw);
+          if (asset && requested.has(asset.id)) found.set(asset.id, asset);
+        }
+        for (const id of batchable) results.set(id, { asset: found.get(id) ?? null });
+      } catch (error) {
+        if (isMissingEndpoint(error)) {
+          batchEndpointMissing = true;
+          single.push(...batchable);
+        } else {
+          for (const id of batchable) results.set(id, { error });
+        }
+      }
+    }
+  }
+
+  if (single.length > 0) {
+    const looked = await Promise.all(single.map((id) => lookupOne(id)));
+    single.forEach((id, index) => results.set(id, looked[index]!));
+  }
+  return results;
 }
 
 export async function deleteAsset(id: string): Promise<void> {

@@ -6,7 +6,7 @@
  * selección y se oculta mientras dura un arrastre (ahí manda el DOM).
  */
 
-import { useMemo, useState } from 'react';
+import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 import { boundsOf } from '@tablero/shared';
 import type { AlignAction } from '@tablero/shared';
@@ -59,6 +59,9 @@ const ALIGN_ICONS: Record<AlignAction, JSX.Element> = {
   'distribute-y': <BetweenVerticalStart size={15} />,
 };
 
+/** Duración de la salida (`fade-out` de `.ctxbar.is-leaving`) más un pequeño margen. */
+const LEAVE_MS = 150;
+
 export function ContextBar({ session }: { session: BoardSession }): JSX.Element | null {
   const selection = useUiStore((state) => state.selection);
   const viewport = useUiStore((state) => state.viewport);
@@ -92,8 +95,30 @@ export function ContextBar({ session }: { session: BoardSession }): JSX.Element 
   const allLocked = items.length > 0 && items.every((item) => item.locked);
   const colorValue = element?.color;
 
-  if (items.length === 0 || !bounds || interaction !== 'idle') return null;
-  if (!editable) return null;
+  // Salida corta: solo cuando la selección se vacía con el lienzo en reposo (el
+  // clic en vacío). Si la barra se oculta por un gesto, desaparece al instante.
+  const visible = items.length > 0 && !!bounds && interaction === 'idle' && editable;
+  const cleared = items.length === 0 && interaction === 'idle';
+  const lastBar = useRef<(() => JSX.Element) | null>(null);
+  const [leaving, setLeaving] = useState<JSX.Element | null>(null);
+
+  useLayoutEffect(() => {
+    if (visible) {
+      setLeaving(null);
+      return undefined;
+    }
+    const render = lastBar.current;
+    lastBar.current = null;
+    if (!cleared || !render) {
+      setLeaving(null);
+      return undefined;
+    }
+    setLeaving(render());
+    const timer = window.setTimeout(() => setLeaving(null), LEAVE_MS);
+    return () => window.clearTimeout(timer);
+  }, [visible, cleared]);
+
+  if (!visible || !bounds) return leaving;
 
   const screenX = (bounds.x + bounds.width / 2 - viewport.x) * viewport.scale;
   const screenY = (bounds.y - viewport.y) * viewport.scale;
@@ -102,10 +127,13 @@ export function ContextBar({ session }: { session: BoardSession }): JSX.Element 
   const placeBelow = screenY < 96;
   const top = placeBelow ? screenY + bounds.height * viewport.scale + 12 : screenY - 10;
 
-  return (
+  const renderBar = (isLeaving: boolean): JSX.Element => (
     <div
-      className="ctxbar"
-      style={{ left, top, transform: placeBelow ? 'translate(-50%, 0)' : 'translate(-50%, -100%)' }}
+      className={`ctxbar${isLeaving ? ' is-leaving' : ''}`}
+      data-placement={placeBelow ? 'below' : 'above'}
+      // `translate` (y no `transform`) deja que la animación de entrada use
+      // `scale` sin pisar la posición, y escale desde el borde que toca la selección.
+      style={{ left, top, translate: placeBelow ? '-50% 0' : '-50% -100%' }}
       onPointerDown={(event) => event.stopPropagation()}
     >
       <div className="ctxbar__group" ref={colorsRef}>
@@ -221,4 +249,7 @@ export function ContextBar({ session }: { session: BoardSession }): JSX.Element 
       </button>
     </div>
   );
+
+  lastBar.current = () => renderBar(true);
+  return renderBar(false);
 }

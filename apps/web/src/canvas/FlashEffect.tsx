@@ -14,7 +14,8 @@ import { useEffect } from 'react';
 import { usePanelsStore } from '@/state/panelsStore';
 
 const RETRY_DELAYS = [0, 90, 220, 420, 700];
-const FLASH_MS = 1400;
+/** Igual que la duración de `.el.is-flash` en `phase4.css`. */
+const FLASH_MS = 1000;
 
 export function FlashEffect(): null {
   const elementId = usePanelsStore((state) => state.flashElementId);

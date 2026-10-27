@@ -44,3 +44,101 @@ export function pinchPair(points: readonly Point[]): [Point, Point] | null {
   if (!first || !second) return null;
   return [first, second];
 }
+
+// --- Pulsación larga ---------------------------------------------------------
+
+/** Tiempo que hay que mantener el dedo quieto para abrir el menú contextual. */
+export const LONG_PRESS_MS = 500;
+/** Lo máximo que puede moverse el dedo (px de pantalla) sin cancelar la pulsación. */
+export const LONG_PRESS_SLOP = 8;
+
+export type LongPressDeps<T> = {
+  setTimer(callback: () => void, delayMs: number): unknown;
+  clearTimer(handle: unknown): void;
+  /** La pulsación se cumplió: `point` es donde empezó y `payload` lo que se armó con ella. */
+  onFire(point: Point, payload: T): void;
+  delayMs?: number;
+  slop?: number;
+};
+
+export type LongPress<T> = {
+  /** Un dedo toca la pantalla. Con un segundo dedo (pinza) cancela la pulsación. */
+  touchDown(pointerId: number): void;
+  /** Arma la cuenta atrás para este dedo (solo si es el único apoyado). */
+  arm(pointerId: number, point: Point, payload: T): void;
+  /** Movimiento del dedo: pasar de `slop` cancela. */
+  move(pointerId: number, point: Point): void;
+  /** El dedo se levanta (o el navegador cancela el gesto). */
+  touchUp(pointerId: number): void;
+  cancel(): void;
+  /** ¿Hay una cuenta atrás en marcha? */
+  isPending(): boolean;
+  /** `true` una sola vez tras cumplirse la pulsación: hay que tragarse el clic que sigue. */
+  consumeClick(): boolean;
+  /** Descarta la supresión pendiente (empieza un gesto que no es táctil). */
+  resetSuppression(): void;
+};
+
+/**
+ * Máquina de estados de la pulsación larga táctil: el reloj entra por
+ * `setTimer`/`clearTimer` para poder probarla sin navegador.
+ *
+ * Se cumple tras `delayMs` con el dedo dentro de `slop`; se cancela al moverse
+ * más, al levantar o cancelar el puntero y cuando aparece un segundo dedo. Al
+ * cumplirse deja pendiente la supresión del clic que el navegador sintetiza al
+ * soltar.
+ */
+export function createLongPress<T>(deps: LongPressDeps<T>): LongPress<T> {
+  const delay = deps.delayMs ?? LONG_PRESS_MS;
+  const slop = deps.slop ?? LONG_PRESS_SLOP;
+  const down = new Set<number>();
+  let pending: { id: number; origin: Point; payload: T; timer: unknown } | null = null;
+  let suppressClick = false;
+
+  const cancel = (): void => {
+    if (!pending) return;
+    deps.clearTimer(pending.timer);
+    pending = null;
+  };
+
+  const touchDown = (pointerId: number): void => {
+    if (down.size === 0) suppressClick = false;
+    down.add(pointerId);
+    if (down.size >= 2) cancel();
+  };
+
+  return {
+    touchDown,
+    arm(pointerId, point, payload) {
+      touchDown(pointerId);
+      if (down.size !== 1) return;
+      cancel();
+      const press = { id: pointerId, origin: point, payload, timer: undefined as unknown };
+      press.timer = deps.setTimer(() => {
+        if (pending !== press) return;
+        pending = null;
+        suppressClick = true;
+        deps.onFire(press.origin, press.payload);
+      }, delay);
+      pending = press;
+    },
+    move(pointerId, point) {
+      if (!pending || pending.id !== pointerId) return;
+      if (distanceBetween(pending.origin, point) > slop) cancel();
+    },
+    touchUp(pointerId) {
+      down.delete(pointerId);
+      if (pending?.id === pointerId) cancel();
+    },
+    cancel,
+    isPending: () => pending !== null,
+    consumeClick() {
+      if (!suppressClick) return false;
+      suppressClick = false;
+      return true;
+    },
+    resetSuppression() {
+      suppressClick = false;
+    },
+  };
+}

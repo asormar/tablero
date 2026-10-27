@@ -47,7 +47,7 @@ import { useAppStore } from '@/state/appStore';
 import { useUiStore } from '@/state/uiStore';
 
 import { canvasPoint, invalidateCanvasRect, setCanvasRoot, worldFromClient } from './canvasRef';
-import { distanceBetween, midpointOf, pinchPair, pinchScaleFor } from './touchNav';
+import { type LongPress, createLongPress, distanceBetween, midpointOf, pinchPair, pinchScaleFor } from './touchNav';
 import { ElementLayer } from './ElementLayer';
 import { cancelViewportTween } from './viewportTween';
 import { type WheelBatch, classifyWheel, createWheelAccumulator } from './wheelAccumulator';
@@ -60,6 +60,13 @@ import {
 } from './interactions';
 import type { ResizeDirection } from '@/lib/dragMath';
 import { isSpacePan } from './panMode';
+
+/**
+ * Corta el gesto en curso. Con `notify` además avisa a `onEnd(false)` para que el
+ * gesto se deshaga y la interfaz vuelva a reposo (la pulsación larga lo usa);
+ * sin él solo se sueltan los oyentes.
+ */
+type StopTrack = (notify?: boolean) => void;
 
 type TrackOptions = {
   /** Esc cancela el gesto (arrastres); en paneo y lazo no hace falta. */
@@ -75,7 +82,7 @@ function trackPointer(
   onMove: (event: PointerEvent) => void,
   onEnd: (commit: boolean, event: PointerEvent | null) => void,
   options: TrackOptions = {},
-): () => void {
+): StopTrack {
   let finished = false;
   let last: PointerEvent | null = null;
 
@@ -120,7 +127,13 @@ function trackPointer(
   document.body.classList.add('is-dragging');
   if (options.cursorClass) document.body.classList.add(options.cursorClass);
 
-  return () => {
+  return (notify = false) => {
+    if (notify && !finished) {
+      finished = true;
+      cleanup();
+      onEnd(false, last);
+      return;
+    }
     finished = true;
     cleanup();
   };
@@ -135,7 +148,8 @@ export type CanvasProps = {
 
 export function Canvas({ session, onOpenBoard, readOnly = false }: CanvasProps): JSX.Element {
   const rootRef = useRef<HTMLDivElement | null>(null);
-  const activeTrack = useRef<(() => void) | null>(null);
+  const activeTrack = useRef<StopTrack | null>(null);
+  const longPress = useRef<LongPress<string | null> | null>(null);
   const viewport = useUiStore((state) => state.viewport);
   const interaction = useUiStore((state) => state.interaction);
   const permission = useSessionPermission();
@@ -268,6 +282,52 @@ export function Canvas({ session, onOpenBoard, readOnly = false }: CanvasProps):
       node.removeEventListener('pointermove', onMove);
       node.removeEventListener('pointerup', onUp);
       node.removeEventListener('pointercancel', onUp);
+    };
+  }, []);
+
+  // --- Pulsación larga táctil: abre el menú contextual ------------------------
+  // Un dedo quieto 500 ms (sin moverse más de 8 px) abre el mismo menú que el clic
+  // derecho: el de la tarjeta si el dedo está sobre una, si no el del lienzo. Corta
+  // el paneo o arrastre que ya había empezado y se traga el clic que sigue.
+  useEffect(() => {
+    const node = rootRef.current;
+    if (!node) return undefined;
+    const machine = createLongPress<string | null>({
+      setTimer: (callback, delayMs) => window.setTimeout(callback, delayMs),
+      clearTimer: (handle) => window.clearTimeout(handle as number),
+      onFire: (point, targetId) => {
+        activeTrack.current?.(true);
+        const ui = useUiStore.getState();
+        if (ui.interaction !== 'idle') ui.setInteraction('idle');
+        if (targetId && !ui.selection.includes(targetId)) ui.select([targetId]);
+        ui.setContextMenu({ x: point.x, y: point.y, targetId });
+      },
+    });
+    longPress.current = machine;
+
+    const onDown = (event: PointerEvent): void => {
+      if (event.pointerType === 'touch') machine.touchDown(event.pointerId);
+      else machine.resetSuppression();
+    };
+    const onMove = (event: PointerEvent): void => {
+      if (event.pointerType !== 'touch') return;
+      machine.move(event.pointerId, { x: event.clientX, y: event.clientY });
+    };
+    const onEnd = (event: PointerEvent): void => {
+      if (event.pointerType === 'touch') machine.touchUp(event.pointerId);
+    };
+
+    node.addEventListener('pointerdown', onDown);
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onEnd);
+    window.addEventListener('pointercancel', onEnd);
+    return () => {
+      node.removeEventListener('pointerdown', onDown);
+      window.removeEventListener('pointermove', onMove);
+      window.removeEventListener('pointerup', onEnd);
+      window.removeEventListener('pointercancel', onEnd);
+      machine.cancel();
+      longPress.current = null;
     };
   }, []);
 
@@ -565,6 +625,12 @@ export function Canvas({ session, onOpenBoard, readOnly = false }: CanvasProps):
         }
       }
 
+      // Pulsación larga táctil (menú contextual). Las zonas interactivas (dibujo,
+      // mapa, tabla…) la usan para sus propios gestos, así que no la arman.
+      if (event.pointerType === 'touch' && !target.closest('[data-interactive]')) {
+        longPress.current?.arm(event.pointerId, { x: event.clientX, y: event.clientY }, elementEl?.dataset.elementId ?? null);
+      }
+
       if (!elementEl) {
         // Clic sobre una flecha: se selecciona el conector, no se abre lazo.
         const connector = connectorAtPoint(session, screenToWorld(ui.viewport, startPoint), 6);
@@ -667,6 +733,13 @@ export function Canvas({ session, onOpenBoard, readOnly = false }: CanvasProps):
     ui.setContextMenu({ x: event.clientX, y: event.clientY, targetId: id });
   }, []);
 
+  /** Tras una pulsación larga cumplida, el clic que el navegador sintetiza al soltar no vale. */
+  const handleClickCapture = useCallback((event: React.MouseEvent<HTMLDivElement>) => {
+    if (!longPress.current?.consumeClick()) return;
+    event.preventDefault();
+    event.stopPropagation();
+  }, []);
+
   // --- Soltado de herramientas y de archivos desde el sistema ---------------
 
   const [fileDragOver, setFileDragOver] = useState(false);
@@ -735,7 +808,10 @@ export function Canvas({ session, onOpenBoard, readOnly = false }: CanvasProps):
         .join(' ')}
       data-canvas-editable={editable ? 'yes' : 'no'}
       data-canvas-comment-mode={canComment && commentPinMode ? 'pin' : 'off'}
+      // iOS no debe mostrar su propio menú de pulsación larga sobre enlaces e imágenes.
+      style={{ WebkitTouchCallout: 'none' }}
       onPointerDown={handlePointerDown}
+      onClickCapture={handleClickCapture}
       onDoubleClick={handleDoubleClick}
       onContextMenu={handleContextMenu}
       onDragOver={handleDragOver}

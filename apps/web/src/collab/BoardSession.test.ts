@@ -6,7 +6,7 @@
  * que funcionar aunque la API no esté.
  */
 
-import { beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import * as Y from 'yjs';
 
@@ -14,7 +14,7 @@ import { addElement, getOrderedElements, localOrigin, moveElements, patchElement
 
 import { writePlainText } from '@/lib/xmlFragment';
 
-import { BoardSession } from './BoardSession';
+import { BoardSession, DEFAULT_COLLAB_URL, resolveCollabUrl } from './BoardSession';
 import { bytesToBase64, loadLocalDocument, saveLocalDocument } from './localPersistence';
 
 beforeAll(() => {
@@ -121,6 +121,52 @@ describe('BoardSession · suscripciones', () => {
     expect(session.getTextBlocks(id)).toBe(session.getTextBlocks(id));
     off();
     session.destroy();
+  });
+});
+
+describe('resolveCollabUrl', () => {
+  const globals = globalThis as unknown as { window?: Record<string, unknown> };
+
+  function withLocation(location: { protocol: string; host: string } | undefined, run: () => void): void {
+    const previous = globals.window;
+    globals.window = { ...previous, location };
+    try {
+      run();
+    } finally {
+      globals.window = previous;
+    }
+  }
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('usa VITE_COLLAB_URL cuando está definida', () => {
+    vi.stubEnv('VITE_COLLAB_URL', 'wss://otro.example/collab');
+    withLocation({ protocol: 'https:', host: 'tablero.example' }, () => {
+      expect(resolveCollabUrl()).toBe('wss://otro.example/collab');
+    });
+  });
+
+  it('deriva wss del origen cuando la página va por https', () => {
+    vi.stubEnv('VITE_COLLAB_URL', '');
+    withLocation({ protocol: 'https:', host: 'tablero.example' }, () => {
+      expect(resolveCollabUrl()).toBe('wss://tablero.example/collab');
+    });
+  });
+
+  it('deriva ws del origen (con puerto) cuando la página va por http', () => {
+    vi.stubEnv('VITE_COLLAB_URL', '');
+    withLocation({ protocol: 'http:', host: 'localhost:5173' }, () => {
+      expect(resolveCollabUrl()).toBe('ws://localhost:5173/collab');
+    });
+  });
+
+  it('sin location (fuera del navegador) cae al servidor local por defecto', () => {
+    vi.stubEnv('VITE_COLLAB_URL', '');
+    withLocation(undefined, () => {
+      expect(resolveCollabUrl()).toBe(DEFAULT_COLLAB_URL);
+    });
   });
 });
 

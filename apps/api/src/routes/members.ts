@@ -157,7 +157,7 @@ export async function membersRoutes(app: FastifyInstance): Promise<void> {
     const resolution = await resolveBoardAccess(user.id, id);
     const { board } = requireBoardAccess(resolution, 'owner');
     if (userId === board.ownerId) throw conflict('No se puede expulsar al dueño', 'cannot_remove_owner');
-    if (userId === user.id) throw conflict('No te podés expulsar a vos mismo', 'cannot_remove_self');
+    if (userId === user.id) throw conflict('No puedes expulsarte a ti mismo', 'cannot_remove_self');
 
     const deleted = await prisma.boardMember.deleteMany({ where: { boardId: id, userId } });
     if (deleted.count === 0) throw notFound('Esa persona no es miembro del tablero', 'member_not_found');

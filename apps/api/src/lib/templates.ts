@@ -105,7 +105,7 @@ function p(column: number, row: number): { x: number; y: number } {
   return { x: 60 + column * 340, y: 80 + row * 280 };
 }
 
-const INSTRUCTIONS = 'Instrucciones: esta tarjeta es tuya, borrala cuando ya no la necesites.';
+const INSTRUCTIONS = 'Instrucciones: esta tarjeta es tuya, bórrala cuando ya no la necesites.';
 
 /** Las doce plantillas del sistema (las que siembra `scripts/seed-templates.ts`). */
 export const SYSTEM_TEMPLATES: TemplateSpec[] = [
@@ -120,7 +120,7 @@ export const SYSTEM_TEMPLATES: TemplateSpec[] = [
       {
         kind: 'note',
         color: 'yellow',
-        text: `${INSTRUCTIONS}\nArrastrá imágenes a este tablero, pegá enlaces y probá paletas con las muestras de color.`,
+        text: `${INSTRUCTIONS}\nArrastra imágenes a este tablero, pega enlaces y prueba paletas con las muestras de color.`,
         ...p(1, 0),
       },
       { kind: 'swatch', hex: '#1B2A4A', name: 'Azul noche', ...p(0, 1) },
@@ -183,7 +183,7 @@ export const SYSTEM_TEMPLATES: TemplateSpec[] = [
     icon: '📋',
     cards: [
       { kind: 'heading', text: 'Planificador de proyecto', size: 'XL', ...p(0, 0) },
-      { kind: 'note', color: 'yellow', text: `${INSTRUCTIONS}\nArrastrá las tarjetas entre columnas para reflejar el estado real.`, ...p(1, 0) },
+      { kind: 'note', color: 'yellow', text: `${INSTRUCTIONS}\nArrastra las tarjetas entre columnas para reflejar el estado real.`, ...p(1, 0) },
       {
         kind: 'column',
         title: 'Por hacer',
@@ -251,7 +251,7 @@ export const SYSTEM_TEMPLATES: TemplateSpec[] = [
     icon: '📖',
     cards: [
       { kind: 'heading', text: 'Estructura de la novela', size: 'XL', ...p(0, 0) },
-      { kind: 'note', color: 'yellow', text: `${INSTRUCTIONS}\nEscribí la premisa en una nota y mové los capítulos a medida que avances.`, ...p(1, 0) },
+      { kind: 'note', color: 'yellow', text: `${INSTRUCTIONS}\nEscribe la premisa en una nota y mueve los capítulos a medida que avances.`, ...p(1, 0) },
       { kind: 'note', text: 'Premisa\n¿Quién quiere qué y qué se lo impide?', ...p(0, 1) },
       { kind: 'note', text: 'Tema y tono', ...p(1, 1) },
       { kind: 'note', text: 'Acto I — planteamiento\nPresentar el mundo y el conflicto.', ...p(0, 2) },
@@ -279,7 +279,7 @@ export const SYSTEM_TEMPLATES: TemplateSpec[] = [
           {
             kind: 'note',
             color: 'yellow',
-            text: `${INSTRUCTIONS}\nDuplicá esta ficha por personaje (o creá otro tablero como este).`,
+            text: `${INSTRUCTIONS}\nDuplica esta ficha por personaje (o crea otro tablero como este).`,
             ...p(1, 0),
           },
           {
@@ -339,7 +339,7 @@ export const SYSTEM_TEMPLATES: TemplateSpec[] = [
     icon: '✨',
     cards: [
       { kind: 'heading', text: 'Brief creativo', size: 'XL', ...p(0, 0) },
-      { kind: 'note', color: 'yellow', text: `${INSTRUCTIONS}\nCompletá cada nota antes de la reunión de arranque.`, ...p(1, 0) },
+      { kind: 'note', color: 'yellow', text: `${INSTRUCTIONS}\nCompleta cada nota antes de la reunión de arranque.`, ...p(1, 0) },
       { kind: 'note', text: 'Objetivo\n¿Qué tiene que lograr esta pieza?', ...p(0, 1) },
       { kind: 'note', text: 'Público\n¿Para quién es? ¿Qué sabe ya?', ...p(1, 1) },
       { kind: 'note', text: 'Tono y referencias', ...p(2, 1) },
@@ -373,7 +373,7 @@ export const SYSTEM_TEMPLATES: TemplateSpec[] = [
       {
         kind: 'note',
         color: 'yellow',
-        text: `${INSTRUCTIONS}\nUna idea por nota. Después agrupá, descartá o convertí en tareas.`,
+        text: `${INSTRUCTIONS}\nUna idea por nota. Después agrupa, descarta o convierte en tareas.`,
         ...p(1, 0),
       },
       { kind: 'note', text: 'Idea 1', ...p(0, 1) },
@@ -399,7 +399,7 @@ export const SYSTEM_TEMPLATES: TemplateSpec[] = [
     icon: '🗓️',
     cards: [
       { kind: 'heading', text: 'Semana', size: 'XL', ...p(0, 0) },
-      { kind: 'note', color: 'yellow', text: `${INSTRUCTIONS}\nUna fila por día. Al final de la semana, repasá y mové lo pendiente.`, ...p(1, 0) },
+      { kind: 'note', color: 'yellow', text: `${INSTRUCTIONS}\nUna fila por día. Al final de la semana, repasa y mueve lo pendiente.`, ...p(1, 0) },
       {
         kind: 'table',
         headers: ['Día', 'Enfoque', 'Compromisos'],
@@ -431,7 +431,7 @@ export const SYSTEM_TEMPLATES: TemplateSpec[] = [
     icon: '✈️',
     cards: [
       { kind: 'heading', text: 'Viaje', size: 'XL', ...p(0, 0) },
-      { kind: 'note', color: 'yellow', text: `${INSTRUCTIONS}\nMarcá los lugares en el mapa y armá el itinerario día por día.`, ...p(1, 0) },
+      { kind: 'note', color: 'yellow', text: `${INSTRUCTIONS}\nMarca los lugares en el mapa y arma el itinerario día por día.`, ...p(1, 0) },
       {
         kind: 'map',
         lat: 41.3874,
@@ -476,7 +476,7 @@ export const SYSTEM_TEMPLATES: TemplateSpec[] = [
     icon: '🔍',
     cards: [
       { kind: 'heading', text: 'Investigación de usuarios', size: 'XL', ...p(0, 0) },
-      { kind: 'note', color: 'yellow', text: `${INSTRUCTIONS}\nUna fila por sesión. Al terminar, resumí los hallazgos en notas.`, ...p(1, 0) },
+      { kind: 'note', color: 'yellow', text: `${INSTRUCTIONS}\nUna fila por sesión. Al terminar, resume los hallazgos en notas.`, ...p(1, 0) },
       {
         kind: 'table',
         headers: ['Participante', 'Perfil', 'Fecha', 'Estado'],
@@ -506,7 +506,7 @@ export const SYSTEM_TEMPLATES: TemplateSpec[] = [
     icon: '📣',
     cards: [
       { kind: 'heading', text: 'Plan de contenidos', size: 'XL', ...p(0, 0) },
-      { kind: 'note', color: 'yellow', text: `${INSTRUCTIONS}\nCompletá la tabla y mové las tarjetas cuando algo cambie de fecha.`, ...p(1, 0) },
+      { kind: 'note', color: 'yellow', text: `${INSTRUCTIONS}\nCompleta la tabla y mueve las tarjetas cuando algo cambie de fecha.`, ...p(1, 0) },
       { kind: 'note', text: 'Voz de marca\n¿Cómo hablamos? ¿Qué evitamos?', ...p(0, 1) },
       {
         kind: 'table',
@@ -525,7 +525,7 @@ export const SYSTEM_TEMPLATES: TemplateSpec[] = [
         items: [{ text: 'Revisar enlaces' }, { text: 'Optimizar imágenes' }, { text: 'Programar la publicación', dueInDays: 5 }],
         ...p(0, 2),
       },
-      { kind: 'note', text: 'Resultados\n¿Qué funcionó? Anotalo acá para la próxima.', ...p(1, 2) },
+      { kind: 'note', text: 'Resultados\n¿Qué funcionó? Anótalo aquí para la próxima.', ...p(1, 2) },
     ],
   },
   {
@@ -554,7 +554,7 @@ export const SYSTEM_TEMPLATES: TemplateSpec[] = [
         icon: '📁',
         cards: [
           { kind: 'heading', text: 'Fichas de proyecto', size: 'L', ...p(0, 0) },
-          { kind: 'note', color: 'yellow', text: `${INSTRUCTIONS}\nDuplicá esta ficha por proyecto.`, ...p(1, 0) },
+          { kind: 'note', color: 'yellow', text: `${INSTRUCTIONS}\nDuplica esta ficha por proyecto.`, ...p(1, 0) },
           { kind: 'note', text: 'Proyecto 1\nProblema · Aporte · Resultado · Enlaces', ...p(0, 1) },
           { kind: 'note', text: 'Proyecto 2\nProblema · Aporte · Resultado · Enlaces', ...p(1, 1) },
         ],

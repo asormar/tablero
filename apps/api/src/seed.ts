@@ -27,7 +27,7 @@ async function main(): Promise<void> {
   const { user, rootBoard } = await createUserWithRootBoard(DEMO);
   console.log(`Cuenta demo creada: ${user.email} (${user.id})`);
   console.log(`Tablero raíz: ${rootBoard.id} — "${rootBoard.title}"`);
-  console.log('Contraseña: la de DEMO_PASSWORD (o la del código por defecto); no se imprime acá.');
+  console.log('Contraseña: la de DEMO_PASSWORD (o la del código por defecto); no se imprime aquí.');
 }
 
 main()

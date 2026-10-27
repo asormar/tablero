@@ -235,6 +235,6 @@ describe('searchAll', () => {
     expect(own.groups).toHaveLength(0);
     expect(own.total).toBe(0);
 
-    await expect(searchAll('user_ana', 'reunion', { boardId: 'board_ajeno', limit: 30 })).rejects.toThrow(/no existe o no tenés acceso/);
+    await expect(searchAll('user_ana', 'reunion', { boardId: 'board_ajeno', limit: 30 })).rejects.toThrow(/no existe o no tienes acceso/);
   });
 });

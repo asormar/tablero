@@ -51,11 +51,11 @@ Deja `apps/extension/dist` listo para cargar: `manifest.json`, `popup.html`,
 
 ## Cargar la extensión sin empaquetar
 
-1. Abrí `chrome://extensions` en Chromium/Chrome.
-2. Activá **«Modo de desarrollador»** (arriba a la derecha).
-3. **«Cargar descomprimida»** y elegí la carpeta `apps/extension/dist`.
-4. Después de cada `build`, apretá el botón de recargar (⟳) en la tarjeta de la
-   extensión y volvé a abrir el popup.
+1. Abre `chrome://extensions` en Chromium/Chrome.
+2. Activa **«Modo de desarrollador»** (arriba a la derecha).
+3. **«Cargar descomprimida»** y elige la carpeta `apps/extension/dist`.
+4. Después de cada `build`, pulsa el botón de recargar (⟳) en la tarjeta de la
+   extensión y vuelve a abrir el popup.
 
 ## Conseguir el token
 
@@ -66,10 +66,10 @@ la extensión: el endpoint de captura está pensado para esto.
 
 ## Uso
 
-1. Abrí la página que querés guardar (y seleccioná el texto que te interese).
+1. Abre la página que quieres guardar (y selecciona el texto que te interese).
 2. Clic en el icono de la extensión.
-3. Revisá/ajustá **título**, **URL** y **selección**.
-4. Marcá **«Adjuntar la parte visible»** si querés la imagen.
+3. Revisa/ajusta **título**, **URL** y **selección**.
+4. Marca **«Adjuntar la parte visible»** si quieres la imagen.
 5. **«Enviar a «Sin ordenar»»**. Abajo aparece el resultado o el error.
 
 ## Ajustes y «Probar conexión»
@@ -89,7 +89,7 @@ El botón prueba en dos pasos y distingue los tres finales posibles:
   `400 {"error":"La captura de tipo «image» todavía no está soportada","code":"capture_unsupported_type"}`
   (lo mismo para `type: "file"`). La extensión manda igual la captura visible
   como `imageDataUrl` y, al recibir ese código, **guarda la nota** y muestra el
-  error del API tal cual, sin tocar el contrato desde acá.
+  error del API tal cual, sin tocar el contrato desde aquí.
 - **Páginas internas del navegador** (`chrome://`, `edge://`, visor de PDF, web
   store, `file://`): no se puede inyectar el content script ni capturar la
   selección. El popup lo avisa y deja completar título y URL a mano.

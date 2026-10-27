@@ -6,6 +6,8 @@
  * proyección: agrupar por día, ordenar y describir cada entrada.
  */
 
+import { activeLocale } from './formatDate';
+
 export const ACTIVITY_ACTIONS = [
   'board.create',
   'board.rename',
@@ -66,7 +68,7 @@ export function activityDayLabel(key: string, now = Date.now()): string {
   const [year, month, day] = key.split('-').map((part) => Number(part));
   if (!year || !month || !day) return key;
   const date = new Date(year, month - 1, day);
-  return date.toLocaleDateString('es', { day: 'numeric', month: 'long', year: 'numeric' });
+  return date.toLocaleDateString(activeLocale(), { day: 'numeric', month: 'long', year: 'numeric' });
 }
 
 /** Agrupa por día (de hoy hacia atrás) y ordena cada grupo del más nuevo al más viejo. */
@@ -139,7 +141,7 @@ export function activityActor(entry: ActivityEntry): string {
 
 /** Hora corta del día (HH:MM) para la derecha de cada fila. */
 export function activityTime(entry: ActivityEntry): string {
-  return new Date(entry.createdAt).toLocaleTimeString('es', { hour: '2-digit', minute: '2-digit' });
+  return new Date(entry.createdAt).toLocaleTimeString(activeLocale(), { hour: '2-digit', minute: '2-digit' });
 }
 
 /**

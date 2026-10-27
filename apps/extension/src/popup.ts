@@ -169,7 +169,7 @@ async function sendCaptureMessage(payload: CapturePayload): Promise<CaptureOutco
     return {
       ok: false,
       kind: 'api_error',
-      error: `No se pudo hablar con el service worker (${error instanceof Error ? error.message : String(error)}): recargá la extensión en chrome://extensions`,
+      error: `No se pudo hablar con el service worker (${error instanceof Error ? error.message : String(error)}): recarga la extensión en chrome://extensions`,
     };
   }
 }
@@ -181,7 +181,7 @@ async function sendProbeMessage(): Promise<ConnectionOutcome> {
     return {
       ok: false,
       kind: 'api_error',
-      error: `No se pudo hablar con el service worker (${error instanceof Error ? error.message : String(error)}): recargá la extensión en chrome://extensions`,
+      error: `No se pudo hablar con el service worker (${error instanceof Error ? error.message : String(error)}): recarga la extensión en chrome://extensions`,
     };
   }
 }
@@ -208,7 +208,7 @@ async function runCapture(): Promise<void> {
   };
   const text = composeCaptureText(page);
   if (text.length === 0) {
-    setStatus(els.captureStatus, 'error', 'No hay nada para capturar: completá el título, la URL o la selección.');
+    setStatus(els.captureStatus, 'error', 'No hay nada para capturar: completa el título, la URL o la selección.');
     return;
   }
 
@@ -349,7 +349,7 @@ async function init(): Promise<void> {
   els.selection.value = data?.selection ?? '';
   if (!data) {
     els.withImage.disabled = true;
-    setStatus(els.captureStatus, 'warn', 'No se pudo leer la página (¿es un PDF o una vista interna?): completá los campos a mano.');
+    setStatus(els.captureStatus, 'warn', 'No se pudo leer la página (¿es un PDF o una vista interna?): completa los campos a mano.');
   }
 }
 

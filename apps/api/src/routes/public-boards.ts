@@ -82,7 +82,7 @@ async function requirePublicBoard(slug: string, password: string | undefined): P
  */
 function requirePublishOwner(resolution: BoardAccessResolution) {
   const required = requireBoardAccess(resolution, 'viewer');
-  if (required.role !== 'owner') throw notFound('El tablero no existe o no tenés acceso');
+  if (required.role !== 'owner') throw notFound('El tablero no existe o no tienes acceso');
   return required.board;
 }
 

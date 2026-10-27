@@ -209,7 +209,7 @@ export async function createInvitation(input: CreateInvitationInput): Promise<In
     text: [
       `${input.invitedByName} te invitó a colaborar en el tablero «${input.boardTitle}» con rol ${input.role}.`,
       `La invitación caduca el ${expiresAt.toISOString().slice(0, 10)}.`,
-      'Abrí el enlace para aceptarla.',
+      'Abre el enlace para aceptarla.',
     ].join('\n'),
     url: link,
   });

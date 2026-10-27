@@ -168,7 +168,7 @@ describe('resolveBoardAccess: matriz de permisos', () => {
     expect(resolution.exists).toBe(false);
     expect(resolution.board).toBeNull();
 
-    await expect(async () => requireBoardView(resolution)).rejects.toThrow(/no existe o no tenés acceso/);
+    await expect(async () => requireBoardView(resolution)).rejects.toThrow(/no existe o no tienes acceso/);
     const missing = await resolveBoardAccess('user_zeta', 'no-existe');
     expect(missing.exists).toBe(false);
     expect(missing.board).toBeNull();

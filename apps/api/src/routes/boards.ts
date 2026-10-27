@@ -163,7 +163,7 @@ export async function boardsRoutes(app: FastifyInstance): Promise<void> {
       const template = await prisma.template.findUnique({ where: { id: input.templateId } });
       if (!template) throw notFound('La plantilla no existe', 'template_not_found');
       if (template.ownerId !== null && template.ownerId !== user.id && !access.roleOf(template.boardId)) {
-        throw forbidden('No tenés acceso a esa plantilla', 'template_forbidden');
+        throw forbidden('No tienes acceso a esa plantilla', 'template_forbidden');
       }
       if (!input.title) title = template.name;
       const sources = await fetchTemplateSubtree(template.boardId);

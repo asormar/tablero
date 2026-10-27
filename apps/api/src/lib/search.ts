@@ -254,7 +254,7 @@ export async function searchAll(userId: string, query: string, options: SearchOp
   if (boardId) {
     // Un tablero inaccesible no es «cero resultados»: es un 404, igual que en
     // el resto de la API.
-    if (!access.roleOf(boardId)) throw notFound('El tablero no existe o no tenés acceso');
+    if (!access.roleOf(boardId)) throw notFound('El tablero no existe o no tienes acceso');
     scope = scope.filter((board) => board.id === boardId);
   }
   const scopeIds = scope.map((board) => board.id);

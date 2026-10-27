@@ -66,10 +66,10 @@ export function canEditBoard(resolution: BoardAccessResolution): boolean {
 }
 
 const ROLE_MESSAGES: Record<BoardRole | 'owner', string> = {
-  owner: 'Necesitás ser el dueño del tablero',
-  editor: 'Necesitás rol de editor en este tablero',
-  commenter: 'Necesitás rol de comentarista en este tablero',
-  viewer: 'Necesitás acceso al tablero',
+  owner: 'Necesitas ser el dueño del tablero',
+  editor: 'Necesitas rol de editor en este tablero',
+  commenter: 'Necesitas rol de comentarista en este tablero',
+  viewer: 'Necesitas acceso al tablero',
 };
 
 export type RequiredBoardAccess = {
@@ -89,7 +89,7 @@ export function requireBoardAccess(
   options: { allowTrashed?: boolean } = {},
 ): RequiredBoardAccess {
   const { board, role } = resolution;
-  if (!board || role === 'none') throw notFound('El tablero no existe o no tenés acceso');
+  if (!board || role === 'none') throw notFound('El tablero no existe o no tienes acceso');
   if (!roleAtLeast(role, minimum)) {
     throw forbidden(ROLE_MESSAGES[minimum], minimum === 'editor' ? 'forbidden_role' : 'forbidden_access');
   }

@@ -43,9 +43,9 @@ function defaultCode(statusCode: number): string {
 
 export const badRequest = (message: string, code?: string, details?: unknown) =>
   new HttpError(400, message, code, details);
-export const unauthorized = (message = 'Necesitás iniciar sesión', code?: string) =>
+export const unauthorized = (message = 'Necesitas iniciar sesión', code?: string) =>
   new HttpError(401, message, code);
-export const forbidden = (message = 'No tenés permiso para esta acción', code?: string) =>
+export const forbidden = (message = 'No tienes permiso para esta acción', code?: string) =>
   new HttpError(403, message, code);
 export const notFound = (message = 'Recurso no encontrado', code?: string) =>
   new HttpError(404, message, code);

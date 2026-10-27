@@ -64,7 +64,7 @@ async function resolveCaptureUser(request: FastifyRequest, bodyToken: string | u
     const session = await resolveSession(sessionToken);
     if (session) return session.user;
   }
-  throw unauthorized('Necesitás un token de captura o una sesión', 'capture_unauthorized');
+  throw unauthorized('Necesitas un token de captura o una sesión', 'capture_unauthorized');
 }
 
 const requestSchema = captureSchema.extend({ boardId: idSchema.optional() });

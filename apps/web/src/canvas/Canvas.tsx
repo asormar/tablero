@@ -48,6 +48,7 @@ import { useUiStore } from '@/state/uiStore';
 import { canvasPoint, setCanvasRoot, worldFromClient } from './canvasRef';
 import { distanceBetween, midpointOf, pinchPair, pinchScaleFor } from './touchNav';
 import { ElementLayer } from './ElementLayer';
+import { type WheelBatch, classifyWheel, createWheelAccumulator } from './wheelAccumulator';
 import { CanvasGrid, ConnectorDraftOverlay, DropLineOverlay, GuidesOverlay, MarqueeOverlay } from './Overlays';
 import {
   type DragItem,
@@ -172,29 +173,42 @@ export function Canvas({ session, onOpenBoard, readOnly = false }: CanvasProps):
   }, []);
 
   // --- Rueda: desplaza; con Ctrl/Cmd hace zoom centrado en el cursor --------
+  // Los deltas se acumulan y se aplican una vez por frame (como el paneo con
+  // arrastre): un trackpad emite varios `wheel` por frame y cada uno re-renderizaba.
   useEffect(() => {
     const node = rootRef.current;
     if (!node) return;
-    const onWheel = (event: WheelEvent): void => {
+    const accumulator = createWheelAccumulator();
+    let frame = 0;
+
+    const apply = (batch: WheelBatch): void => {
       const ui = useUiStore.getState();
-      const point = canvasPoint(event.clientX, event.clientY);
-      const factor = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? 100 : 1;
-      const dy = event.deltaY * factor;
-      const dx = event.deltaX * factor;
-      if (event.ctrlKey || event.metaKey) {
-        event.preventDefault();
-        ui.zoomAtPoint(point, ui.viewport.scale * Math.exp(-dy * 0.002));
-        return;
+      if (batch.panX !== 0 || batch.panY !== 0) ui.pan(batch.panX, batch.panY);
+      if (batch.anchor && batch.zoomFactor !== 1) {
+        ui.zoomAtPoint(batch.anchor, useUiStore.getState().viewport.scale * batch.zoomFactor);
       }
+    };
+    const flush = (): void => {
+      frame = 0;
+      const batch = accumulator.take();
+      if (batch) apply(batch);
+    };
+
+    const onWheel = (event: WheelEvent): void => {
       event.preventDefault();
-      if (event.shiftKey && dx === 0) {
-        ui.pan(-dy, 0);
-        return;
-      }
-      ui.pan(-dx, -dy);
+      const intent = classifyWheel(event);
+      const early =
+        intent.kind === 'zoom'
+          ? accumulator.addZoom(intent.factor, canvasPoint(event.clientX, event.clientY))
+          : accumulator.addPan(intent.dx, intent.dy);
+      if (early) apply(early);
+      if (frame === 0) frame = requestAnimationFrame(flush);
     };
     node.addEventListener('wheel', onWheel, { passive: false });
-    return () => node.removeEventListener('wheel', onWheel);
+    return () => {
+      node.removeEventListener('wheel', onWheel);
+      if (frame !== 0) cancelAnimationFrame(frame);
+    };
   }, []);
 
   // --- Pinza táctil: dos dedos acercan y alejan ------------------------------

@@ -108,6 +108,17 @@ function CardTools({ children }: { children: React.ReactNode }): JSX.Element {
 
 // --- Imagen -----------------------------------------------------------------
 
+/**
+ * Ancho de la miniatura que genera la API (`THUMBNAIL_WIDTH` en
+ * `apps/api/src/lib/media.ts`). Mientras la tarjeta se vea con tantos píxeles o
+ * menos, la miniatura basta y evita descargar el original.
+ */
+const THUMBNAIL_WIDTH = 480;
+
+function devicePixelRatio(): number {
+  return typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1;
+}
+
 export function ImageCard({ session, element, simplified }: CardProps): JSX.Element {
   const assetId = element.type === 'image' ? element.assetId : '';
   const assetEntry = useAsset(assetId);
@@ -131,12 +142,32 @@ export function ImageCard({ session, element, simplified }: CardProps): JSX.Elem
   const frameless = element.type === 'image' && element.frameless === true;
   const activeCrop = cropped && crop ? crop : FULL_CROP;
 
+  // Píxeles que ocupa la imagen entera en pantalla (con el recorte, la tarjeta
+  // solo enseña una parte y el resto del original queda fuera de la caja). Se
+  // suscribe al booleano y no a la escala: cruzar el umbral re-renderiza, cada
+  // paso de zoom no.
+  const fullWidth = element.width / activeCrop.width;
+  const needsFullRes = useUiStore((state) => state.viewport.scale * devicePixelRatio() * fullWidth > THUMBNAIL_WIDTH);
+  // Solo se sube de calidad: una vez pedido el original no se vuelve a la
+  // miniatura, así el `src` no oscila con el zoom.
+  const upgraded = useRef(false);
+  if (!simplified && needsFullRes) upgraded.current = true;
+  // Sin medidas del original se pide el original (hay que guardarlas al cargar)
+  // y, si ya es más pequeño que la miniatura, no hay nada que ahorrar.
+  const thumbUseful = natural !== null && natural.width > THUMBNAIL_WIDTH;
+  const showFull = !thumbUseful || upgraded.current;
+  const thumbUrl = asset?.thumbnailUrl ?? (assetId.length > 0 ? assetRoutes.thumb(assetId) : '');
+  const imageUrl = showFull || thumbUrl.length === 0 ? rawUrl : thumbUrl;
+  const showingFull = imageUrl === rawUrl;
+
   // Medidas reales: si el elemento no las tiene, se guardan al cargar la imagen
   // (el recorte y la altura de la tarjeta dependen de ellas).
   const onLoadImage = (event: React.SyntheticEvent<HTMLImageElement>): void => {
     const node = event.currentTarget;
     if (node.naturalWidth <= 0) return;
     if (element.type !== 'image') return;
+    // La miniatura trae otras medidas: solo el original las define.
+    if (!showingFull) return;
     if (element.naturalWidth === node.naturalWidth && element.naturalHeight === node.naturalHeight) return;
     updateAssetElement(session, element.id, {
       naturalWidth: node.naturalWidth,
@@ -164,14 +195,15 @@ export function ImageCard({ session, element, simplified }: CardProps): JSX.Elem
   return (
     <div className={`image-card${frameless ? ' is-frameless' : ''}`}>
       <div className="image-card__media" style={mediaStyle}>
-        {rawUrl.length > 0 ? (
+        {imageUrl.length > 0 ? (
           <img
             className="image-card__img"
-            src={rawUrl}
+            src={imageUrl}
             alt={caption.length > 0 ? caption : 'Imagen'}
             style={imageStyle}
             draggable={false}
             loading="lazy"
+            decoding="async"
             onLoad={onLoadImage}
             onDoubleClick={() => openViewer(element.id)}
           />

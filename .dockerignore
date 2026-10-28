@@ -42,6 +42,9 @@ Dockerfile*
 **/test-results
 coverage
 apps/api/scripts
+# Excepción: la configuración de R2 (CORS y caducidad de las copias) se ejecuta
+# dentro de la imagen de la API en el servidor (ver docs/deploy.md).
+!apps/api/scripts/r2-setup.ts
 docs
 
 # El manifiesto de la extensión sí tiene que entrar: `apps/*` es un paquete

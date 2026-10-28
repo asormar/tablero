@@ -137,8 +137,11 @@ services:
     read_only: true
 
 volumes:
+  # Nombre propio de producción: el compose de desarrollo usa
+  # `tablero-postgres-data`, y compartirlo en una misma máquina hacía que el
+  # Postgres de producción arrancara sobre la base de desarrollo.
   postgres-data:
-    name: tablero-postgres-data
+    name: tablero-prod-postgres-data
   caddy-data:
     name: tablero-caddy-data
   caddy-config:

@@ -22,11 +22,12 @@ build
 .gitignore
 .github
 
-# Entorno: nunca un .env dentro de la imagen
-.env
-.env.*
-!.env.example
-!.env.*.example
+# Entorno: nunca un .env dentro de la imagen. Sin `**/`, el patrón solo cubría
+# el de la raíz y `apps/api/.env` (con los secretos de desarrollo) se colaba.
+**/.env
+**/.env.*
+!**/.env.example
+!**/.env.*.example
 docker/.env.prod
 
 # Docker

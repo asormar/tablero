@@ -18,9 +18,9 @@
  * Variables (las mismas que usa la API): S3_ENDPOINT, S3_ACCESS_KEY,
  * S3_SECRET_KEY, S3_BUCKET, S3_REGION (`auto`), APP_ORIGIN, y
  * BACKUP_RETENTION_DAYS. Un token de R2 de «Object Read & Write» puede no tener
- * permiso para cambiar la configuración del bucket: en ese caso, pase un token
+ * permiso para cambiar la configuración del bucket: en ese caso, pasa un token
  * de administración sólo para este comando con R2_ADMIN_ACCESS_KEY_ID y
- * R2_ADMIN_SECRET_ACCESS_KEY (`docker compose run -e ...`), o configure CORS y
+ * R2_ADMIN_SECRET_ACCESS_KEY (`docker compose run -e ...`), o configura CORS y
  * el ciclo de vida desde el panel de Cloudflare.
  *
  * No importa `src/env.ts` a propósito: aquello exige DATABASE_URL y
@@ -126,7 +126,7 @@ async function main(): Promise<void> {
   } catch (error) {
     if (httpStatus(error) === 404 || errorName(error) === 'NotFound') {
       throw new Error(
-        `El bucket "${bucket}" no existe. Créelo en Cloudflare: R2 > Create bucket (el nombre debe coincidir con R2_BUCKET).`,
+        `El bucket "${bucket}" no existe. Créalo en Cloudflare: R2 > Create bucket (el nombre debe coincidir con R2_BUCKET).`,
       );
     }
     throw new Error(`No se pudo comprobar el bucket (${describeError(error)}). ¿Endpoint y credenciales correctos?`);
@@ -150,7 +150,7 @@ async function main(): Promise<void> {
   } catch (error) {
     throw new Error(
       `No se pudo aplicar CORS (${describeError(error)}). Si es AccessDenied, el token no puede cambiar la ` +
-        'configuración del bucket: use un token de administración (R2_ADMIN_*) o configure CORS en el panel ' +
+        'configuración del bucket: usa un token de administración (R2_ADMIN_*) o configura CORS en el panel ' +
         '(bucket > Settings > CORS Policy).',
     );
   }

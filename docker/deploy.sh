@@ -21,7 +21,7 @@ for arg in "$@"; do
   case "$arg" in
     --no-pull) do_pull=0 ;;
     -h|--help) sed -n '2,10p' "${BASH_SOURCE[0]}" | sed 's/^# \{0,1\}//'; exit 0 ;;
-    *) fail "opción desconocida: $arg (use --help)." ;;
+    *) fail "opción desconocida: $arg (usa --help)." ;;
   esac
 done
 
@@ -77,7 +77,7 @@ fi
 if [ "$local_ok" = "1" ]; then
   log
   warn "la API responde por dentro, pero https://${site}/api/health no."
-  warn "Revise el DNS (que ${site} apunte a la IP de la VM), el puerto 80/443 en la VCN y el certificado:"
+  warn "Revisa el DNS (que ${site} apunte a la IP de la VM), el puerto 80/443 en la VCN y el certificado:"
   warn "  docker compose -f docker/docker-compose.prod.yml --env-file docker/.env.prod logs --tail 80 web"
   exit 0
 fi

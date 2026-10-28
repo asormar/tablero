@@ -43,7 +43,7 @@ def main():
         capped = max(limit - HEADROOM_MB, 0)
         print(
             f"BALLAST_MB={wanted} no cabe en el límite del contenedor ({limit} MB): "
-            f"se reservan {capped} MB. Suba BALLAST_LIMIT_MB para reservar más.",
+            f"se reservan {capped} MB. Sube BALLAST_LIMIT_MB para reservar más.",
             file=sys.stderr,
         )
         wanted = capped

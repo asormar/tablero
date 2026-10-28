@@ -29,7 +29,7 @@ warn() { printf 'AVISO: %s\n' "$*" >&2; }
 fail() { printf 'ERROR: %s\n' "$*" >&2; exit 1; }
 
 # --- Comprobaciones previas ---------------------------------------------------
-[ "$(id -u)" -ne 0 ] || fail "no lo ejecute como root: use el usuario ubuntu (el script usa sudo donde hace falta)."
+[ "$(id -u)" -ne 0 ] || fail "no lo ejecutes como root: usa el usuario ubuntu (el script usa sudo donde hace falta)."
 command -v sudo >/dev/null 2>&1 || fail "sudo no está disponible."
 sudo -v || fail "este usuario no tiene permisos de sudo."
 
@@ -40,7 +40,7 @@ if [ -r /etc/os-release ]; then
 else
   warn "no se pudo leer /etc/os-release."
 fi
-[ "$(uname -m)" = "aarch64" ] || warn "la arquitectura es $(uname -m), no aarch64 (Ampere A1). Sigue funcionando, pero revise el shape."
+[ "$(uname -m)" = "aarch64" ] || warn "la arquitectura es $(uname -m), no aarch64 (Ampere A1). Sigue funcionando, pero revisa el shape."
 
 # `sudo` limpia el entorno (`env_reset`): un `export DEBIAN_FRONTEND` no le
 # llega a apt y `iptables-persistent` o `needrestart` se quedarían preguntando.
@@ -80,7 +80,7 @@ fi
 log "Actualizaciones de seguridad automáticas"
 apt_get install -y unattended-upgrades
 sudo dpkg-reconfigure -f noninteractive unattended-upgrades
-note "Activadas. No reinician la VM solas: de vez en cuando aplique los reinicios pendientes (/var/run/reboot-required)."
+note "Activadas. No reinician la VM solas: de vez en cuando aplica los reinicios pendientes (/var/run/reboot-required)."
 
 # --- 3. iptables -----------------------------------------------------------------
 # Las imágenes de Oracle traen /etc/iptables/rules.v4 con un
@@ -144,7 +144,7 @@ if [ -d "$TABLERO_DIR/.git" ]; then
     warn "hay cambios locales en $TABLERO_DIR: no se hace pull."
   fi
 elif [ -e "$TABLERO_DIR" ] && [ -n "$(ls -A "$TABLERO_DIR" 2>/dev/null)" ]; then
-  fail "$TABLERO_DIR existe y no es un repositorio git. Muévalo o use TABLERO_DIR=otra/ruta."
+  fail "$TABLERO_DIR existe y no es un repositorio git. Muévelo o usa TABLERO_DIR=otra/ruta."
 else
   git clone "$REPO_URL" "$TABLERO_DIR"
 fi
@@ -229,7 +229,7 @@ for key in SITE_ADDRESS R2_ACCOUNT_ID R2_ACCESS_KEY_ID R2_SECRET_ACCESS_KEY; do
 done
 if [ "${#missing[@]}" -gt 0 ]; then
   warn "faltan valores en $ENV_FILE: ${missing[*]}"
-  note "Edítelo antes de desplegar:  nano $ENV_FILE"
+  note "Edítalo antes de desplegar:  nano $ENV_FILE"
 fi
 
 # --- 6. Cron de la copia de seguridad ---------------------------------------------
@@ -247,8 +247,8 @@ cat <<EOF
 ==> Aprovisionamiento terminado.
 
 Falta lo que NO se puede hacer desde la VM: en la consola de Oracle Cloud, en la
-lista de seguridad de la VCN (Networking > Virtual Cloud Networks > su VCN >
-Security > Security Lists > Default), añada estas reglas de ENTRADA con origen
+lista de seguridad de la VCN (Networking > Virtual Cloud Networks > tu VCN >
+Security > Security Lists > Default), añade estas reglas de ENTRADA con origen
 0.0.0.0/0:
     - TCP  puerto 80
     - TCP  puerto 443
@@ -258,10 +258,10 @@ Sin ellas el navegador no llega a la VM, aunque iptables ya esté abierto.
 Siguientes pasos:
 EOF
 if [ "${NEED_RELOGIN:-0}" = "1" ]; then
-  echo "  0. Cierre la sesión SSH y vuelva a entrar (para activar el grupo docker)."
+  echo "  0. Cierra la sesión SSH y vuelve a entrar (para activar el grupo docker)."
 fi
 cat <<EOF
-  1. Revise la configuración:    nano $ENV_FILE
-  2. Cree el bucket de R2 y ejecute r2-setup (ver docs/deploy.md).
+  1. Revisa la configuración:    nano $ENV_FILE
+  2. Crea el bucket de R2 y ejecuta r2-setup (ver docs/deploy.md).
   3. Despliegue:                 $DOCKER_DIR/deploy.sh --no-pull
 EOF

@@ -37,14 +37,14 @@ env_get() {
 
 # Exige que exista docker/.env.prod.
 require_env_file() {
-  [ -f "$ENV_FILE" ] || fail "no existe $ENV_FILE. Ejecute docker/provision.sh o copie docker/.env.prod.example."
+  [ -f "$ENV_FILE" ] || fail "no existe $ENV_FILE. Ejecuta docker/provision.sh o copia docker/.env.prod.example."
 }
 
 # Exige que `docker` responda para el usuario actual.
 require_docker() {
-  command -v docker >/dev/null 2>&1 || fail "docker no está instalado (ejecute docker/provision.sh)."
+  command -v docker >/dev/null 2>&1 || fail "docker no está instalado (ejecuta docker/provision.sh)."
   docker info >/dev/null 2>&1 \
-    || fail "docker no responde para el usuario actual. ¿Está en el grupo docker? Cierre la sesión y vuelva a entrar."
+    || fail "docker no responde para el usuario actual. ¿Estás en el grupo docker? Cierra la sesión y vuelve a entrar."
 }
 
 # Variables de R2 listas para usar con la CLI de AWS en un contenedor.

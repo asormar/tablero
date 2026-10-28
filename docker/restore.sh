@@ -30,7 +30,7 @@ for arg in "$@"; do
     --list) list_only=1 ;;
     --yes|-y) assume_yes=1 ;;
     -h|--help) usage; exit 0 ;;
-    -*) fail "opción desconocida: $arg (use --help)." ;;
+    -*) fail "opción desconocida: $arg (usa --help)." ;;
     *) [ -z "$target" ] || fail "sólo se admite una copia."; target="$arg" ;;
   esac
 done
@@ -39,7 +39,7 @@ cleanup() {
   [ -z "$tmp_file" ] || rm -f "$tmp_file"
   if [ "$api_stopped" = "1" ]; then
     log "Arrancando la API de nuevo..."
-    compose start api >/dev/null || warn "no se pudo arrancar la API: ejecute 'docker compose ... start api'."
+    compose start api >/dev/null || warn "no se pudo arrancar la API: ejecuta 'docker compose ... start api'."
   fi
 }
 trap cleanup EXIT
@@ -73,7 +73,7 @@ if [ -z "$target" ]; then
 else
   target="${target#backups/}"
   grep -qxF "$target" <<< "$backups" \
-    || fail "no existe la copia '$target' (use --list para ver las disponibles)."
+    || fail "no existe la copia '$target' (usa --list para ver las disponibles)."
 fi
 
 running="$(docker inspect -f '{{.State.Running}}' "$POSTGRES_CONTAINER" 2>/dev/null || true)"
@@ -89,8 +89,8 @@ log "Se va a restaurar: ${target}"
 log "Destino:           base '${pg_db}' en ${POSTGRES_CONTAINER}"
 log "Esto REEMPLAZA los datos actuales de esa base."
 if [ "$assume_yes" != "1" ]; then
-  [ -t 0 ] || fail "no hay terminal para confirmar; use --yes si es intencionado."
-  read -r -p "Escriba el nombre de la base ('${pg_db}') para continuar: " answer
+  [ -t 0 ] || fail "no hay terminal para confirmar; usa --yes si es intencionado."
+  read -r -p "Escribe el nombre de la base ('${pg_db}') para continuar: " answer
   [ "$answer" = "$pg_db" ] || fail "confirmación incorrecta; no se ha cambiado nada."
 fi
 

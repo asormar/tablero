@@ -194,10 +194,22 @@ export function bootstrap(): Promise<BootstrapResult> {
  *
  * Sin esto, la promesa memorizada devolvería el resultado del arranque en modo
  * local y el catálogo del servidor no se cargaría hasta recargar la página.
+ *
+ * Hay que llamarla **antes** de montar el espacio de trabajo: deja el tablero
+ * actual vacío y el arranque en curso, así el espacio de trabajo muestra
+ * «Cargando tableros…» en vez del tablero local del arranque anterior (que, sin
+ * esto, aparecía un instante con su `?board=` local en la URL).
  */
 export function resumeAfterAuth(): Promise<BootstrapResult> {
   bootstrapPromise = null;
-  return bootstrap();
+  const store = useAppStore.getState();
+  store.setBooting(true);
+  store.setCurrentBoard(null);
+  const resumed = bootstrap();
+  // La invitación rearranca sin espacio de trabajo montado: nadie más apagaría
+  // la marca de arranque.
+  void resumed.finally(() => useAppStore.getState().setBooting(false));
+  return resumed;
 }
 
 let bootstrapPromise: Promise<BootstrapResult> | null = null;

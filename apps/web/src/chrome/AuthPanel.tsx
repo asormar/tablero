@@ -81,8 +81,11 @@ export function AuthPanel(): JSX.Element {
       setPassword('');
       const store = useAppStore.getState();
       store.setUser(result.user);
+      // Primero el arranque nuevo y después el espacio de trabajo: si se monta
+      // antes, recoge la promesa del arranque local y abre su tablero.
+      const resumed = resumeAfterAuth();
       store.setAuthRequired(false);
-      await resumeAfterAuth();
+      await resumed;
     } catch (caught) {
       setError(messageFor(caught));
     } finally {

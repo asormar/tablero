@@ -48,6 +48,7 @@ import type { BoardSession } from '@/collab/BoardSession';
 import { can as canCapability, capabilityRefusal } from '@/collab/roles';
 import { useSessionPermission } from '@/collab/SessionContext';
 import { getInternalClipboard } from '@/lib/clipboard';
+import { shortcutLabel } from '@/lib/platform';
 import { convertElement, convertTargets } from '@/lib/convert';
 import { useAppStore } from '@/state/appStore';
 import { useUiStore } from '@/state/uiStore';
@@ -132,12 +133,12 @@ export function ContextMenu({ session }: { session: BoardSession }): JSX.Element
           <button type="button" className="menu__item" role="menuitem" onClick={() => run(() => copySelection(session))}>
             <Copy size={15} />
             <span>Copiar</span>
-            <kbd>Ctrl+C</kbd>
+            <kbd>{shortcutLabel('C')}</kbd>
           </button>
           <button type="button" className="menu__item" role="menuitem" onClick={() => run(() => cutSelection(session))}>
             <Scissors size={15} />
             <span>Cortar</span>
-            <kbd>Ctrl+X</kbd>
+            <kbd>{shortcutLabel('X')}</kbd>
           </button>
           <button
             type="button"
@@ -147,7 +148,7 @@ export function ContextMenu({ session }: { session: BoardSession }): JSX.Element
           >
             <ClipboardPaste size={15} />
             <span>Pegar aquí</span>
-            <kbd>Ctrl+V</kbd>
+            <kbd>{shortcutLabel('V')}</kbd>
           </button>
           <button
             type="button"
@@ -157,7 +158,7 @@ export function ContextMenu({ session }: { session: BoardSession }): JSX.Element
           >
             <CopyPlus size={15} />
             <span>Duplicar</span>
-            <kbd>Ctrl+D</kbd>
+            <kbd>{shortcutLabel('D')}</kbd>
           </button>
 
           <span className="menu__sep" />
@@ -260,7 +261,7 @@ export function ContextMenu({ session }: { session: BoardSession }): JSX.Element
           >
             <ClipboardPaste size={15} />
             <span>Pegar</span>
-            <kbd>Ctrl+V</kbd>
+            <kbd>{shortcutLabel('V')}</kbd>
           </button>
           <button
             type="button"
@@ -300,7 +301,7 @@ export function ContextMenu({ session }: { session: BoardSession }): JSX.Element
             {/* Caja de selección: la mira (`Crosshair`) es «encuadrar» en el mapa. */}
             <BoxSelect size={15} />
             <span>Seleccionar todo</span>
-            <kbd>Ctrl+A</kbd>
+            <kbd>{shortcutLabel('A')}</kbd>
           </button>
           <button
             type="button"

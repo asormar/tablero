@@ -11,6 +11,7 @@ import { formatZoom } from '@tablero/shared';
 
 import { animateZoomStep, animateZoomTo, fitToScreen } from '@/canvas/commands';
 import type { BoardSession } from '@/collab/BoardSession';
+import { shortcutLabel } from '@/lib/platform';
 import { useUiStore } from '@/state/uiStore';
 
 function useZoomAnchor(): { x: number; y: number } {
@@ -37,8 +38,8 @@ export function ZoomControl({ session }: { session: BoardSession }): JSX.Element
       <button
         type="button"
         className="zoom__value"
-        title="Restablecer al 100 % (Ctrl+0)"
-        aria-label="Restablecer al 100 % (Ctrl+0)"
+        title={`Restablecer al 100 % (${shortcutLabel('0')})`}
+        aria-label={`Restablecer al 100 % (${shortcutLabel('0')})`}
         onClick={() => animateZoomTo(1, anchor)}
       >
         {formatZoom(scale)}

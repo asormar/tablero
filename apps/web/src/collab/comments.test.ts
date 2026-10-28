@@ -10,6 +10,7 @@
 import { describe, expect, it } from 'vitest';
 import * as Y from 'yjs';
 
+import { setLanguage } from '@/i18n';
 import {
   COMMENT_MAX_LENGTH,
   addComment,
@@ -287,5 +288,17 @@ describe('comentarios · tiempo relativo', () => {
     expect(relativeTime(now - 3 * 3_600_000, now)).toBe('hace 3 h');
     expect(relativeTime(now - 24 * 3_600_000, now)).toBe('ayer');
     expect(relativeTime(now - 5 * 24 * 3_600_000, now)).toBe('hace 5 días');
+  });
+
+  it('pasado un mes usa el idioma activo para la fecha', () => {
+    const at = now - 90 * 24 * 3_600_000;
+    try {
+      setLanguage('en');
+      expect(relativeTime(at, now)).toBe(new Date(at).toLocaleDateString('en', { day: 'numeric', month: 'short' }));
+      setLanguage('es');
+      expect(relativeTime(at, now)).toBe(new Date(at).toLocaleDateString('es', { day: 'numeric', month: 'short' }));
+    } finally {
+      setLanguage('es');
+    }
   });
 });

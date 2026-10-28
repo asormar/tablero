@@ -26,6 +26,8 @@ import * as Y from 'yjs';
 
 import { createId } from '@tablero/shared';
 
+import { activeLocale } from '@/lib/formatDate';
+
 export const COMMENTS_KEY = 'comments';
 
 /** Tope de caracteres de un comentario (coherente con el límite del API). */
@@ -371,5 +373,5 @@ export function relativeTime(at: number, now = Date.now()): string {
   if (days === 1) return 'ayer';
   if (days < 30) return `hace ${days} días`;
   const date = new Date(at);
-  return date.toLocaleDateString('es', { day: 'numeric', month: 'short' });
+  return date.toLocaleDateString(activeLocale(), { day: 'numeric', month: 'short' });
 }

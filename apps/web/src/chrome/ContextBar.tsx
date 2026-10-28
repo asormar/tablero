@@ -43,6 +43,7 @@ import { can as canCapability } from '@/collab/roles';
 import { useSessionLayout, useSessionPermission } from '@/collab/SessionContext';
 import { availableAlignActions } from '@/lib/align';
 import { rectOf } from '@/lib/layout';
+import { shortcutLabel } from '@/lib/platform';
 import { useUiStore } from '@/state/uiStore';
 
 import { ColorPicker } from './ColorPicker';
@@ -226,7 +227,7 @@ export function ContextBar({ session }: { session: BoardSession }): JSX.Element 
       <button
         type="button"
         className="icon-button"
-        title={`Duplicar (Ctrl+D)${items.length > 1 ? ' · 1 paso de deshacer' : ''}`}
+        title={`Duplicar (${shortcutLabel('D')})${items.length > 1 ? ' · 1 paso de deshacer' : ''}`}
         onClick={() => duplicateSelection(session)}
       >
         <CopyPlus size={15} />

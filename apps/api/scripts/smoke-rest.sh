@@ -74,7 +74,7 @@ step 'register (crea cuenta + tablero raíz)' POST '/api/auth/register' \
 USER_ID="$(json_field "${LAST_BODY}" 'user.id')"
 echo "   usuario: ${USER_ID}"
 
-step 'me (usuario + tableros, acá aparece el raíz Inicio)' GET '/api/auth/me'
+step 'me (usuario + tableros, aquí aparece el raíz Inicio)' GET '/api/auth/me'
 ROOT_ID="$(json_field "${LAST_BODY}" 'boards.0.id')"
 ROOT_TITLE="$(json_field "${LAST_BODY}" 'boards.0.title')"
 echo "   tablero raíz: ${ROOT_ID} (${ROOT_TITLE})"

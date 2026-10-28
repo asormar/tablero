@@ -215,7 +215,7 @@ async function runCapture(): Promise<void> {
   const settings = await loadSettings();
   if (settings.captureToken.length === 0) {
     els.settings.open = true;
-    setStatus(els.captureStatus, 'error', 'Falta el token personal: pegalo en Ajustes y guardá.');
+    setStatus(els.captureStatus, 'error', 'Falta el token personal: pégalo en Ajustes y guarda.');
     return;
   }
 

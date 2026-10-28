@@ -537,7 +537,7 @@ export const SYSTEM_TEMPLATES: TemplateSpec[] = [
     cards: [
       { kind: 'heading', text: 'Portafolio', size: 'XL', ...p(0, 0) },
       { kind: 'note', color: 'yellow', text: `${INSTRUCTIONS}\nUna ficha por proyecto: problema, tu aporte y resultado.`, ...p(1, 0) },
-      { kind: 'note', text: 'Sobre mí\nEn dos frases: qué hacés y para quién.', ...p(0, 1) },
+      { kind: 'note', text: 'Sobre mí\nEn dos frases: qué haces y para quién.', ...p(0, 1) },
       { kind: 'note', text: 'Contacto y enlaces', ...p(1, 1) },
       { kind: 'board', child: 'fichas', ...p(0, 2) },
       {

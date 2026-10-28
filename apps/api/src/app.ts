@@ -156,7 +156,7 @@ export function errorHandler(this: FastifyInstance, error: Error, request: Fasti
   const statusCode = (error as { statusCode?: number }).statusCode;
   if (typeof statusCode === 'number' && statusCode >= 400 && statusCode < 500) {
     if (statusCode === 429) {
-      reply.code(429).send({ error: 'Demasiadas peticiones, probá más tarde', code: 'rate_limited' } satisfies ApiError);
+      reply.code(429).send({ error: 'Demasiadas peticiones, prueba más tarde', code: 'rate_limited' } satisfies ApiError);
       return;
     }
     if (statusCode === 401) {

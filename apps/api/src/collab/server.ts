@@ -346,7 +346,7 @@ export function createCollabServer(options: { log?: (message: string) => void } 
       if (guardActive(data.documentName)) {
         log(`collab: conexión a ${data.documentName} rechazada (restauración en curso)`);
         throw protocolError(
-          'El tablero se restauró a una versión anterior: reconectá para traer el estado restaurado',
+          'El tablero se restauró a una versión anterior: reconecta para traer el estado restaurado',
           RESET_CONNECTION_CODE,
           RESET_CONNECTION_REASON,
         );

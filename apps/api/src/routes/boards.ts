@@ -319,7 +319,7 @@ export async function boardsRoutes(app: FastifyInstance): Promise<void> {
     }
     const blockedBy = access.trashedAncestorOf(id);
     if (blockedBy) {
-      throw conflict(`Restaurá primero «${blockedBy.title}»`, 'parent_trashed');
+      throw conflict(`Restaura primero «${blockedBy.title}»`, 'parent_trashed');
     }
 
     const ids = trashedBatch(access, id);

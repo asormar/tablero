@@ -114,7 +114,7 @@ export async function ensureBucket(): Promise<boolean> {
   }
   if (isR2()) {
     throw new Error(
-      `El bucket "${env.s3.bucket}" no existe en R2: créalo desde el panel de Cloudflare (Storage & Databases → R2) y reiniciá la API`,
+      `El bucket "${env.s3.bucket}" no existe en R2: créalo desde el panel de Cloudflare (Storage & Databases → R2) y reinicia la API`,
     );
   }
   try {

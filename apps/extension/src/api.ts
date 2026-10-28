@@ -69,7 +69,7 @@ export async function sendCapture(settings: Settings, payload: CapturePayload): 
     return { ok: false, kind: 'api_error', error: 'Falta la URL base del API (Ajustes)' };
   }
   if (settings.captureToken.length === 0) {
-    return { ok: false, kind: 'missing_token', error: 'Falta el token personal: pegalo en Ajustes' };
+    return { ok: false, kind: 'missing_token', error: 'Falta el token personal: pégalo en Ajustes' };
   }
 
   const body: Record<string, unknown> = { type: payload.type, text: payload.text };

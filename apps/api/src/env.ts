@@ -154,7 +154,7 @@ export const env = {
 /** Falla temprano si falta configuración imprescindible para arrancar. */
 export function assertRuntimeEnv(): void {
   const problems: string[] = [];
-  if (env.databaseUrl.length === 0) problems.push('Falta DATABASE_URL (copiá .env.example a .env)');
+  if (env.databaseUrl.length === 0) problems.push('Falta DATABASE_URL (copia .env.example a .env)');
   if (env.isProduction && env.sessionSecret.length < 32) {
     problems.push('SESSION_SECRET debe tener al menos 32 caracteres en producción');
   }

@@ -7,7 +7,7 @@
  * el arrastre se pueda resolver escribiendo directamente en el DOM.
  */
 
-import { memo, useLayoutEffect, useRef } from 'react';
+import { memo, useLayoutEffect, useRef, useState } from 'react';
 import type { CSSProperties } from 'react';
 
 import { Lock } from 'lucide-react';
@@ -52,9 +52,10 @@ export type CanvasElementViewProps = {
 };
 
 /**
- * Puntos de anclaje para crear conectores. Siempre están en el DOM y su
- * visibilidad la resuelve CSS (`:hover`, `:focus-within` y tarjeta seleccionada):
- * así pasar el ratón por encima no re-renderiza la tarjeta.
+ * Puntos de anclaje para crear conectores: solo en la tarjeta con el puntero
+ * encima o seleccionada. Tenerlos siempre en el DOM sumaba cuatro nodos por
+ * tarjeta y, al cruzar el umbral de simplificado con el zoom, cientos de nodos
+ * de golpe. El hover re-renderiza solo el marco: `ElementContent` está memoizado.
  */
 const ANCHOR_SIDES = ['left', 'right', 'top', 'bottom'] as const;
 
@@ -67,6 +68,7 @@ function CanvasElementViewBase(props: CanvasElementViewProps): JSX.Element | nul
   const permission = useSessionPermission();
   const readOnly = !canCapability(permission.role, 'edit');
   const ref = useRef<HTMLDivElement | null>(null);
+  const [hovered, setHovered] = useState(false);
   const enterRef = useRef<boolean | null>(null);
 
   // La anotación se hace al confirmar el montaje (no en el render, que React
@@ -166,6 +168,8 @@ function CanvasElementViewBase(props: CanvasElementViewProps): JSX.Element | nul
       tabIndex={0}
       onFocus={focusCard}
       onKeyDown={onCardKeyDown}
+      onPointerEnter={() => setHovered(true)}
+      onPointerLeave={() => setHovered(false)}
     >
       <div className="el__content">
         <ElementContent
@@ -181,7 +185,7 @@ function CanvasElementViewBase(props: CanvasElementViewProps): JSX.Element | nul
           <Lock size={12} />
         </span>
       ) : null}
-      {!readOnly && !props.simplified && !element.locked ? (
+      {!readOnly && !props.simplified && !element.locked && (hovered || props.selected) ? (
         <>
           {ANCHOR_SIDES.map((side) => (
             <span

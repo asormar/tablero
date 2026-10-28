@@ -9,24 +9,25 @@
  * vista pública y la invitación no comparten estado con él (y no deben montarlo).
  */
 
-import { Suspense, lazy, useMemo } from 'react';
+import { Suspense, useMemo } from 'react';
 
 import { Workspace } from '@/app/Workspace';
 import { ToastHost } from '@/chrome/ToastHost';
+import { lazyWithReload } from '@/lib/lazyWithReload';
 import { parseRoute } from '@/lib/routes';
 import { useAppStore } from '@/state/appStore';
 
 // Las pantallas que no son el espacio de trabajo (vista pública, invitación y
 // acceso) se descargan solo cuando la ruta o la API las pide.
-const LazyPublicBoardPage = lazy(async () => {
+const LazyPublicBoardPage = lazyWithReload(async () => {
   const module = await import('@/public/PublicBoardPage');
   return { default: module.PublicBoardPage };
 });
-const LazyAcceptInvitePage = lazy(async () => {
+const LazyAcceptInvitePage = lazyWithReload(async () => {
   const module = await import('@/invite/AcceptInvitePage');
   return { default: module.AcceptInvitePage };
 });
-const LazyAuthPanel = lazy(async () => {
+const LazyAuthPanel = lazyWithReload(async () => {
   const module = await import('@/chrome/AuthPanel');
   return { default: module.AuthPanel };
 });

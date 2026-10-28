@@ -6,7 +6,7 @@
  * documento igual al id del tablero.
  */
 
-import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useRef, useState } from 'react';
 
 import { fitToScreen, focusElementInView } from '@/canvas/commands';
 import { Canvas } from '@/canvas/Canvas';
@@ -36,6 +36,7 @@ import { usePaste } from '@/hooks/usePaste';
 import { usePhase4Shortcuts } from '@/hooks/usePhase4Shortcuts';
 import { useShareTarget } from '@/hooks/useShareTarget';
 import { useShortcuts } from '@/hooks/useShortcuts';
+import { lazyWithReload } from '@/lib/lazyWithReload';
 import { toast } from '@/lib/toast';
 import { purgeExpiredTrash } from '@/lib/trashActions';
 import { useAppStore, boardById } from '@/state/appStore';
@@ -47,62 +48,62 @@ import { bootstrap, createNestedBoard, ensureBoardInRegistry, writeBoardIdToUrl 
 
 // Los visores pesados (visor de imagen, recorte y grabadora) solo se descargan
 // cuando se abren: el chunk de arranque del lienzo no los necesita.
-const LazyImageViewer = lazy(async () => {
+const LazyImageViewer = lazyWithReload(async () => {
   const module = await import('@/chrome/ImageViewer');
   return { default: module.ImageViewer };
 });
-const LazyCropEditor = lazy(async () => {
+const LazyCropEditor = lazyWithReload(async () => {
   const module = await import('@/chrome/CropEditor');
   return { default: module.CropEditor };
 });
-const LazyRecorderPanel = lazy(async () => {
+const LazyRecorderPanel = lazyWithReload(async () => {
   const module = await import('@/chrome/RecorderPanel');
   return { default: module.RecorderPanel };
 });
 
 // Superficies de la fase 4 (productividad). Todas van con `React.lazy` y se
 // montan solo cuando están abiertas, para que el chunk principal no crezca.
-const LazyCommandPalette = lazy(async () => {
+const LazyCommandPalette = lazyWithReload(async () => {
   const module = await import('@/search/CommandPalette');
   return { default: module.CommandPalette };
 });
-const LazyBoardSearchBar = lazy(async () => {
+const LazyBoardSearchBar = lazyWithReload(async () => {
   const module = await import('@/search/BoardSearchBar');
   return { default: module.BoardSearchBar };
 });
-const LazyTemplateGallery = lazy(async () => {
+const LazyTemplateGallery = lazyWithReload(async () => {
   const module = await import('@/templates/TemplateGallery');
   return { default: module.TemplateGallery };
 });
-const LazySaveTemplateDialog = lazy(async () => {
+const LazySaveTemplateDialog = lazyWithReload(async () => {
   const module = await import('@/templates/SaveTemplateDialog');
   return { default: module.SaveTemplateDialog };
 });
-const LazyExportMenu = lazy(async () => {
+const LazyExportMenu = lazyWithReload(async () => {
   const module = await import('@/export/ExportMenu');
   return { default: module.ExportMenu };
 });
-const LazyImportDialog = lazy(async () => {
+const LazyImportDialog = lazyWithReload(async () => {
   const module = await import('@/export/ImportDialog');
   return { default: module.ImportDialog };
 });
-const LazyHistoryPanel = lazy(async () => {
+const LazyHistoryPanel = lazyWithReload(async () => {
   const module = await import('@/history/HistoryPanel');
   return { default: module.HistoryPanel };
 });
-const LazySettingsPanel = lazy(async () => {
+const LazySettingsPanel = lazyWithReload(async () => {
   const module = await import('@/settings/SettingsPanel');
   return { default: module.SettingsPanel };
 });
-const LazyQuickCapture = lazy(async () => {
+const LazyQuickCapture = lazyWithReload(async () => {
   const module = await import('@/capture/QuickCapture');
   return { default: module.QuickCapture };
 });
-const LazyPresentationMode = lazy(async () => {
+const LazyPresentationMode = lazyWithReload(async () => {
   const module = await import('@/presentation/PresentationMode');
   return { default: module.PresentationMode };
 });
-const LazyListView = lazy(async () => {
+const LazyListView = lazyWithReload(async () => {
   const module = await import('@/mobile/ListView');
   return { default: module.ListView };
 });
@@ -110,15 +111,15 @@ const LazyListView = lazy(async () => {
 // Inicio de tableros, tareas y documento a pantalla completa: se descargan al
 // abrirlos por primera vez. Cada ranura monta su pieza solo con la superficie
 // abierta, que es lo que dispara la descarga del chunk.
-const LazyBoardsHome = lazy(async () => {
+const LazyBoardsHome = lazyWithReload(async () => {
   const module = await import('@/chrome/BoardsHome');
   return { default: module.BoardsHome };
 });
-const LazyTasksPage = lazy(async () => {
+const LazyTasksPage = lazyWithReload(async () => {
   const module = await import('@/chrome/TasksPage');
   return { default: module.TasksPage };
 });
-const LazyDocumentPage = lazy(async () => {
+const LazyDocumentPage = lazyWithReload(async () => {
   const module = await import('@/chrome/DocumentPage');
   return { default: module.DocumentPage };
 });
@@ -155,23 +156,23 @@ function DocumentPageSlot({ session }: { session: BoardSession }): JSX.Element |
 
 // Superficies de la fase 5 (colaboración): compartir, publicar, notificaciones,
 // actividad y el globo de comentarios.
-const LazyShareDialog = lazy(async () => {
+const LazyShareDialog = lazyWithReload(async () => {
   const module = await import('@/chrome/ShareDialog');
   return { default: module.ShareDialog };
 });
-const LazyPublishPanel = lazy(async () => {
+const LazyPublishPanel = lazyWithReload(async () => {
   const module = await import('@/chrome/PublishPanel');
   return { default: module.PublishPanel };
 });
-const LazyNotificationsPanel = lazy(async () => {
+const LazyNotificationsPanel = lazyWithReload(async () => {
   const module = await import('@/chrome/NotificationsPanel');
   return { default: module.NotificationsPanel };
 });
-const LazyActivityPanel = lazy(async () => {
+const LazyActivityPanel = lazyWithReload(async () => {
   const module = await import('@/chrome/ActivityPanel');
   return { default: module.ActivityPanel };
 });
-const LazyCommentPopover = lazy(async () => {
+const LazyCommentPopover = lazyWithReload(async () => {
   const module = await import('@/chrome/CommentThread');
   return { default: module.CommentPopover };
 });

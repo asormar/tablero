@@ -19,11 +19,12 @@ import type { BoardSession } from '@/collab/BoardSession';
 import { useSessionElement, useSessionText } from '@/collab/SessionContext';
 import { outlineOf, wordCountOf } from '@/lib/docOutline';
 import { pickFiles } from '@/lib/filePicker';
+import { lazyWithReload } from '@/lib/lazyWithReload';
 import { toast } from '@/lib/toast';
 import { useAppStore } from '@/state/appStore';
 import { useUiStore } from '@/state/uiStore';
 
-const LazyDocumentEditor = lazy(async () => {
+const LazyDocumentEditor = lazyWithReload(async () => {
   const module = await import('@/elements/DocumentEditor');
   return { default: module.DocumentEditor };
 });

@@ -6,7 +6,7 @@
  */
 
 import { type CanvasElement, type ElementType, type HeadingSize, elementLabel } from '@tablero/shared';
-import { Suspense, lazy, memo } from 'react';
+import { Suspense, memo } from 'react';
 
 import { Star } from 'lucide-react';
 
@@ -14,6 +14,7 @@ import { setBoardFavorite } from '@/api/boards';
 import { knownBoardCount } from '@/app/boardCounts';
 import type { BoardSession } from '@/collab/BoardSession';
 import { useSessionText } from '@/collab/SessionContext';
+import { lazyWithReload } from '@/lib/lazyWithReload';
 import { useAppStore } from '@/state/appStore';
 import { blocksToPlainText, firstLineOf, isTextEmpty } from '@/lib/textBlocks';
 
@@ -30,7 +31,7 @@ import { TextBlocks } from './renderBlocks';
 
 // El editor (TipTap + ProseMirror) solo se necesita mientras se edita una nota:
 // se carga bajo demanda para no engordar el arranque del lienzo.
-const LazyRichTextEditor = lazy(async () => {
+const LazyRichTextEditor = lazyWithReload(async () => {
   const module = await import('./RichTextEditor');
   return { default: module.RichTextEditor };
 });

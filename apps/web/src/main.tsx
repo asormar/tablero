@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import { App } from './App';
+import { installPreloadErrorHandler } from './lib/lazyWithReload';
 import { installToastEscape } from './lib/toastEscape';
 import { registerPwa } from './pwa/register';
 import { initSettings } from './settings/settingsStore';
@@ -22,6 +23,8 @@ import './styles/print.css';
 initSettings();
 // Antes que cualquier otro oyente de `Esc`: con el foco en un aviso solo cierra ese.
 installToastEscape();
+// Un chunk que el despliegue nuevo ya no tiene: aviso de «Recargar» en vez de error.
+installPreloadErrorHandler();
 registerPwa();
 
 const container = document.getElementById('root');

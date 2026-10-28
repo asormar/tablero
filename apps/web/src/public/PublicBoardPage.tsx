@@ -11,7 +11,7 @@
  *   - La ruta manda `noindex`.
  */
 
-import { Suspense, lazy, useEffect, useRef, useState } from 'react';
+import { Suspense, useEffect, useRef, useState } from 'react';
 
 import { Eye, Globe, Lock, RefreshCw } from 'lucide-react';
 
@@ -19,11 +19,12 @@ import { fetchPublicBoard, fetchPublicDocument, type PublicBoard } from '@/api/s
 import { Canvas } from '@/canvas/Canvas';
 import { BoardSession } from '@/collab/BoardSession';
 import { SessionProvider, useSessionLayout, useSessionStatus } from '@/collab/SessionContext';
+import { lazyWithReload } from '@/lib/lazyWithReload';
 import { useNoindex } from '@/lib/noindex';
 import { publicBoardUrl } from '@/lib/routes';
 import { useUiStore } from '@/state/uiStore';
 
-const LazyZoomControl = lazy(async () => {
+const LazyZoomControl = lazyWithReload(async () => {
   const module = await import('@/chrome/ZoomControl');
   return { default: module.ZoomControl };
 });

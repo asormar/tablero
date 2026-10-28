@@ -1,10 +1,10 @@
 /**
- * WebSocket de collaboration à travers Caddy, avec le vrai client.
+ * WebSocket de colaboración a través de Caddy, con el cliente real.
  *
  *   node smoke-ws-proxy.mjs http://localhost:8080
  *
- * Utilise `@hocuspocus/provider` (le même que la web) : c'est le seul moyen
- * de vérifier le handshake réel, y desde el board completo (documento Yjs
+ * Usa `@hocuspocus/provider` (el mismo que la web): es la única forma de
+ * comprobar el handshake real, desde el tablero completo (documento Yjs
  * sincronizado) hasta la escritura de bytes en Postgres. Los tests de la API
  * abren el socket directo contra Fastify, así que esto es lo único que
  * comprueba que el proxy no rompe nada.
@@ -99,7 +99,7 @@ provider.on('status', ({ status }) => {
 
 provider.on('synced', () => {
   synced = true;
-  console.log('OK    documento Yjs sincronizado — el proxy no interfiere el collarín');
+  console.log('OK    documento Yjs sincronizado — el proxy no interfiere en la sincronización');
   clearTimeout(timeout);
   provider.destroy();
   done(0);

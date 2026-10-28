@@ -488,12 +488,20 @@ function BoardEffects({ session, boardId }: { session: BoardSession; boardId: st
   const purgedFor = useRef<BoardSession | null>(null);
   const focusRequest = useUiStore((state) => state.focusRequest);
 
+  // Ya cargado (del servidor o del navegador): un tablero que llega vacío no
+  // tiene nada que encajar, y la primera tarjeta que se cree no debe mover la
+  // cámara (antes saltaba al 150 % justo cuando ibas a escribir).
+  const loaded = useSessionStatus().state !== 'connecting';
+
   useEffect(() => {
     if (fittedFor.current === session) return;
-    if (count === 0) return;
+    if (count === 0) {
+      if (loaded) fittedFor.current = session;
+      return;
+    }
     fittedFor.current = session;
     fitToScreen(session);
-  }, [count, session]);
+  }, [count, session, loaded]);
 
   useEffect(() => {
     const timer = setTimeout(() => {

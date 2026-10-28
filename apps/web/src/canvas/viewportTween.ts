@@ -174,20 +174,39 @@ export function keyCancelsCameraTween(key: string): boolean {
   return key.startsWith('Arrow') || NAVIGATION_KEYS.has(key);
 }
 
+/** Atributo que marca un control propio de la cámara (zoom, encuadre…). */
+export const CAMERA_CONTROL_ATTRIBUTE = 'data-camera-control';
+
+/** Lo mínimo de un `EventTarget` que hace falta (permite probarlo sin DOM). */
+export type ClosestTarget = { closest?: (selector: string) => unknown } | null;
+
+/**
+ * ¿El puntero se pulsó sobre un control de la cámara? Esos botones lanzan su
+ * propia transición, que sustituye a la pendiente partiendo de su destino: si
+ * el `pointerdown` la cortara, pulsar «+» varias veces seguidas no encadenaría.
+ */
+export function pointerTargetsCameraControl(target: ClosestTarget | EventTarget): boolean {
+  const node = target as ClosestTarget;
+  return typeof node?.closest === 'function' && node.closest(`[${CAMERA_CONTROL_ATTRIBUTE}]`) != null;
+}
+
 function bindInputCancel(cancel: () => void): () => void {
   const onKey = (event: KeyboardEvent): void => {
     if (keyCancelsCameraTween(event.key)) cancel();
   };
   const onInput = (): void => cancel();
+  const onPointer = (event: Event): void => {
+    if (!pointerTargetsCameraControl(event.target)) cancel();
+  };
   const options = { capture: true, passive: true } as const;
   window.addEventListener('wheel', onInput, options);
-  window.addEventListener('pointerdown', onInput, options);
-  window.addEventListener('touchstart', onInput, options);
+  window.addEventListener('pointerdown', onPointer, options);
+  window.addEventListener('touchstart', onPointer, options);
   window.addEventListener('keydown', onKey, true);
   return () => {
     window.removeEventListener('wheel', onInput, options);
-    window.removeEventListener('pointerdown', onInput, options);
-    window.removeEventListener('touchstart', onInput, options);
+    window.removeEventListener('pointerdown', onPointer, options);
+    window.removeEventListener('touchstart', onPointer, options);
     window.removeEventListener('keydown', onKey, true);
   };
 }

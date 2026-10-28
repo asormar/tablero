@@ -11,6 +11,7 @@ import {
   createViewportTweener,
   interpolateViewport,
   keyCancelsCameraTween,
+  pointerTargetsCameraControl,
 } from './viewportTween';
 
 const linear = (progress: number): number => progress;
@@ -239,5 +240,21 @@ describe('keyCancelsCameraTween', () => {
   it('el resto del teclado no corta', () => {
     expect(keyCancelsCameraTween('a')).toBe(false);
     expect(keyCancelsCameraTween('Shift')).toBe(false);
+  });
+});
+
+describe('pointerTargetsCameraControl', () => {
+  it('reconoce el control de la cámara y sus botones', () => {
+    const target = { closest: (selector: string) => (selector === '[data-camera-control]' ? {} : null) };
+    expect(pointerTargetsCameraControl(target)).toBe(true);
+  });
+
+  it('no exime el pointerdown del lienzo', () => {
+    expect(pointerTargetsCameraControl({ closest: () => null })).toBe(false);
+  });
+
+  it('tolera destinos sin closest (window, document, null)', () => {
+    expect(pointerTargetsCameraControl({})).toBe(false);
+    expect(pointerTargetsCameraControl(null)).toBe(false);
   });
 });

@@ -24,7 +24,7 @@ export function ZoomControl({ session }: { session: BoardSession }): JSX.Element
   const anchor = useZoomAnchor();
 
   return (
-    <div className="zoom" role="group" aria-label="Zoom">
+    <div className="zoom" role="group" aria-label="Zoom" data-camera-control>
       <button
         type="button"
         className="zoom__button"

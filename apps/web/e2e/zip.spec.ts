@@ -35,6 +35,11 @@ test.describe('copia de seguridad', () => {
     const zipPath = testInfo.outputPath('respaldo.zip');
     await download.saveAs(zipPath);
 
+    // El diálogo de exportar sigue abierto a propósito (se pueden bajar varios
+    // formatos seguidos): se cierra con Esc antes de ir a importar.
+    await app.keyboard.press('Escape');
+    await expect(exportDialog).toBeHidden();
+
     // Importarlo: crea un tablero nuevo y navega a él.
     await app.locator('[data-topbar-import]').click();
     const importDialog = app.getByRole('dialog', { name: 'Importar' });
@@ -44,7 +49,8 @@ test.describe('copia de seguridad', () => {
 
     const importedBoardId = boardIdFromUrl(app);
     expect(importedBoardId).not.toBe(account.rootBoardId);
-    await expect(app.locator('.toast')).toContainText('Importado:');
+    // Los avisos se apilan (el de la exportación puede seguir visible).
+    await expect(app.locator('.toast').filter({ hasText: 'Importado:' })).toBeVisible();
     await expect(app.locator('[data-element-id]').filter({ hasText: marker })).toBeVisible({ timeout: 20_000 });
 
     // El tablero importado está en el servidor con el contenido del respaldo.

@@ -19,7 +19,7 @@ import { CheckCircle2, Info, TriangleAlert, X } from 'lucide-react';
 
 import { useT } from '@/i18n';
 import { toast, useToastStore } from '@/lib/toast';
-import { classifyNotice, type ToastItem, type ToastKind } from '@/lib/toastQueue';
+import { classifyNotice, createExitTimer, type ExitTimer, type ToastItem, type ToastKind } from '@/lib/toastQueue';
 import { useAppStore } from '@/state/appStore';
 
 /** Duración de la salida: coincide con `toast-out` en la hoja de estilos. */
@@ -69,17 +69,24 @@ function ToastCard({ item }: { item: ToastItem }): JSX.Element {
   const paused = hovered || focused;
   const remaining = useRef<number>(item.duration ?? 0);
   const startedAt = useRef(0);
-  const exitTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const exitTimer = useRef<ExitTimer | null>(null);
+  const lastToken = useRef(item.token);
+  const idRef = useRef(item.id);
+  idRef.current = item.id;
 
   const dismiss = (): void => {
-    if (exitTimer.current !== null) return;
-    setLeaving(true);
-    exitTimer.current = setTimeout(() => toast.dismiss(item.id), EXIT_MS);
+    exitTimer.current ??= createExitTimer(EXIT_MS, () => toast.dismiss(idRef.current));
+    if (exitTimer.current.start()) setLeaving(true);
   };
 
-  // Un aviso que se vuelve a emitir (mismo id) recupera su tiempo completo.
+  // Un aviso que se vuelve a emitir (mismo id) recupera su tiempo completo y,
+  // si estaba saliendo, se queda: la salida pendiente se cancela.
   useEffect(() => {
     remaining.current = item.duration ?? 0;
+    if (lastToken.current === item.token) return;
+    lastToken.current = item.token;
+    exitTimer.current?.cancel();
+    setLeaving(false);
   }, [item.token, item.duration]);
 
   // Cuenta atrás con pausa: al pausar se guarda lo que falta y al seguir se
@@ -98,7 +105,7 @@ function ToastCard({ item }: { item: ToastItem }): JSX.Element {
 
   useEffect(
     () => () => {
-      if (exitTimer.current !== null) clearTimeout(exitTimer.current);
+      exitTimer.current?.cancel();
     },
     [],
   );

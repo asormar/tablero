@@ -1,9 +1,10 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   MAX_VISIBLE_TOASTS,
   TOAST_DURATIONS,
   classifyNotice,
+  createExitTimer,
   existingToastId,
   pushToast,
   removeToast,
@@ -113,5 +114,45 @@ describe('classifyNotice', () => {
     expect(classifyNotice('Nota guardada en «Sin ordenar».')).toBe('info');
     expect(classifyNotice('Se restauró 1 elemento.')).toBe('info');
     expect(classifyNotice('Sin resultados para esa búsqueda.')).toBe('info');
+  });
+});
+
+describe('un aviso que se vuelve a emitir mientras sale', () => {
+  it('conserva el id y estrena token, así la tarjeta sabe que debe cancelar la salida', () => {
+    const leaving = item('pwa', { token: 1 });
+    const next = pushToast([leaving], item('pwa', { token: 2 }));
+    expect(next).toHaveLength(1);
+    expect(next[0]!.token).toBe(2);
+  });
+});
+
+describe('createExitTimer', () => {
+  afterEach(() => vi.useRealTimers());
+
+  it('llama a onDone pasado el tiempo y solo una vez', () => {
+    vi.useFakeTimers();
+    const done = vi.fn();
+    const timer = createExitTimer(150, done);
+    expect(timer.start()).toBe(true);
+    expect(timer.start()).toBe(false);
+    expect(timer.pending()).toBe(true);
+    vi.advanceTimersByTime(150);
+    expect(done).toHaveBeenCalledTimes(1);
+    expect(timer.pending()).toBe(false);
+  });
+
+  it('cancelar la salida evita que el aviso se quite y permite salir de nuevo', () => {
+    vi.useFakeTimers();
+    const done = vi.fn();
+    const timer = createExitTimer(150, done);
+    timer.start();
+    vi.advanceTimersByTime(100);
+    timer.cancel();
+    vi.advanceTimersByTime(500);
+    expect(done).not.toHaveBeenCalled();
+    expect(timer.pending()).toBe(false);
+    expect(timer.start()).toBe(true);
+    vi.advanceTimersByTime(150);
+    expect(done).toHaveBeenCalledTimes(1);
   });
 });

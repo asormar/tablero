@@ -86,6 +86,40 @@ export function existingToastId(list: readonly ToastItem[], kind: ToastKind, mes
   return list.find((item) => item.kind === kind && item.message === message)?.id ?? null;
 }
 
+/** Temporizador de la salida de un aviso: se puede cancelar si se vuelve a emitir. */
+export type ExitTimer = {
+  /** Arranca la salida; devuelve `false` si ya había una en curso. */
+  start(): boolean;
+  /** Cancela la salida pendiente (no llama a `onDone`). */
+  cancel(): void;
+  pending(): boolean;
+};
+
+/**
+ * Salida diferida de un aviso: `onDone` (quitarlo de la cola) se llama pasados
+ * `ms`. Si el aviso se vuelve a emitir mientras sale, hay que cancelarla o la
+ * cola lo quitaría justo después de reaparecer.
+ */
+export function createExitTimer(ms: number, onDone: () => void): ExitTimer {
+  let handle: ReturnType<typeof setTimeout> | null = null;
+  return {
+    start() {
+      if (handle !== null) return false;
+      handle = setTimeout(() => {
+        handle = null;
+        onDone();
+      }, ms);
+      return true;
+    },
+    cancel() {
+      if (handle === null) return;
+      clearTimeout(handle);
+      handle = null;
+    },
+    pending: () => handle !== null,
+  };
+}
+
 // Sin `\b`: en JS no reconoce las letras acentuadas como parte de una palabra.
 const ERROR_PATTERN =
   /(no se pudo|no se pudieron|no pudo|no se puede|no puedes|fall[óo]|error|no se movi[óo]|no tienes permiso|tu rol|necesita conexi[óo]n|no respondi[óo]|hay que iniciar sesi[óo]n|la api (todav[ií]a no|no responde)|el navegador no dej[óo]|sin conexi[óo]n con el servidor|couldn['’]t|could not|failed|unable)/i;

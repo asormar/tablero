@@ -193,6 +193,19 @@ export async function syncBoardComments(
     return current === undefined || !isUpToDate(current, row);
   });
 
+  if (changed.length === 0) {
+    return { upserted: rows.length, written: 0, removed: removed.count, mentions: 0, replies: 0 };
+  }
+
+  // Primero los avisos y después las filas: una fila escrita cuenta como «al
+  // día» y no se vuelve a mirar, así que si el aviso fallara después de
+  // escribirla se perdería. En este orden, un fallo a mitad deja la fila sin
+  // escribir y la siguiente pasada lo reintenta; los avisos no se duplican
+  // porque cada uno lleva su `dedupeKey`.
+  // Las respuestas buscan su raíz entre todas las filas; solo se avisa de las que cambiaron.
+  const replies = await notifyCommentReplies(boardId, rows, new Set(changed.map((row) => row.id)));
+  const mentions = await notifyCommentMentions(boardId, changed);
+
   for (const row of changed) {
     await prisma.comment.upsert({
       where: { id: row.id },
@@ -222,12 +235,6 @@ export async function syncBoardComments(
     });
   }
 
-  if (changed.length === 0) {
-    return { upserted: rows.length, written: 0, removed: removed.count, mentions: 0, replies: 0 };
-  }
-  // Las respuestas buscan su raíz entre todas las filas; solo se avisa de las que cambiaron.
-  const replies = await notifyCommentReplies(boardId, rows, new Set(changed.map((row) => row.id)));
-  const mentions = await notifyCommentMentions(boardId, changed);
   return { upserted: rows.length, written: changed.length, removed: removed.count, mentions, replies };
 }
 

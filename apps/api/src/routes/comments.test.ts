@@ -520,6 +520,21 @@ describe('syncBoardComments: solo escribe y notifica lo que cambió', () => {
     expect(db.writes.upsert).toEqual([freshId]);
   });
 
+  it('si el aviso falla, la fila no queda «al día» y la siguiente pasada avisa (una sola vez)', async () => {
+    const { doc, rootId } = threadDoc();
+    const create = vi.spyOn(db.prisma.notification, 'create').mockRejectedValueOnce(new Error('base caída'));
+
+    await expect(syncBoardComments('proyecto', doc)).rejects.toThrow('base caída');
+    expect(db.comments.has(rootId)).toBe(false);
+    expect(notificationsOf('mention')).toHaveLength(0);
+
+    const retry = await syncBoardComments('proyecto', doc);
+    expect(retry).toMatchObject({ written: 1, mentions: 1 });
+    expect(db.comments.has(rootId)).toBe(true);
+    expect(notificationsOf('mention')).toHaveLength(1);
+    create.mockRestore();
+  });
+
   it('una mención se notifica una sola vez aunque el comentario se edite o se resincronice', async () => {
     const { doc, rootId } = threadDoc();
     await syncBoardComments('proyecto', doc);

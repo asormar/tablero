@@ -2,6 +2,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 
 import { App } from './App';
+import { installToastEscape } from './lib/toastEscape';
 import { registerPwa } from './pwa/register';
 import { initSettings } from './settings/settingsStore';
 import './styles/global.css';
@@ -19,6 +20,8 @@ import './styles/print.css';
 // Ajustes antes de montar React: el tema y el fondo del lienzo se aplican al
 // `<html>` sin parpadeo (el script de `index.html` ya adelantó lo esencial).
 initSettings();
+// Antes que cualquier otro oyente de `Esc`: con el foco en un aviso solo cierra ese.
+installToastEscape();
 registerPwa();
 
 const container = document.getElementById('root');

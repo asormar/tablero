@@ -10,11 +10,14 @@ import { describe, expect, it } from 'vitest';
 
 import {
   FOCUSABLE_SELECTOR,
+  TOAST_REGION_SELECTOR,
   activeTrapIndex,
   focusablesWithin,
   initialFocusTarget,
   isHiddenCandidate,
+  isInsideRegion,
   nextTrapIndex,
+  trapCycle,
 } from './focusTrap';
 
 type FakeAttrs = Record<string, string | undefined>;
@@ -121,5 +124,51 @@ describe('activeTrapIndex', () => {
     expect(activeTrapIndex([a, b], b)).toBe(1);
     expect(activeTrapIndex([a, b], fakeElement())).toBe(-1);
     expect(activeTrapIndex([a, b], null)).toBe(-1);
+  });
+});
+
+describe('trapCycle', () => {
+  it('añade los enfocables de la pila de avisos después de los del diálogo', () => {
+    const dialogButton = fakeElement();
+    const toastAction = fakeElement();
+    const toastClose = fakeElement();
+    const cycle = trapCycle(fakeRoot([dialogButton]), [fakeRoot([toastAction, toastClose])]);
+    expect(cycle).toEqual([dialogButton, toastAction, toastClose]);
+  });
+
+  it('Tab desde el último control del diálogo llega al aviso y de ahí vuelve al primero', () => {
+    const first = fakeElement();
+    const last = fakeElement();
+    const action = fakeElement();
+    const cycle = trapCycle(fakeRoot([first, last]), [fakeRoot([action])]);
+    expect(cycle[nextTrapIndex(cycle.length, activeTrapIndex(cycle, last))]).toBe(action);
+    expect(cycle[nextTrapIndex(cycle.length, activeTrapIndex(cycle, action))]).toBe(first);
+    expect(cycle[nextTrapIndex(cycle.length, activeTrapIndex(cycle, first), true)]).toBe(action);
+  });
+
+  it('sin avisos el ciclo es el del diálogo', () => {
+    const only = fakeElement();
+    expect(trapCycle(fakeRoot([only]), [])).toEqual([only]);
+  });
+
+  it('descarta los enfocables ocultos también en los avisos', () => {
+    const hidden = fakeElement({ hidden: '' });
+    const action = fakeElement();
+    expect(trapCycle(fakeRoot([]), [fakeRoot([hidden, action])])).toEqual([action]);
+  });
+});
+
+describe('isInsideRegion', () => {
+  it('detecta si el destino está dentro de la región', () => {
+    const inside = {};
+    const region = { contains: (other: unknown) => other === inside };
+    expect(isInsideRegion(region, inside)).toBe(true);
+    expect(isInsideRegion(region, {})).toBe(false);
+    expect(isInsideRegion(null, inside)).toBe(false);
+    expect(isInsideRegion(region, null)).toBe(false);
+  });
+
+  it('la región de avisos es la pila de toasts', () => {
+    expect(TOAST_REGION_SELECTOR).toBe('.toast-stack');
   });
 });

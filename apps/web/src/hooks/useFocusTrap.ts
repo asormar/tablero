@@ -9,7 +9,22 @@
 import { useEffect, useRef } from 'react';
 import type { MutableRefObject } from 'react';
 
-import { activeTrapIndex, focusablesWithin, initialFocusTarget, isVisibleElement, nextTrapIndex } from '@/lib/focusTrap';
+import {
+  TOAST_REGION_SELECTOR,
+  activeTrapIndex,
+  initialFocusTarget,
+  isInsideRegion,
+  isVisibleElement,
+  nextTrapIndex,
+  trapCycle,
+} from '@/lib/focusTrap';
+
+/** Trampas activas: la última es la del diálogo de arriba. */
+const activeTraps: object[] = [];
+
+function toastRegion(): HTMLElement | null {
+  return document.querySelector<HTMLElement>(TOAST_REGION_SELECTOR);
+}
 
 export function useFocusTrap<T extends HTMLElement>(active: boolean): MutableRefObject<T | null> {
   const ref = useRef<T>(null);
@@ -20,7 +35,13 @@ export function useFocusTrap<T extends HTMLElement>(active: boolean): MutableRef
     if (!node) return undefined;
 
     const previous = document.activeElement instanceof HTMLElement ? document.activeElement : null;
-    const list = (): HTMLElement[] => focusablesWithin(node, isVisibleElement);
+    const token = {};
+    activeTraps.push(token);
+    // El ciclo incluye la pila de avisos: su botón de acción no queda fuera.
+    const list = (): HTMLElement[] => {
+      const region = toastRegion();
+      return trapCycle(node, region ? [region] : [], isVisibleElement);
+    };
     const first = initialFocusTarget(node, isVisibleElement);
     if (first) {
       first.focus();
@@ -31,7 +52,7 @@ export function useFocusTrap<T extends HTMLElement>(active: boolean): MutableRef
       node.focus();
     }
 
-    const onKeyDown = (event: KeyboardEvent): void => {
+    const onTab = (event: KeyboardEvent): void => {
       if (event.key !== 'Tab') return;
       const items = list();
       if (items.length === 0) {
@@ -44,9 +65,21 @@ export function useFocusTrap<T extends HTMLElement>(active: boolean): MutableRef
       items[index]?.focus();
     };
 
-    node.addEventListener('keydown', onKeyDown);
+    // Con el foco dentro de un aviso el evento no pasa por el diálogo: solo la
+    // trampa de arriba lo atiende, para que `Tab` vuelva al diálogo.
+    const onToastTab = (event: KeyboardEvent): void => {
+      if (activeTraps[activeTraps.length - 1] !== token) return;
+      if (!isInsideRegion(toastRegion(), event.target)) return;
+      onTab(event);
+    };
+
+    node.addEventListener('keydown', onTab);
+    document.addEventListener('keydown', onToastTab);
     return () => {
-      node.removeEventListener('keydown', onKeyDown);
+      node.removeEventListener('keydown', onTab);
+      document.removeEventListener('keydown', onToastTab);
+      const index = activeTraps.indexOf(token);
+      if (index >= 0) activeTraps.splice(index, 1);
       // Al cerrar, el foco vuelve a donde estaba (si el nodo sigue en el DOM).
       if (previous && previous.isConnected) previous.focus();
     };

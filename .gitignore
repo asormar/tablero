@@ -42,3 +42,7 @@ apps/web/e2e/report/
 
 # Prisma
 apps/api/prisma/migrations/dev.db*
+
+# Herramientas locales: índice de CodeGraph y worktrees temporales de agentes
+.codegraph/
+.claude/worktrees/

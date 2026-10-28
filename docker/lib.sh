@@ -73,7 +73,10 @@ load_r2_env() {
 # `aws` dentro de la imagen oficial (multi-arquitectura). Las credenciales
 # entran por el entorno. Usar con `-i` si hay que pasar datos por la entrada
 # estándar: `aws_cli -i s3 cp - s3://...`.
-AWSCLI_IMAGE="${AWSCLI_IMAGE:-amazon/aws-cli:latest}"
+# Versión fijada: `latest` cambia sin aviso, y desde la 2.23 la CLI calcula
+# sumas de verificación por defecto (las variables `*_CHECKSUM_*` de arriba lo
+# desactivan para R2).
+AWSCLI_IMAGE="${AWSCLI_IMAGE:-amazon/aws-cli:2.22.35}"
 aws_cli() {
   local interactive=()
   if [ "${1:-}" = "-i" ]; then interactive=(-i); shift; fi

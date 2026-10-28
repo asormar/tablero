@@ -42,12 +42,16 @@ else
 fi
 [ "$(uname -m)" = "aarch64" ] || warn "la arquitectura es $(uname -m), no aarch64 (Ampere A1). Sigue funcionando, pero revise el shape."
 
-export DEBIAN_FRONTEND=noninteractive
+# `sudo` limpia el entorno (`env_reset`): un `export DEBIAN_FRONTEND` no le
+# llega a apt y `iptables-persistent` o `needrestart` se quedarían preguntando.
+apt_get() {
+  sudo env DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get "$@"
+}
 
 # --- 1. Docker ------------------------------------------------------------------
 log "Docker Engine y Compose"
-sudo apt-get update -y
-sudo apt-get install -y ca-certificates curl gnupg git cron openssl
+apt_get update -y
+apt_get install -y ca-certificates curl gnupg git cron openssl
 
 if command -v docker >/dev/null 2>&1 && sudo docker compose version >/dev/null 2>&1; then
   note "Docker y el plugin de Compose ya están instalados."
@@ -59,8 +63,8 @@ else
   codename="$(. /etc/os-release && echo "${UBUNTU_CODENAME:-$VERSION_CODENAME}")"
   echo "deb [arch=${arch} signed-by=/etc/apt/keyrings/docker.asc] https://download.docker.com/linux/ubuntu ${codename} stable" \
     | sudo tee /etc/apt/sources.list.d/docker.list >/dev/null
-  sudo apt-get update -y
-  sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+  apt_get update -y
+  apt_get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
 fi
 sudo systemctl enable --now docker
 
@@ -74,7 +78,7 @@ fi
 
 # --- 2. Actualizaciones automáticas -------------------------------------------
 log "Actualizaciones de seguridad automáticas"
-sudo apt-get install -y unattended-upgrades
+apt_get install -y unattended-upgrades
 sudo dpkg-reconfigure -f noninteractive unattended-upgrades
 note "Activadas. No reinician la VM solas: de vez en cuando aplique los reinicios pendientes (/var/run/reboot-required)."
 
@@ -84,7 +88,11 @@ note "Activadas. No reinician la VM solas: de vez en cuando aplique los reinicio
 # todo lo que no esté permitido antes, aunque la lista de seguridad de la VCN
 # lo deje pasar. Las reglas nuevas tienen que ir ANTES de ese REJECT.
 log "Cortafuegos de la VM (iptables)"
-sudo apt-get install -y iptables-persistent netfilter-persistent
+# Al instalarse, iptables-persistent ofrece guardar las reglas en uso, que a esta
+# altura ya incluyen las cadenas de Docker: se responde que no de antemano.
+echo 'iptables-persistent iptables-persistent/autosave_v4 boolean false' | sudo debconf-set-selections
+echo 'iptables-persistent iptables-persistent/autosave_v6 boolean false' | sudo debconf-set-selections
+apt_get install -y iptables-persistent netfilter-persistent
 
 RULES_FILE=/etc/iptables/rules.v4
 
@@ -93,21 +101,18 @@ RULES_FILE=/etc/iptables/rules.v4
 # ahí las restauraría en cada arranque, antes de que Docker vuelva a levantarse.
 persist_rule() {
   local rule="$1"
-  if [ ! -f "$RULES_FILE" ]; then
-    sudo netfilter-persistent save >/dev/null
+  # Sin archivo o sin REJECT, nada bloquea el puerto al arrancar: no hay regla
+  # que adelantar. Nunca se usa `netfilter-persistent save`, que volcaría las
+  # cadenas de Docker.
+  if [ ! -f "$RULES_FILE" ] || ! sudo grep -q '^-A INPUT .*-j REJECT' "$RULES_FILE"; then
     return
   fi
   if sudo grep -qxF -- "$rule" "$RULES_FILE"; then
     return
   fi
-  if sudo grep -q '^-A INPUT .*-j REJECT' "$RULES_FILE"; then
-    sudo awk -v rule="$rule" '!done && /^-A INPUT .*-j REJECT/ { print rule; done = 1 } { print }' \
-      "$RULES_FILE" | sudo tee "$RULES_FILE.new" >/dev/null
-    sudo mv "$RULES_FILE.new" "$RULES_FILE"
-  else
-    # Sin REJECT en el archivo no hay nada que adelantar: se guarda el estado actual.
-    sudo netfilter-persistent save >/dev/null
-  fi
+  sudo awk -v rule="$rule" '!done && /^-A INPUT .*-j REJECT/ { print rule; done = 1 } { print }' \
+    "$RULES_FILE" | sudo tee "$RULES_FILE.new" >/dev/null
+  sudo mv "$RULES_FILE.new" "$RULES_FILE"
 }
 
 open_port() {

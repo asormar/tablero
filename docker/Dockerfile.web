@@ -32,7 +32,9 @@ COPY tsconfig.base.json ./
 
 # `apps/web` consume `@tablero/shared` como fuente TypeScript (alias de Vite),
 # así que alcanza con el paquete compartido en su forma original.
-RUN pnpm --filter @tablero/web build
+# Los mapas de fuente (`sourcemap: 'hidden'`) no se publican: sirven para
+# depurar el build, no para que cualquiera lea el código desde /assets.
+RUN pnpm --filter @tablero/web build  && find apps/web/dist -name '*.map' -delete
 
 # --- runtime ----------------------------------------------------------------
 FROM caddy:2.8-alpine AS runtime

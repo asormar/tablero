@@ -9,20 +9,19 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-import { Loader2, X } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 
 import { ApiError } from '@/api/client';
+import { Modal } from '@/chrome/Modal';
 import { useT } from '@/i18n';
 import { useAppStore } from '@/state/appStore';
 import { usePanelsStore } from '@/state/panelsStore';
-import { useFocusTrap } from '@/hooks/useFocusTrap';
 
 import { captureNote } from './api';
 import { appendNoteToUnsorted } from './unsortedNote';
 
 export function QuickCapture(): JSX.Element | null {
   const open = usePanelsStore((state) => state.captureOpen);
-  const trapRef = useFocusTrap<HTMLDivElement>(open);
   const t = useT();
   const [text, setText] = useState('');
   const [busy, setBusy] = useState(false);
@@ -73,56 +72,44 @@ export function QuickCapture(): JSX.Element | null {
   };
 
   return (
-    <div className="modal" role="dialog" aria-modal="true" aria-label={t('capture.title')}>
-      <div className="modal__panel capture" ref={trapRef}>
-        <div className="modal__head">
-          <h2 className="modal__title">{t('capture.title')}</h2>
-          <button type="button" className="icon-button" title={t('common.close')} onClick={close}>
-            <X size={15} />
-          </button>
-        </div>
-        <div className="modal__body">
-          <p className="sr-only" role="status" data-capture-status>
-            {busy ? t('capture.saving') : ''}
-          </p>
-          <p className="capture__hint">{t('capture.hint')}</p>
-          <textarea
-            ref={textareaRef}
-            className="capture__input"
-            value={text}
-            rows={4}
-            placeholder={t('capture.placeholder')}
-            aria-label={t('capture.title')}
-            onChange={(event) => setText(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' && !event.shiftKey) {
-                event.preventDefault();
-                void save();
-              }
-              if (event.key === 'Escape') {
-                event.preventDefault();
-                close();
-              }
-            }}
-          />
-          {error ? <p className="capture__error">{error}</p> : null}
-        </div>
-        <footer className="modal__foot">
-          <button type="button" className="button" onClick={close} disabled={busy}>
-            {t('common.cancel')}
-          </button>
-          <button
-            type="button"
-            className="button button--primary"
-            data-capture-save
-            disabled={busy || text.trim().length === 0}
-            onClick={() => void save()}
-          >
-            {busy ? <Loader2 size={14} className="spin" /> : null}
-            {t('capture.save')}
-          </button>
-        </footer>
+    <Modal title={t('capture.title')} onClose={close} panelClassName="capture">
+      <div className="modal__body">
+        <p className="sr-only" role="status" data-capture-status>
+          {busy ? t('capture.saving') : ''}
+        </p>
+        <p className="capture__hint">{t('capture.hint')}</p>
+        <textarea
+          ref={textareaRef}
+          className="capture__input"
+          value={text}
+          rows={4}
+          placeholder={t('capture.placeholder')}
+          aria-label={t('capture.title')}
+          onChange={(event) => setText(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter' && !event.shiftKey) {
+              event.preventDefault();
+              void save();
+            }
+          }}
+        />
+        {error ? <p className="capture__error">{error}</p> : null}
       </div>
-    </div>
+      <footer className="modal__foot">
+        <button type="button" className="button" onClick={close} disabled={busy}>
+          {t('common.cancel')}
+        </button>
+        <button
+          type="button"
+          className="button button--primary"
+          data-capture-save
+          disabled={busy || text.trim().length === 0}
+          onClick={() => void save()}
+        >
+          {busy ? <Loader2 size={14} className="spin" /> : null}
+          {t('capture.save')}
+        </button>
+      </footer>
+    </Modal>
   );
 }

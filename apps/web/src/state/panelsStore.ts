@@ -10,7 +10,51 @@
 
 import { create } from 'zustand';
 
+/** Superficies que cierra `closeTop` (la presentación tiene su propia salida). */
+export type PanelKey =
+  | 'paletteOpen'
+  | 'boardSearchOpen'
+  | 'settingsOpen'
+  | 'templatesOpen'
+  | 'saveTemplateOpen'
+  | 'historyOpen'
+  | 'exportOpen'
+  | 'importOpen'
+  | 'captureOpen'
+  | 'listViewOpen'
+  | 'shareOpen'
+  | 'publishOpen'
+  | 'notificationsOpen'
+  | 'activityOpen';
+
+/**
+ * Orden de respaldo de `closeTop` para lo que esté abierto sin haber pasado por
+ * un setter (no debería ocurrir): cierra primero lo que suele ir por encima.
+ */
+const FALLBACK_CLOSE_ORDER: readonly PanelKey[] = [
+  'paletteOpen',
+  'boardSearchOpen',
+  'captureOpen',
+  'shareOpen',
+  'publishOpen',
+  'notificationsOpen',
+  'activityOpen',
+  'settingsOpen',
+  'templatesOpen',
+  'saveTemplateOpen',
+  'historyOpen',
+  'exportOpen',
+  'importOpen',
+  'listViewOpen',
+];
+
 export type PanelsState = {
+  /**
+   * Superficies abiertas en el orden en que se abrieron (la última es la de
+   * arriba). `closeTop` cierra de atrás hacia delante, así que con dos diálogos
+   * apilados `Esc` cierra siempre el de encima.
+   */
+  openOrder: PanelKey[];
   /** Paleta de comandos (Ctrl/Cmd+K). */
   paletteOpen: boolean;
   /** Búsqueda dentro del tablero (Ctrl/Cmd+F). */
@@ -55,13 +99,20 @@ export type PanelsState = {
   setActivityOpen(open: boolean): void;
   flashElement(id: string): void;
   clearFlash(): void;
-  /** Cierra cualquier superficie abierta; devuelve `true` si cerró algo. */
+  /** Cierra la superficie abierta más reciente; devuelve `true` si cerró algo. */
   closeTop(): boolean;
   /** Cierra todo (al cambiar de tablero). */
   closeAll(): void;
 };
 
+/** Cambio de una superficie y su posición en la pila de apertura. */
+function panelPatch(state: PanelsState, key: PanelKey, open: boolean): Partial<PanelsState> {
+  const rest = state.openOrder.filter((entry) => entry !== key);
+  return { [key]: open, openOrder: open ? [...rest, key] : rest } as Partial<PanelsState>;
+}
+
 export const usePanelsStore = create<PanelsState>()((set, get) => ({
+  openOrder: [],
   paletteOpen: false,
   boardSearchOpen: false,
   settingsOpen: false,
@@ -82,50 +133,50 @@ export const usePanelsStore = create<PanelsState>()((set, get) => ({
 
   setPaletteOpen(open) {
     if (get().paletteOpen === open) return;
-    set({ paletteOpen: open });
+    set(panelPatch(get(), 'paletteOpen', open));
   },
   setBoardSearchOpen(open) {
     if (get().boardSearchOpen === open) return;
-    set({ boardSearchOpen: open });
+    set(panelPatch(get(), 'boardSearchOpen', open));
   },
   setSettingsOpen(open) {
-    set({ settingsOpen: open });
+    set(panelPatch(get(), 'settingsOpen', open));
   },
   setTemplatesOpen(open) {
-    set({ templatesOpen: open });
+    set(panelPatch(get(), 'templatesOpen', open));
   },
   setSaveTemplateOpen(open) {
-    set({ saveTemplateOpen: open });
+    set(panelPatch(get(), 'saveTemplateOpen', open));
   },
   setHistoryOpen(open) {
-    set({ historyOpen: open });
+    set(panelPatch(get(), 'historyOpen', open));
   },
   setExportOpen(open) {
-    set({ exportOpen: open });
+    set(panelPatch(get(), 'exportOpen', open));
   },
   setImportOpen(open) {
-    set({ importOpen: open });
+    set(panelPatch(get(), 'importOpen', open));
   },
   setCaptureOpen(open) {
-    set({ captureOpen: open });
+    set(panelPatch(get(), 'captureOpen', open));
   },
   setPresentationOpen(open) {
     set({ presentationOpen: open });
   },
   setListViewOpen(open) {
-    set({ listViewOpen: open });
+    set(panelPatch(get(), 'listViewOpen', open));
   },
   setShareOpen(open) {
-    set({ shareOpen: open });
+    set(panelPatch(get(), 'shareOpen', open));
   },
   setPublishOpen(open) {
-    set({ publishOpen: open });
+    set(panelPatch(get(), 'publishOpen', open));
   },
   setNotificationsOpen(open) {
-    set({ notificationsOpen: open });
+    set(panelPatch(get(), 'notificationsOpen', open));
   },
   setActivityOpen(open) {
-    set({ activityOpen: open });
+    set(panelPatch(get(), 'activityOpen', open));
   },
   flashElement(id) {
     set({ flashElementId: id, flashToken: get().flashToken + 1 });
@@ -136,31 +187,19 @@ export const usePanelsStore = create<PanelsState>()((set, get) => ({
   },
   closeTop() {
     const state = get();
-    const order: [keyof PanelsState, boolean][] = [
-      ['paletteOpen', state.paletteOpen],
-      ['boardSearchOpen', state.boardSearchOpen],
-      ['captureOpen', state.captureOpen],
-      ['shareOpen', state.shareOpen],
-      ['publishOpen', state.publishOpen],
-      ['notificationsOpen', state.notificationsOpen],
-      ['activityOpen', state.activityOpen],
-      ['settingsOpen', state.settingsOpen],
-      ['templatesOpen', state.templatesOpen],
-      ['saveTemplateOpen', state.saveTemplateOpen],
-      ['historyOpen', state.historyOpen],
-      ['exportOpen', state.exportOpen],
-      ['importOpen', state.importOpen],
-      ['listViewOpen', state.listViewOpen],
-    ];
-    for (const [key, open] of order) {
-      if (!open) continue;
-      set({ [key]: false } as Partial<PanelsState>);
+    // La pila manda; lo abierto que no esté en ella cae al orden de respaldo.
+    const stacked = [...state.openOrder].reverse();
+    const candidates = [...stacked, ...FALLBACK_CLOSE_ORDER];
+    for (const key of candidates) {
+      if (!state[key]) continue;
+      set(panelPatch(state, key, false));
       return true;
     }
     return false;
   },
   closeAll() {
     set({
+      openOrder: [],
       paletteOpen: false,
       boardSearchOpen: false,
       settingsOpen: false,

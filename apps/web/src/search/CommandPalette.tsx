@@ -91,6 +91,8 @@ export function CommandPalette({
   const [reindexing, setReindexing] = useState(false);
   const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  /** El clic en el velo solo cierra si el puntero se pulsó y se soltó sobre él. */
+  const pressedOnBackdrop = useRef(false);
   const trapRef = useFocusTrap<HTMLDivElement>(open);
   const currentBoardId = useAppStore((state) => state.currentBoardId);
   const boards = useAppStore((state) => state.boards);
@@ -351,7 +353,20 @@ export function CommandPalette({
   const terms = tokenizeQuery(query);
 
   return (
-    <div className="modal palette" role="dialog" aria-modal="true" aria-label={t('palette.aria')}>
+    <div
+      className="modal palette"
+      role="dialog"
+      aria-modal="true"
+      aria-label={t('palette.aria')}
+      onPointerDown={(event) => {
+        pressedOnBackdrop.current = event.target === event.currentTarget;
+      }}
+      onPointerUp={(event) => {
+        const hit = pressedOnBackdrop.current && event.target === event.currentTarget;
+        pressedOnBackdrop.current = false;
+        if (hit) close();
+      }}
+    >
       <div className="modal__panel palette__panel" ref={trapRef}>
         <div className="palette__search">
           <Search size={15} aria-hidden="true" />
